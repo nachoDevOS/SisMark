@@ -74,7 +74,7 @@ test('la topbar ya no ofrece volver al panel de Filament', function () {
 test('el menú marca la opción de la pantalla actual', function () {
     $this->get(route('equipos.index'))
         ->assertSuccessful()
-        ->assertSee('class="sidebar__link activo" title="Equipos" aria-current="page"', escape: false);
+        ->assertSee('class="sidebar__link activo" title="Biométricos" aria-current="page"', escape: false);
 });
 
 test('la marca del menú se mantiene en las pantallas internas del módulo', function () {

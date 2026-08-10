@@ -23,7 +23,7 @@
 
                     <p class="ayuda" style="margin: 0 0 .9rem;">
                         Es el mismo archivo que genera
-                        <strong>Equipos → Ver marcaciones → Descargar CSV</strong>.
+                        <strong>Biométricos → Ver marcaciones → Descargar CSV</strong>.
                         También sirve uno reguardado desde Excel.
                     </p>
 

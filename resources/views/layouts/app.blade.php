@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('titulo', 'Equipos') · {{ config('app.name') }}</title>
+    <title>@yield('titulo', 'Biométricos') · {{ config('app.name') }}</title>
     {{-- Alpine.js autohospedado (sin CDN externo, sin build): para el dropdown
          "Mas" de las acciones de fila y el toggle del sidebar en móvil. --}}
     <script defer src="{{ asset('vendor/alpine/alpine.min.js') }}"></script>
@@ -645,8 +645,8 @@
                     </a>
                 </div>
             </div>
-            <a href="{{ route('equipos.index') }}" @class(['sidebar__link', 'activo' => $enMenu['equipos']]) title="Equipos"@if ($enMenu['equipos']) aria-current="page"@endif>
-                <x-heroicon-o-computer-desktop /><span class="sidebar__texto">Equipos</span>
+            <a href="{{ route('equipos.index') }}" @class(['sidebar__link', 'activo' => $enMenu['equipos']]) title="Biométricos"@if ($enMenu['equipos']) aria-current="page"@endif>
+                <x-heroicon-o-computer-desktop /><span class="sidebar__texto">Biométricos</span>
             </a>
             <a href="{{ route('usuarios.index') }}" @class(['sidebar__link', 'activo' => $enMenu['usuarios']]) title="Usuarios"@if ($enMenu['usuarios']) aria-current="page"@endif>
                 <x-heroicon-o-user /><span class="sidebar__texto">Usuarios</span>

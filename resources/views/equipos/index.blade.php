@@ -1,12 +1,12 @@
 @extends('layouts.app')
 
-@section('titulo', 'Equipos biométricos')
+@section('titulo', 'Biométricos')
 
 @section('contenido')
     <div class="cabecera">
         <div class="cabecera__titulo">
             <span class="cabecera__icono"><x-heroicon-o-computer-desktop /></span>
-            <h1>Equipos biométricos</h1>
+            <h1>Biométricos</h1>
         </div>
         <div style="display: flex; gap: .5rem; flex-wrap: wrap;">
             <a href="{{ route('equipos.auditoria') }}" class="btn btn--gris"><x-heroicon-o-clipboard-document-list />Bitácora</a>
