@@ -20,6 +20,10 @@ class DashboardController extends Controller
 {
     public function index(ResumenEscritorio $resumen): View
     {
+        // El tablero resume marcaciones, funcionarios y licencias del día: no es
+        // una portada neutra, así que pide su propio permiso.
+        $this->autorizarPermiso('ViewAny:Escritorio');
+
         return view('dashboard.index', [
             'captura' => $resumen->captura(),
             'hoy' => $resumen->hoy(),
@@ -40,6 +44,8 @@ class DashboardController extends Controller
      */
     public function calidad(ResumenEscritorio $resumen): View
     {
+        $this->autorizarPermiso('ViewAny:Escritorio');
+
         return view('dashboard.calidad', ['calidad' => $resumen->calidadDatos()]);
     }
 }

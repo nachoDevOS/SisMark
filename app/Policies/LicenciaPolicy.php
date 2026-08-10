@@ -21,21 +21,14 @@ class LicenciaPolicy
         return $authUser->can('ViewAny:Licencia');
     }
 
-    public function view(AuthUser $authUser, Licencia $licencia): bool
-    {
-        return $authUser->can('View:Licencia');
-    }
-
     public function create(AuthUser $authUser): bool
     {
         return $authUser->can('Create:Licencia');
     }
 
-    public function update(AuthUser $authUser, Licencia $licencia): bool
-    {
-        return $authUser->can('Update:Licencia');
-    }
-
+    // Sin `view` ni `update`: una licencia no tiene ficha propia —se ve en el
+    // listado y en la solapa del funcionario— y no se edita, se anota o se
+    // elimina.
     public function delete(AuthUser $authUser, Licencia $licencia): bool
     {
         return $authUser->can('Delete:Licencia');

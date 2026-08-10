@@ -9,9 +9,12 @@ use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
 /**
- * Autorización del listado de turnos asignados (tabla `asignacion_turnos`).
- * Reutiliza los permisos de los turnos (DiaTurno): quien puede ver los turnos
- * puede ver a quién están asignados, sin sumar permisos nuevos a los roles.
+ * Autorización de los turnos asignados (tabla `asignacion_turnos`).
+ *
+ * Tiene permisos propios (`*:AsignacionTurno`). Antes reutilizaba los de los
+ * turnos (`*:DiaTurno`), y eso ataba las dos pantallas: no había forma de dar
+ * el catálogo de turnos sin dar también a qué funcionario está asignado cada
+ * uno, que es un dato de personal y no de configuración.
  */
 class AsignacionTurnoPolicy
 {
@@ -19,29 +22,24 @@ class AsignacionTurnoPolicy
 
     public function viewAny(AuthUser $authUser): bool
     {
-        return $authUser->can('ViewAny:DiaTurno');
-    }
-
-    public function view(AuthUser $authUser, AsignacionTurno $asignacion): bool
-    {
-        return $authUser->can('View:DiaTurno');
+        return $authUser->can('ViewAny:AsignacionTurno');
     }
 
     public function create(AuthUser $authUser): bool
     {
-        return $authUser->can('Create:DiaTurno');
+        return $authUser->can('Create:AsignacionTurno');
     }
 
     /**
-     * Concluir una asignación (ponerle fecha de fin) es editarla.
+     * Concluir la asignación: ponerle fecha de fin sin borrar la historia.
      */
     public function update(AuthUser $authUser, AsignacionTurno $asignacion): bool
     {
-        return $authUser->can('Update:DiaTurno');
+        return $authUser->can('Update:AsignacionTurno');
     }
 
     public function delete(AuthUser $authUser, AsignacionTurno $asignacion): bool
     {
-        return $authUser->can('Delete:DiaTurno');
+        return $authUser->can('Delete:AsignacionTurno');
     }
 }

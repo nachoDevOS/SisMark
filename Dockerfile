@@ -27,9 +27,12 @@
 # -----------------------------------------------------------------------------
 # Etapa 1 — Assets de Vite (Tailwind 4)
 #
-# El layout del sistema trae su CSS embebido y no depende de Vite: el único
-# archivo que usa @vite es welcome.blade.php, que hoy no tiene ruta. Se compila
-# igual para que el manifiesto exista si algún día se usa.
+# El layout del sistema trae su CSS embebido y no depende de Vite. Hoy ninguna
+# vista usa @vite —la única que lo hacía era welcome.blade.php, que se eliminó
+# por no tener ruta—, así que esta etapa compila un manifiesto que nadie lee.
+# Se conserva para no romper el despliegue si mañana alguna vista lo usa; el día
+# que se decida que no hace falta, se sacan esta etapa, su COPY de más abajo y
+# las dependencias de npm.
 #
 # Si el servidor de construcción no tiene salida a internet, esta etapa falla
 # al descargar las tipografías de bunny.net (plugin `fonts` de vite.config.js).

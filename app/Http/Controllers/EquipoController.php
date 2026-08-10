@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Exceptions\DeviceServiceException;
 use App\Http\Requests\StoreEquipoRequest;
 use App\Http\Requests\UpdateEquipoRequest;
-use App\Models\Asistencia;
 use App\Models\Equipo;
 use App\Models\EquipoAuditoria;
 use App\Services\DeviceService;
@@ -15,7 +14,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -58,7 +56,9 @@ class EquipoController extends Controller
      */
     public function auditoria(Request $request): View
     {
-        $this->authorize('viewAny', Equipo::class);
+        // Permiso propio: administrar los relojes y auditar lo que se hizo con
+        // ellos no tienen por qué ser la misma persona.
+        $this->authorize('viewAny', EquipoAuditoria::class);
 
         $busqueda = trim((string) $request->query('q', ''));
         $accion = (string) $request->query('accion', '');
@@ -215,7 +215,7 @@ class EquipoController extends Controller
         $desde = (string) $request->query('desde', '');
         $hasta = (string) $request->query('hasta', '');
 
-        [$todas, $error] = $this->marcacionesDelEquipo($equipo, $deviceService, $desde, $hasta, fresco: true);
+        [$todas, $error] = $this->marcacionesDelEquipo($equipo, $deviceService, $desde, $hasta);
 
         if ($error) {
             EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_EXPORTAR, [
@@ -266,12 +266,12 @@ class EquipoController extends Controller
      */
     public function sincronizarMarcaciones(Request $request, Equipo $equipo, DeviceService $deviceService, RegistroAsistencia $registro): RedirectResponse
     {
-        $this->authorize('create', Asistencia::class);
+        $this->authorize('sync', $equipo);
 
         $desde = (string) $request->input('desde', '');
         $hasta = (string) $request->input('hasta', '');
 
-        [$todas, $error] = $this->marcacionesDelEquipo($equipo, $deviceService, $desde, $hasta, fresco: true);
+        [$todas, $error] = $this->marcacionesDelEquipo($equipo, $deviceService, $desde, $hasta);
 
         if ($error) {
             EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_SINCRONIZAR, [
@@ -316,7 +316,7 @@ class EquipoController extends Controller
      */
     public function limpiarMarcaciones(Request $request, Equipo $equipo, DeviceService $deviceService): RedirectResponse
     {
-        $this->authorize('delete', $equipo);
+        $this->authorize('clear', $equipo);
 
         $validado = $request->validate([
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
@@ -338,9 +338,6 @@ class EquipoController extends Controller
             'motivo' => $validado['motivo'],
         ]);
 
-        // El historial cacheado quedó obsoleto: el reloj ya no tiene nada.
-        Cache::forget("equipos.{$equipo->id}.marcaciones..");
-
         return back()->with('estado', "Se borraron las marcaciones de «{$equipo->nombre}». El equipo quedó con el historial vacío y queda registrado en la bitácora.");
     }
 
@@ -350,28 +347,17 @@ class EquipoController extends Controller
      * aplica antes de responder: así, en equipos con historial largo, Laravel
      * recibe y parsea mucho menos.
      *
-     * Con `$fresco` se ignora la caché y se relee siempre (para exportar/enviar,
-     * que deben traer lo del momento). La caché de 15 min por rango solo evita
-     * repetir la MISMA lectura dentro de la ventana cuando no se fuerza fresco.
+     * Se lee siempre del reloj, sin caché: los dos usos —exportar y
+     * sincronizar— tienen que traer lo del momento. Antes había una caché de 15
+     * minutos, pero los dos llamadores pedían lectura fresca, que la borraba
+     * justo antes de consultarla: nunca llegó a servir una respuesta.
      *
      * @return array{0: array<int, array<string, mixed>>, 1: ?string}
      */
-    private function marcacionesDelEquipo(Equipo $equipo, DeviceService $deviceService, string $desde = '', string $hasta = '', bool $fresco = false): array
+    private function marcacionesDelEquipo(Equipo $equipo, DeviceService $deviceService, string $desde = '', string $hasta = ''): array
     {
-        $clave = "equipos.{$equipo->id}.marcaciones.{$desde}.{$hasta}";
-
-        if ($fresco) {
-            Cache::forget($clave);
-        }
-
         try {
-            $todas = Cache::remember(
-                $clave,
-                now()->addMinutes(15),
-                fn (): array => $deviceService->attendance($equipo, $desde ?: null, $hasta ?: null)['marcaciones'] ?? [],
-            );
-
-            return [$todas, null];
+            return [$deviceService->attendance($equipo, $desde ?: null, $hasta ?: null)['marcaciones'] ?? [], null];
         } catch (DeviceServiceException $e) {
             return [[], $e->getMessage()];
         }

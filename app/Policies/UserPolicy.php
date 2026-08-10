@@ -14,11 +14,8 @@ class UserPolicy
         return $authUser->can('ViewAny:User');
     }
 
-    public function view(AuthUser $authUser): bool
-    {
-        return $authUser->can('View:User');
-    }
-
+    // Sin `view`: el usuario no tiene ficha propia, se administra desde el
+    // listado y su formulario de edición.
     public function create(AuthUser $authUser): bool
     {
         return $authUser->can('Create:User');

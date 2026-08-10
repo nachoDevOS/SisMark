@@ -27,18 +27,6 @@ class PersonaPolicy
         return $authUser->can('View:Persona');
     }
 
-    public function create(AuthUser $authUser): bool
-    {
-        return $authUser->can('Create:Persona');
-    }
-
-    public function update(AuthUser $authUser, Persona $persona): bool
-    {
-        return $authUser->can('Update:Persona');
-    }
-
-    public function delete(AuthUser $authUser, Persona $persona): bool
-    {
-        return $authUser->can('Delete:Persona');
-    }
+    // Sin `create`, `update` ni `delete`: los funcionarios son de solo lectura,
+    // el alta y la baja viven en los sistemas de origen (Mamoré y SIAT).
 }

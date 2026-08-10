@@ -594,43 +594,66 @@
 
         {{-- El texto de cada opción va en su propio span: plegado queda solo el
              icono, y el `title` lo nombra al pasar el mouse por la franja. --}}
+        {{-- Cada opción se muestra solo si el rol puede abrirla: antes se veían
+             todas y el 403 aparecía recién al hacer clic. Los grupos se ocultan
+             enteros cuando ninguna de sus opciones está permitida. --}}
+        @php
+            $puedeParametros = auth()->user()?->canAny([
+                'ViewAny:DiaExcepcional', 'ViewAny:DiaTurno', 'ViewAny:AsignacionTurno', 'ViewAny:Licencia',
+            ]);
+        @endphp
+
         <nav class="sidebar__nav">
-            <a href="{{ route('dashboard') }}" @class(['sidebar__link', 'activo' => $enMenu['dashboard']]) title="Escritorio"@if ($enMenu['dashboard']) aria-current="page"@endif>
-                <x-heroicon-o-home /><span class="sidebar__texto">Escritorio</span>
-            </a>
-            <a href="{{ route('funcionarios.index') }}" @class(['sidebar__link', 'activo' => $enMenu['funcionarios']]) title="Funcionarios"@if ($enMenu['funcionarios']) aria-current="page"@endif>
-                <x-heroicon-o-user-group /><span class="sidebar__texto">Funcionarios</span>
-            </a>
-            <a href="{{ route('marcaciones.index') }}" @class(['sidebar__link', 'activo' => $enMenu['marcaciones']]) title="Marcaciones"@if ($enMenu['marcaciones']) aria-current="page"@endif>
-                <x-heroicon-o-finger-print /><span class="sidebar__texto">Marcaciones</span>
-            </a>
+            @can('ViewAny:Escritorio')
+                <a href="{{ route('dashboard') }}" @class(['sidebar__link', 'activo' => $enMenu['dashboard']]) title="Escritorio"@if ($enMenu['dashboard']) aria-current="page"@endif>
+                    <x-heroicon-o-home /><span class="sidebar__texto">Escritorio</span>
+                </a>
+            @endcan
+            @can('ViewAny:Persona')
+                <a href="{{ route('funcionarios.index') }}" @class(['sidebar__link', 'activo' => $enMenu['funcionarios']]) title="Funcionarios"@if ($enMenu['funcionarios']) aria-current="page"@endif>
+                    <x-heroicon-o-user-group /><span class="sidebar__texto">Funcionarios</span>
+                </a>
+            @endcan
+            @can('ViewAny:Asistencia')
+                <a href="{{ route('marcaciones.index') }}" @class(['sidebar__link', 'activo' => $enMenu['marcaciones']]) title="Marcaciones"@if ($enMenu['marcaciones']) aria-current="page"@endif>
+                    <x-heroicon-o-finger-print /><span class="sidebar__texto">Marcaciones</span>
+                </a>
+            @endcan
 
             {{-- Parámetros: grupo colapsable con las tablas de configuración.
                  Plegado, el botón despliega el menú entero: en una franja de
                  iconos un submenú no tendría dónde mostrarse. --}}
-            <div x-data="{ abierto: {{ $enParametros ? 'true' : 'false' }} }">
+            <div x-data="{ abierto: {{ $enParametros ? 'true' : 'false' }} }" @if (! $puedeParametros) hidden @endif>
                 <button type="button" @class(['sidebar__grouptoggle', 'activo' => $enParametros]) title="Parámetros"
                         x-on:click="sidebarPlegado ? (alternarMenu(), abierto = true) : (abierto = !abierto)" :aria-expanded="abierto">
                     <x-heroicon-o-adjustments-horizontal /><span class="sidebar__texto">Parámetros</span>
                     <span class="sidebar__chevron" :style="abierto ? 'transform: rotate(180deg)' : ''"><x-heroicon-o-chevron-down /></span>
                 </button>
                 <div class="sidebar__submenu" x-show="abierto" x-cloak>
-                    <a href="{{ route('dias-excepcionales.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['dias-excepcionales']]) title="Días excepcionales"@if ($enMenu['dias-excepcionales']) aria-current="page"@endif>
-                        <x-heroicon-o-calendar-days /><span class="sidebar__texto">Días excepcionales</span>
-                    </a>
-                    <a href="{{ route('horarios.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['horarios']]) title="Turnos"@if ($enMenu['horarios']) aria-current="page"@endif>
-                        <x-heroicon-o-clock /><span class="sidebar__texto">Turnos</span>
-                    </a>
-                    <a href="{{ route('turnos-asignados.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['turnos-asignados']]) title="Turnos asignados"@if ($enMenu['turnos-asignados']) aria-current="page"@endif>
-                        <x-heroicon-o-user-group /><span class="sidebar__texto">Turnos asignados</span>
-                    </a>
-                    <a href="{{ route('licencias.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['licencias']]) title="Licencias"@if ($enMenu['licencias']) aria-current="page"@endif>
-                        <x-heroicon-o-clipboard-document-check /><span class="sidebar__texto">Licencias</span>
-                    </a>
+                    @can('ViewAny:DiaExcepcional')
+                        <a href="{{ route('dias-excepcionales.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['dias-excepcionales']]) title="Días excepcionales"@if ($enMenu['dias-excepcionales']) aria-current="page"@endif>
+                            <x-heroicon-o-calendar-days /><span class="sidebar__texto">Días excepcionales</span>
+                        </a>
+                    @endcan
+                    @can('ViewAny:DiaTurno')
+                        <a href="{{ route('horarios.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['horarios']]) title="Turnos"@if ($enMenu['horarios']) aria-current="page"@endif>
+                            <x-heroicon-o-clock /><span class="sidebar__texto">Turnos</span>
+                        </a>
+                    @endcan
+                    @can('ViewAny:AsignacionTurno')
+                        <a href="{{ route('turnos-asignados.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['turnos-asignados']]) title="Turnos asignados"@if ($enMenu['turnos-asignados']) aria-current="page"@endif>
+                            <x-heroicon-o-user-group /><span class="sidebar__texto">Turnos asignados</span>
+                        </a>
+                    @endcan
+                    @can('ViewAny:Licencia')
+                        <a href="{{ route('licencias.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['licencias']]) title="Licencias"@if ($enMenu['licencias']) aria-current="page"@endif>
+                            <x-heroicon-o-clipboard-document-check /><span class="sidebar__texto">Licencias</span>
+                        </a>
+                    @endcan
                 </div>
             </div>
             {{-- Reportes: mismo patrón colapsable que «Parámetros». --}}
-            <div x-data="{ abierto: {{ $enMenu['reportes'] ? 'true' : 'false' }} }">
+            <div x-data="{ abierto: {{ $enMenu['reportes'] ? 'true' : 'false' }} }" @cannot('ViewAny:Reporte') hidden @endcannot>
                 <button type="button" @class(['sidebar__grouptoggle', 'activo' => $enMenu['reportes']]) title="Reportes"
                         x-on:click="sidebarPlegado ? (alternarMenu(), abierto = true) : (abierto = !abierto)" :aria-expanded="abierto">
                     <x-heroicon-o-document-chart-bar /><span class="sidebar__texto">Reportes</span>
@@ -645,15 +668,21 @@
                     </a>
                 </div>
             </div>
-            <a href="{{ route('equipos.index') }}" @class(['sidebar__link', 'activo' => $enMenu['equipos']]) title="Biométricos"@if ($enMenu['equipos']) aria-current="page"@endif>
-                <x-heroicon-o-computer-desktop /><span class="sidebar__texto">Biométricos</span>
-            </a>
-            <a href="{{ route('usuarios.index') }}" @class(['sidebar__link', 'activo' => $enMenu['usuarios']]) title="Usuarios"@if ($enMenu['usuarios']) aria-current="page"@endif>
-                <x-heroicon-o-user /><span class="sidebar__texto">Usuarios</span>
-            </a>
-            <a href="{{ route('roles.index') }}" @class(['sidebar__link', 'activo' => $enMenu['roles']]) title="Roles"@if ($enMenu['roles']) aria-current="page"@endif>
-                <x-heroicon-o-shield-check /><span class="sidebar__texto">Roles</span>
-            </a>
+            @can('ViewAny:Equipo')
+                <a href="{{ route('equipos.index') }}" @class(['sidebar__link', 'activo' => $enMenu['equipos']]) title="Biométricos"@if ($enMenu['equipos']) aria-current="page"@endif>
+                    <x-heroicon-o-computer-desktop /><span class="sidebar__texto">Biométricos</span>
+                </a>
+            @endcan
+            @can('ViewAny:User')
+                <a href="{{ route('usuarios.index') }}" @class(['sidebar__link', 'activo' => $enMenu['usuarios']]) title="Usuarios"@if ($enMenu['usuarios']) aria-current="page"@endif>
+                    <x-heroicon-o-user /><span class="sidebar__texto">Usuarios</span>
+                </a>
+            @endcan
+            @can('ViewAny:Role')
+                <a href="{{ route('roles.index') }}" @class(['sidebar__link', 'activo' => $enMenu['roles']]) title="Roles"@if ($enMenu['roles']) aria-current="page"@endif>
+                    <x-heroicon-o-shield-check /><span class="sidebar__texto">Roles</span>
+                </a>
+            @endcan
 
 
         </nav>

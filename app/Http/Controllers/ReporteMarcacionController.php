@@ -33,7 +33,7 @@ class ReporteMarcacionController extends Controller
      */
     public function sinProcesar(Request $request): View
     {
-        $this->authorize('viewAny', Asistencia::class);
+        $this->autorizarPermiso('ViewAny:Reporte');
 
         $desde = $request->query('desde', now()->startOfMonth()->toDateString());
         $hasta = $request->query('hasta', now()->toDateString());
@@ -51,7 +51,7 @@ class ReporteMarcacionController extends Controller
      */
     public function buscarFuncionarios(Request $request, DirectorioMamore $directorio): JsonResponse
     {
-        $this->authorize('viewAny', Asistencia::class);
+        $this->autorizarPermiso('ViewAny:Reporte');
 
         $q = trim((string) $request->query('q', ''));
 
@@ -96,7 +96,7 @@ class ReporteMarcacionController extends Controller
      */
     public function procesado(Request $request): View
     {
-        $this->authorize('viewAny', Asistencia::class);
+        $this->autorizarPermiso('ViewAny:Reporte');
 
         $desde = $request->query('desde', now()->startOfMonth()->toDateString());
         $hasta = $request->query('hasta', now()->toDateString());
@@ -114,7 +114,14 @@ class ReporteMarcacionController extends Controller
         ProcesadorAsistencia $procesador,
         ExcelMarcacionesProcesadas $excel,
     ): View|Response|BinaryFileResponse|RedirectResponse {
-        $this->authorize('viewAny', Asistencia::class);
+        $this->autorizarPermiso('ViewAny:Reporte');
+
+        // Descargar el Excel saca los datos del sistema, así que se puede dar
+        // por separado de verlos en pantalla. Va antes de resolver la ficha:
+        // la autorización no depende de que el funcionario exista.
+        if ((int) $request->query('print', 0) === 2) {
+            $this->autorizarPermiso('Export:Reporte');
+        }
 
         $persona = $resolutor->fichaPorCi((string) $request->query('persona', ''));
 
@@ -161,7 +168,14 @@ class ReporteMarcacionController extends Controller
      */
     public function sinProcesarList(Request $request, ResolutorNombres $resolutor): View|Response|RedirectResponse
     {
-        $this->authorize('viewAny', Asistencia::class);
+        $this->autorizarPermiso('ViewAny:Reporte');
+
+        // Descargar el CSV saca los datos del sistema, así que se puede dar por
+        // separado de verlos en pantalla. Va antes de resolver la ficha: la
+        // autorización no depende de que el funcionario exista.
+        if ((int) $request->query('print', 0) === 2) {
+            $this->autorizarPermiso('Export:Reporte');
+        }
 
         $persona = $resolutor->fichaPorCi((string) $request->query('persona', ''));
 

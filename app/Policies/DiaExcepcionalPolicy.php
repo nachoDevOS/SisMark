@@ -21,11 +21,8 @@ class DiaExcepcionalPolicy
         return $authUser->can('ViewAny:DiaExcepcional');
     }
 
-    public function view(AuthUser $authUser, DiaExcepcional $diaExcepcional): bool
-    {
-        return $authUser->can('View:DiaExcepcional');
-    }
-
+    // Sin `view`: el día excepcional no tiene ficha propia, se ve y se edita
+    // desde el listado.
     public function create(AuthUser $authUser): bool
     {
         return $authUser->can('Create:DiaExcepcional');
