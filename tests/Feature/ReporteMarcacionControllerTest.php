@@ -62,6 +62,28 @@ test('el combo busca en Mamoré y muestra el cargo cuando la API está configura
         ->assertJsonFragment(['id' => '7633685', 'texto' => '7633685 — IGNACIO MOLINA GUZMAN · Analista II (SDAF)']);
 });
 
+test('el combo devuelve la miniatura de la foto de Mamoré', function () {
+    funcionarioConMarcaciones();
+    fakeMamore(['7633685' => [
+        'nombre' => 'IGNACIO MOLINA GUZMAN',
+        'cargo' => 'Analista II',
+        'image' => 'http://mamore.test/fotos/7633685.png',
+    ]]);
+
+    $this->getJson(route('reportes.marcaciones.funcionarios', ['q' => 'molina']))
+        ->assertOk()
+        ->assertJsonFragment(['foto' => 'http://mamore.test/fotos/7633685-cropped.png']);
+});
+
+test('el combo devuelve la foto en null cuando el funcionario sale de la base local', function () {
+    funcionarioConMarcaciones();
+
+    // SIAT no guarda fotos: la fila del combo cae al ícono genérico.
+    $this->getJson(route('reportes.marcaciones.funcionarios', ['q' => 'ignacio molina']))
+        ->assertOk()
+        ->assertJsonFragment(['id' => '7633685', 'foto' => null]);
+});
+
 test('el combo cae a la base local si Mamoré falla', function () {
     funcionarioConMarcaciones();
 

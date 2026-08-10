@@ -64,6 +64,9 @@ class ReporteMarcacionController extends Controller
                 return response()->json($directorio->buscar($q)->map(fn (array $persona): array => [
                     'id' => $persona['ci'],
                     'texto' => $directorio->etiqueta($persona),
+                    // La miniatura, que es la que pinta el combo; sin foto va
+                    // null y la fila cae al ícono genérico.
+                    'foto' => $persona['imageThumb'] ?? null,
                 ])->values());
             } catch (MamoreException) {
                 // Sigue con la base local.
@@ -80,6 +83,8 @@ class ReporteMarcacionController extends Controller
             return [
                 'id' => $ci,
                 'texto' => $ci.' — '.$nombre.($pin !== '' ? " (PIN {$pin})" : ''),
+                // SIAT no guarda fotos: solo las tiene Mamoré.
+                'foto' => null,
             ];
         })->values());
     }

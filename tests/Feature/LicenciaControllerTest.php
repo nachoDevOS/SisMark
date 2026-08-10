@@ -58,6 +58,35 @@ test('el listado muestra las licencias registradas', function () {
         ->assertSee('MOLINA');
 });
 
+test('el listado muestra la foto de Mamoré del funcionario', function () {
+    Persona::factory()->create(['ci' => '7633685', 'nombres' => 'IGNACIO', 'paterno' => 'MOLINA']);
+    Licencia::factory()->create(['ci' => '7633685', 'motivo' => 'FERIADO']);
+
+    fakeMamore(['7633685' => [
+        'nombre' => 'IGNACIO MOLINA GUZMAN',
+        'cargo' => 'DESARROLLADOR DE SISTEMAS',
+        'image' => 'http://mamore.test/fotos/7633685.png',
+    ]]);
+
+    // Se pinta la miniatura; la original queda como respaldo del `onerror`.
+    $this->get(route('licencias.list'))
+        ->assertOk()
+        ->assertSee('IGNACIO MOLINA GUZMAN')
+        ->assertSee('http://mamore.test/fotos/7633685-cropped.png')
+        ->assertSee('http://mamore.test/fotos/7633685.png');
+});
+
+test('el listado cae al ícono genérico cuando el funcionario no tiene foto', function () {
+    Persona::factory()->create(['ci' => '7633685', 'nombres' => 'IGNACIO', 'paterno' => 'MOLINA']);
+    Licencia::factory()->create(['ci' => '7633685', 'motivo' => 'FERIADO']);
+
+    // Sin Mamoré la ficha sale de la base local, que no guarda fotos.
+    $this->get(route('licencias.list'))
+        ->assertOk()
+        ->assertSee('MOLINA')
+        ->assertDontSee('-cropped.png');
+});
+
 test('la búsqueda filtra por motivo y por nombre del funcionario', function () {
     Persona::factory()->create(['ci' => '111', 'nombres' => 'ANA', 'paterno' => 'PEREZ']);
     Persona::factory()->create(['ci' => '222', 'nombres' => 'LUIS', 'paterno' => 'ROJAS']);

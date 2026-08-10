@@ -17,10 +17,10 @@ use Illuminate\Support\Facades\Cache;
  * API fila por fila.
  *
  * La ficha tiene la misma forma que las filas de {@see DirectorioMamore}:
- * `ci`, `nombre`, `cargo`, `direccion`, `pinReloj`, `conContrato`, `foto`,
- * `origen`.
+ * `ci`, `nombre`, `cargo`, `direccion`, `pinReloj`, `conContrato`, `image`,
+ * `imageThumb`, `origen`.
  *
- * @phpstan-type Ficha array{ci: string, nombre: string, nombreFormal: string, cargo: ?string, direccion: ?string, pinReloj: string, conContrato: ?bool, foto: ?string, origen: string}
+ * @phpstan-type Ficha array{ci: string, nombre: string, nombreFormal: string, cargo: ?string, direccion: ?string, pinReloj: string, conContrato: ?bool, image: ?string, imageThumb: ?string, origen: string}
  */
 class ResolutorNombres
 {
@@ -142,9 +142,16 @@ class ResolutorNombres
         return $fichas;
     }
 
+    /**
+     * La clave lleva versión porque lo cacheado es una ficha ya armada, no la
+     * respuesta cruda: al agregarle un campo, las entradas viejas siguen vivas
+     * con la forma anterior y la pantalla las lee sin el campo nuevo (pasó con
+     * `imageThumb`: la foto no salía hasta que vencía la caché). Subir la
+     * versión al cambiar la forma deja las viejas huérfanas y las vence solas.
+     */
     private function claveCache(string $ci): string
     {
-        return 'mamore.ficha.'.$ci;
+        return 'mamore.ficha.v2.'.$ci;
     }
 
     /**
@@ -165,7 +172,10 @@ class ResolutorNombres
             'direccion' => $fila['direccion'] ?: null,
             'pinReloj' => $fila['pinReloj'],
             'conContrato' => $fila['conContrato'],
+            // La miniatura es la que se pinta en las tablas; la original queda
+            // como respaldo si Mamoré todavía no la generó.
             'image' => $fila['image'] ?? null,
+            'imageThumb' => $fila['imageThumb'] ?? null,
             'origen' => 'mamore',
         ];
     }
@@ -190,7 +200,8 @@ class ResolutorNombres
             'pinReloj' => trim((string) $persona->pinReloj),
             'conContrato' => null,
             // SIAT no guarda fotos: solo las tiene Mamoré.
-            'foto' => null,
+            'image' => null,
+            'imageThumb' => null,
             'origen' => 'siat',
         ];
     }

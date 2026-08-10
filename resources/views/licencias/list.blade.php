@@ -19,16 +19,25 @@
                     <td><strong>{{ $licencia->fecha?->format('d/m/Y') }}</strong></td>
                     <td>
                         @php($ficha = $fichas[trim((string) $licencia->ci)] ?? null)
-                        @if ($ficha)
-                            {{ $ficha['nombre'] }}
-                        @else
-                            <span style="color: var(--muted); font-style: italic;">Sin persona</span>
-                        @endif
-                        <div class="ayuda">
-                            CI {{ trim((string) $licencia->ci) }}
-                            @if (!empty($ficha['cargo']))
-                                · {{ $ficha['cargo'] }}
-                            @endif
+                        <div class="persona-celda">
+                            {{-- La foto solo la tiene Mamoré; con el respaldo local
+                                 (o sin ficha) queda el ícono genérico. --}}
+                            <x-persona-avatar :thumb="$ficha['imageThumb'] ?? null"
+                                              :full="$ficha['image'] ?? null"
+                                              :nombre="$ficha['nombre'] ?? ''" />
+                            <div>
+                                @if ($ficha)
+                                    {{ $ficha['nombre'] }}
+                                @else
+                                    <span style="color: var(--muted); font-style: italic;">Sin persona</span>
+                                @endif
+                                <div class="ayuda">
+                                    CI {{ trim((string) $licencia->ci) }}
+                                    @if (!empty($ficha['cargo']))
+                                        · {{ $ficha['cargo'] }}
+                                    @endif
+                                </div>
+                            </div>
                         </div>
                     </td>
                     <td>{{ $licencia->resumen_turno }}</td>

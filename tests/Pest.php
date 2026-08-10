@@ -75,7 +75,8 @@ function asSuperAdmin(): User
  *
  * Cada persona puede darse como `ci => 'NOMBRE COMPLETO'` (sin contrato) o como
  * `ci => ['nombre' => ..., 'cargo' => ..., 'direccion' => ...]` para que salga
- * con contrato firmado, igual que lo entrega la API real.
+ * con contrato firmado, igual que lo entrega la API real. Con `image` se le
+ * agrega la foto, de donde sale la miniatura que pintan las tablas.
  *
  * @param  array<string, string|array<string, mixed>>  $padron
  */
@@ -93,6 +94,8 @@ function fakeMamore(array $padron = []): void
                 'id' => crc32($ci),
                 'ci' => (string) $ci,
                 'full_name' => $datos['nombre'],
+                // La foto de la persona; la miniatura la deriva DirectorioMamore.
+                'image' => $datos['image'] ?? null,
                 'has_contract' => $cargo !== null,
                 'contrato' => $cargo === null ? null : [
                     'code' => $datos['code'] ?? 'COD-1/2026',

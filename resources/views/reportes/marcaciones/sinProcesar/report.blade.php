@@ -82,11 +82,23 @@
                         <div style="padding: .55rem .7rem; color: var(--muted);">Sin resultados.</div>
                     </template>
                     <template x-for="item in resultados" :key="item.id">
-                        <button type="button" x-on:click="elegir(item)" x-text="item.texto"
-                                style="display: block; width: 100%; text-align: left; padding: .5rem .7rem;
-                                       background: none; border: 0; border-bottom: 1px solid var(--border);
+                        <button type="button" x-on:click="elegir(item)"
+                                style="display: flex; align-items: center; gap: .55rem; width: 100%; text-align: left;
+                                       padding: .5rem .7rem; background: none; border: 0;
+                                       border-bottom: 1px solid var(--border);
                                        cursor: pointer; font: inherit;"
-                                onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'"></button>
+                                onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
+                            {{-- La foto solo la tiene Mamoré; desde la base local va el ícono. --}}
+                            <span class="persona-foto" style="width: 1.9rem; height: 1.9rem;">
+                                <template x-if="item.foto">
+                                    <img :src="item.foto" alt="" loading="lazy">
+                                </template>
+                                <template x-if="! item.foto">
+                                    <x-heroicon-o-user />
+                                </template>
+                            </span>
+                            <span x-text="item.texto"></span>
+                        </button>
                     </template>
                 </div>
 

@@ -34,6 +34,37 @@ test('el listado muestra el funcionario y su turno cruzados por CI y turno_id', 
         ->assertSee('Vigente');
 });
 
+test('el listado muestra la foto de Mamoré del funcionario', function () {
+    Persona::factory()->create(['ci' => '7633685', 'paterno' => 'Molina', 'nombres' => 'Ignacio']);
+    $turno = Turno::factory()->create(['dia' => '2', 'nombreTurno' => 'LUN: 08:00 - 16:00']);
+    AsignacionTurno::factory()->create(['ci' => '7633685', 'turno_id' => $turno->id]);
+
+    fakeMamore(['7633685' => [
+        'nombre' => 'IGNACIO MOLINA GUZMAN',
+        'cargo' => 'DESARROLLADOR DE SISTEMAS',
+        'image' => 'http://mamore.test/fotos/7633685.png',
+    ]]);
+
+    // Se pinta la miniatura; la original queda como respaldo del `onerror`.
+    $this->get(route('turnos-asignados.list'))
+        ->assertOk()
+        ->assertSee('IGNACIO MOLINA GUZMAN')
+        ->assertSee('http://mamore.test/fotos/7633685-cropped.png')
+        ->assertSee('http://mamore.test/fotos/7633685.png');
+});
+
+test('el listado cae al ícono genérico cuando el funcionario no tiene foto', function () {
+    Persona::factory()->create(['ci' => '7633685', 'paterno' => 'Molina', 'nombres' => 'Ignacio']);
+    $turno = Turno::factory()->create(['dia' => '2', 'nombreTurno' => 'LUN: 08:00 - 16:00']);
+    AsignacionTurno::factory()->create(['ci' => '7633685', 'turno_id' => $turno->id]);
+
+    // Sin Mamoré la ficha sale de la base local, que no guarda fotos.
+    $this->get(route('turnos-asignados.list'))
+        ->assertOk()
+        ->assertSee('Ignacio Molina')
+        ->assertDontSee('-cropped.png');
+});
+
 test('el listado avisa cuando la asignación quedó sin turno vinculado', function () {
     // La copia del SIA deja `turno_id` en null si el código histórico no cruzó.
     AsignacionTurno::factory()->create(['ci' => '7633685', 'turno_id' => null, 'idTurno' => '999']);
