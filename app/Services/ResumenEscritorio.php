@@ -272,7 +272,7 @@ class ResumenEscritorio
      * eliminación lógica encima —que `asistencias` ya no tiene— eran 885 ms
      * contra 6 ms; la forma que se mide rápida es esta, así que se conserva.
      */
-    private function ultimaMarcacion(): ?Carbon
+    public function ultimaMarcacion(): ?Carbon
     {
         $manana = today()->addDay();
 

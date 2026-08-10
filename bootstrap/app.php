@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\VerifyApiKey;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -8,10 +9,19 @@ use Illuminate\Http\Request;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        // API de solo lectura para los sistemas externos (hoy Mamoré). Va sin
+        // sesión ni CSRF: se autentica con la clave compartida del middleware
+        // `apikey`, y el prefijo `api/` es el que ya activa las respuestas JSON
+        // de errores más abajo.
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->alias([
+            'apikey' => VerifyApiKey::class,
+        ]);
+
         // Los invitados van al login propio del sitio (routes/web.php).
         $middleware->redirectGuestsTo(fn () => route('login'));
 

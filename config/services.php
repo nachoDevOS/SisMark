@@ -55,4 +55,16 @@ return [
         'key' => env('MAMORE_API_KEY'),
     ],
 
+    /*
+    | API propia de asistencia (solo lectura), que exponemos a los sistemas
+    | externos. Hoy la consume Mamoré, para que cada funcionario vea sus
+    | propias marcaciones sin entrar a SisMark.
+    |
+    | Es la contraparte de 'mamore': el mismo mecanismo de clave compartida,
+    | en la dirección opuesta. Vacía, la API rechaza todo con 503.
+    */
+    'sismark_api' => [
+        'key' => env('SISMARK_API_KEY'),
+    ],
+
 ];
