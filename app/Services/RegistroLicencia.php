@@ -39,7 +39,7 @@ class RegistroLicencia
      * Anota las licencias y devuelve el conteo por resultado.
      *
      * @param  Collection<string, Collection<int, AsignacionTurno>>  $asignacionesPorCi  turnos a licenciar, agrupados por carnet
-     * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, usuario: string, usuarioId: ?int}  $datos
+     * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int}  $datos
      * @return array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, funcionarios: int}
      */
     public function anotar(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array $datos): array
@@ -60,6 +60,11 @@ class RegistroLicencia
             'tCompleto' => $completo,
             'motivo' => $datos['motivo'],
             'goceHaberes' => (bool) $datos['goceHaberes'],
+            // El respaldo es uno solo para todo el alta: la misma ruta se copia
+            // a cada fila del rango, así se llega al archivo desde cualquiera
+            // de ellas sin un join en el listado.
+            'adjunto' => $datos['adjunto'] ?? null,
+            'adjuntoNombre' => $datos['adjuntoNombre'] ?? null,
         ];
 
         $candidatos = $this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo);

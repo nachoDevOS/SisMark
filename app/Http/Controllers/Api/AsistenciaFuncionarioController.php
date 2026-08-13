@@ -93,14 +93,29 @@ class AsistenciaFuncionarioController extends Controller
             'totales' => [
                 'dias' => $totales['dias'],
                 'atrasoSegundos' => $totales['atraso'],
-                'atraso' => ProcesadorAsistencia::duracion($totales['atraso']),
+                // En minutos, igual que el pie del reporte impreso («0 min»), y
+                // no en horas: el atraso acumulado de un mes rara vez llega a
+                // una hora y «0h 12m» se lee peor que «12 min».
+                'atraso' => ProcesadorAsistencia::desvio($totales['atraso']),
                 'computadoSegundos' => $totales['computado'],
                 'computado' => ProcesadorAsistencia::duracion($totales['computado']),
                 'esperadoSegundos' => $totales['esperado'],
                 'esperado' => ProcesadorAsistencia::duracion($totales['esperado']),
+                'anticipoSegundos' => $totales['anticipo'],
+                'anticipo' => ProcesadorAsistencia::desvio($totales['anticipo']),
                 'saldoSegundos' => $totales['saldo'],
                 'saldo' => ProcesadorAsistencia::duracion($totales['saldo']),
-                'porEstado' => $totales['porEstado'],
+                // Cuántos días cayó cada estado, con la etiqueta ya resuelta:
+                // el consumidor no tiene por qué conocer las claves internas
+                // («no_laborable», «sin_salida») ni cómo se escriben.
+                'porEstado' => collect($totales['porEstado'])
+                    ->map(fn (int $cantidad, string $estado): array => [
+                        'estado' => $estado,
+                        'etiqueta' => ProcesadorAsistencia::ETIQUETAS[$estado] ?? $estado,
+                        'cantidad' => $cantidad,
+                    ])
+                    ->values()
+                    ->all(),
             ],
             ...$this->meta($ci, $desde, $hasta),
         ]);
@@ -185,7 +200,12 @@ class AsistenciaFuncionarioController extends Controller
                 'funcionario' => [
                     'ci' => $ci,
                     'nombre' => $ficha['nombre'] ?? null,
+                    // «Apellidos Nombres», que es como rotula el reporte
+                    // impreso, heredado del sistema de escritorio viejo.
+                    'nombreFormal' => $ficha['nombreFormal'] ?? ($ficha['nombre'] ?? null),
+                    'pinReloj' => $ficha['pinReloj'] ?? null,
                     'cargo' => $ficha['cargo'] ?? null,
+                    'direccion' => $ficha['direccion'] ?? null,
                 ],
                 'rango' => [
                     'desde' => $desde->toDateString(),

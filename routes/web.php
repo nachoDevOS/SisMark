@@ -86,6 +86,9 @@ Route::middleware('auth')->group(function (): void {
     Route::get('licencias/ajax/list', [LicenciaController::class, 'list'])->name('licencias.list');
     // Búsqueda JSON de funcionarios para el combo de la pantalla «Licenciar».
     Route::get('licencias/ajax/funcionarios', [LicenciaController::class, 'buscarFuncionarios'])->name('licencias.funcionarios');
+    // Respaldo de la licencia (certificado, memorándum). Va contra el bucket
+    // con un enlace firmado de vida corta: el archivo nunca es público.
+    Route::get('licencias/{licencia}/respaldo', [LicenciaController::class, 'respaldo'])->name('licencias.respaldo');
     Route::resource('licencias', LicenciaController::class)
         ->only(['index', 'create', 'store', 'destroy']);
 

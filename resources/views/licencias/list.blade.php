@@ -53,7 +53,18 @@
                             {{ $licencia->goceHaberes ? 'Con goce' : 'Sin goce' }}
                         </span>
                     </td>
-                    <td>{{ $licencia->motivo ?: '—' }}</td>
+                    <td>
+                        {{ $licencia->motivo ?: '—' }}
+                        @if ($licencia->adjunto)
+                            {{-- El enlace no apunta al bucket: pasa por el
+                                 sistema, que comprueba el permiso y recién ahí
+                                 firma una URL de vida corta. --}}
+                            <a href="{{ route('licencias.respaldo', $licencia) }}" target="_blank" rel="noopener"
+                               class="respaldo" title="{{ $licencia->adjuntoNombre ?: 'Ver respaldo' }}">
+                                <x-heroicon-o-paper-clip />Respaldo
+                            </a>
+                        @endif
+                    </td>
                     <td class="acciones">
                         <x-boton-eliminar :accion="route('licencias.destroy', $licencia)"
                                           :mensaje="'Se elimina la licencia del '.$licencia->fecha?->format('d/m/Y').'.'" />

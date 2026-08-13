@@ -142,7 +142,46 @@ test('la asistencia procesada calcula el atraso y las horas del día', function 
         ->assertJsonPath('data.0.bloques.0.entrada', '08:12:04')
         ->assertJsonPath('data.0.bloques.0.salida', '16:03:00')
         ->assertJsonPath('data.0.bloques.0.turno', 'LUN: 08:00 - 16:00')
-        ->assertJsonPath('totales.atraso', '0h 12m');
+        // Vacías: el día no fue ni abandono ni falta.
+        ->assertJsonPath('data.0.bloques.0.abandono', '')
+        ->assertJsonPath('data.0.bloques.0.falta', '')
+        ->assertJsonPath('totales.atraso', '12 min 4 seg');
+});
+
+test('el día sin marcar informa la falta como texto listo para el reporte', function () {
+    funcionarioConAsistencia();
+
+    // El lunes 2026-08-10 tiene turno pero no hay marcaciones cargadas.
+    comoMamore('/api/v1/funcionarios/7633685/asistencia?desde=2026-08-10&hasta=2026-08-10')
+        ->assertOk()
+        ->assertJsonPath('data.0.estado', 'falta')
+        ->assertJsonPath('data.0.bloques.0.falta', 'FALTA')
+        ->assertJsonPath('data.0.bloques.0.abandono', '');
+});
+
+test('los totales cuentan los días de cada estado con su etiqueta', function () {
+    funcionarioConAsistencia();
+
+    // 03/08 lunes con turno y marcas; 04/08 martes con turno y sin marcas.
+    comoMamore('/api/v1/funcionarios/7633685/asistencia?desde=2026-08-03&hasta=2026-08-04')
+        ->assertOk()
+        ->assertJsonFragment(['estado' => 'atraso', 'etiqueta' => 'Atraso', 'cantidad' => 1])
+        ->assertJsonFragment(['estado' => 'no_laborable', 'etiqueta' => 'No laborable', 'cantidad' => 1]);
+});
+
+test('la ficha del funcionario trae lo que rotula el reporte', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => [
+        'nombre' => 'IGNACIO MOLINA GUZMAN',
+        'cargo' => 'DESARROLLADOR DE SISTEMAS',
+        'direccion' => 'SDAF',
+    ]]);
+
+    comoMamore('/api/v1/funcionarios/7633685/asistencia?desde=2026-08-03&hasta=2026-08-03')
+        ->assertOk()
+        ->assertJsonPath('meta.funcionario.pinReloj', '7633685')
+        ->assertJsonPath('meta.funcionario.cargo', 'DESARROLLADOR DE SISTEMAS')
+        ->assertJsonPath('meta.funcionario.direccion', 'SDAF');
 });
 
 test('el día sin turno asignado no cuenta como falta', function () {

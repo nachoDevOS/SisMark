@@ -47,6 +47,18 @@ return [
             'report' => false,
         ],
 
+        /*
+        | Almacenamiento remoto (DigitalOcean Spaces, compatible con S3). Guarda
+        | los respaldos que se adjuntan a las licencias.
+        |
+        | `root` separa los entornos dentro del mismo bucket (`dev`, `prod`): sin
+        | eso, desarrollo y producción escriben en las mismas rutas y una prueba
+        | puede pisar un certificado real.
+        |
+        | `throw` va en true, a diferencia de los discos locales: si la subida
+        | falla, el controlador tiene que enterarse y no guardar una licencia que
+        | dice tener respaldo pero apunta a un archivo que no existe.
+        */
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),
@@ -56,7 +68,8 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
+            'root' => env('AWS_ROOT', ''),
+            'throw' => true,
             'report' => false,
         ],
 

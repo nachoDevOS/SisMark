@@ -10,10 +10,16 @@ use Illuminate\Database\Seeder;
  *
  *     php artisan db:seed --class=MigrarSiaSeeder
  *
- * PRIMERO limpia la base con `migrate:fresh --seed` (recrea el esquema desde
- * cero y siembra usuario de prueba + roles), y LUEGO corre los comandos de copia
- * en el orden correcto. El orden importa porque `asignacion_turnos` y `licencias`
- * resuelven su FK `turno_id` contra `turnos`, así que los horarios se migran antes.
+ * Hace tres cosas, en este orden:
+ *
+ * 1. `migrate:fresh`: recrea el esquema desde cero.
+ * 2. {@see DatabaseSeeder}: permisos, rol `super_admin` y usuario
+ *    administrador, con la clave que diga `SEED_ADMIN_PASSWORD` (o
+ *    «password» fuera de producción). Sin este paso la base queda con todos
+ *    los datos del SIA y sin nadie que pueda entrar a verlos.
+ * 3. Los comandos de copia, en orden de dependencia: `asignacion_turnos` y
+ *    `licencias` resuelven su FK `turno_id` contra `turnos`, así que los
+ *    horarios se migran antes.
  *
  * OJO: `migrate:fresh` BORRA todas las tablas (equipos, usuarios, roles y las del
  * SIA ya copiadas). Es una migración limpia completa cada vez que se corre.
@@ -40,13 +46,21 @@ class MigrarSiaSeeder extends Seeder
 
     public function run(): void
     {
-        // Base limpia desde cero antes de copiar (esquema + usuario/roles base).
-        // En testing la BD ya viene fresca por RefreshDatabase; correr
-        // migrate:fresh ahí rompería la transacción de las pruebas.
+        // Base limpia desde cero antes de copiar. En testing la BD ya viene
+        // fresca por RefreshDatabase; correr migrate:fresh ahí rompería la
+        // transacción de las pruebas.
         if (! app()->environment('testing')) {
-            $this->command->getOutput()->writeln('<comment>Limpiando la base: migrate:fresh --seed…</comment>');
-            $this->command->call('migrate:fresh', ['--seed' => true, '--force' => true]);
+            $this->command->getOutput()->writeln('<comment>Limpiando la base: migrate:fresh…</comment>');
+            $this->command->call('migrate:fresh', ['--force' => true]);
         }
+
+        // Permisos, rol super_admin y usuario administrador. Va explícito y no
+        // como `--seed` del migrate:fresh: así corre en todos los entornos —el
+        // de pruebas incluido, donde no hay migrate:fresh que lo arrastre— y
+        // queda a la vista que esta migración también deja el sistema con
+        // accesos, no solo con datos.
+        $this->command->getOutput()->writeln('<info>→ DatabaseSeeder (permisos, roles y administrador)</info>');
+        $this->call(DatabaseSeeder::class);
 
         foreach (self::COMANDOS as $comando) {
             $this->command->getOutput()->writeln("<info>→ {$comando}</info>");

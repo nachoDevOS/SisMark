@@ -67,7 +67,9 @@
                     </div>
                 @endif
 
-                <form method="POST" action="{{ route('licencias.store') }}">
+                {{-- `multipart/form-data`: el formulario sube el respaldo que
+                     justifica la licencia. Sin esto el archivo no viaja. --}}
+                <form method="POST" action="{{ route('licencias.store') }}" enctype="multipart/form-data">
                     @csrf
                     <input type="hidden" name="_form" value="licencia">
                     <input type="hidden" name="modo" value="uno">
@@ -122,6 +124,17 @@
                         <input type="text" id="lic-motivo-{{ $sufijo }}" name="motivo" maxlength="255"
                                value="{{ old('motivo') }}" required>
                         @error('motivo') <div class="error">{{ $message }}</div> @enderror
+                    </div>
+
+                    <div class="campo">
+                        <label for="lic-respaldo-{{ $sufijo }}">Respaldo <span class="req">*</span></label>
+                        <input type="file" id="lic-respaldo-{{ $sufijo }}" name="respaldo"
+                               accept=".jpg,.jpeg,.png,.pdf" required>
+                        <p class="ayuda">
+                            Certificado médico, memorándum o nota que justifica la ausencia.
+                            Imagen (JPG o PNG) o PDF, hasta 5 MB.
+                        </p>
+                        @error('respaldo') <div class="error">{{ $message }}</div> @enderror
                     </div>
 
                     <div class="modal-acciones">

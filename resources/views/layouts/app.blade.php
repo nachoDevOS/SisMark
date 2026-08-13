@@ -427,6 +427,12 @@
            una tabla). Vale suelto y no solo dentro de un `.campo`, que es como
            lo venían usando varias pantallas sin que tuviera estilo. */
         .ayuda { color: var(--muted); font-size: .75rem; }
+
+        /* Enlace al respaldo de una licencia (certificado, memorándum). */
+        .respaldo { display: inline-flex; align-items: center; gap: .25rem; margin-left: .4rem;
+            font-size: .72rem; color: var(--verde-osc); font-weight: 600; white-space: nowrap; }
+        .respaldo svg { width: .85rem; height: .85rem; }
+        .respaldo:hover { text-decoration: underline; }
         .campo .ayuda { margin-top: .25rem; }
         .campo .error { color: var(--danger); font-size: .78rem; margin-top: .25rem; }
         .check { display: flex; align-items: center; gap: .5rem; }

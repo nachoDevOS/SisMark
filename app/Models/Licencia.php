@@ -46,6 +46,11 @@ class Licencia extends Model
         'goceHaberes',
         'observacion',
         'estado',
+        // Respaldo que justifica la licencia: la ruta dentro del disco `s3` y
+        // el nombre con el que lo subieron, que es el que se le muestra a quien
+        // lo descarga.
+        'adjunto',
+        'adjuntoNombre',
     ];
 
     /**

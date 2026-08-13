@@ -114,4 +114,24 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Usuario administrador del seeder
+    |--------------------------------------------------------------------------
+    |
+    | Credenciales con las que `DatabaseSeeder` crea (y vuelve a dejar en pie)
+    | el usuario `super_admin`. La clave se lee del entorno para poder fijarla
+    | en desarrollo y entrar sin depender de lo que se imprimió una vez en la
+    | consola.
+    |
+    | Vacía en producción, el seeder genera una clave aleatoria: nunca queda un
+    | `admin/password` publicado por olvidar la variable.
+    |
+    */
+
+    'seed_admin' => [
+        'email' => env('SEED_ADMIN_EMAIL', 'admin@admin.com'),
+        'password' => env('SEED_ADMIN_PASSWORD'),
+    ],
+
 ];

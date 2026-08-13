@@ -9,6 +9,7 @@ use App\Models\Licencia;
 use App\Services\DirectorioMamore;
 use App\Services\RegistroLicencia;
 use App\Services\ResolutorNombres;
+use App\Services\RespaldoLicencia;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -144,7 +145,7 @@ class LicenciaController extends Controller
      * tengan turno dentro del rango. La expansión (un registro por funcionario,
      * día y turno) la hace el servicio; la validación, el Request.
      */
-    public function store(StoreLicenciaRequest $request, RegistroLicencia $registro): RedirectResponse
+    public function store(StoreLicenciaRequest $request, RegistroLicencia $registro, RespaldoLicencia $respaldos): RedirectResponse
     {
         $datos = $request->validated();
 
@@ -170,12 +171,22 @@ class LicenciaController extends Controller
                 ->with('error', $this->motivoSinTurnos($modo, $elegidas));
         }
 
+        // El respaldo se sube una sola vez y la ruta se copia a todas las filas
+        // que genere el rango: son la misma licencia partida por día y turno.
+        // Va después de resolver los turnos, para no dejar un archivo huérfano
+        // en el bucket cuando el alta no llega a crear nada.
+        [$adjunto, $adjuntoNombre] = $request->hasFile('respaldo')
+            ? $respaldos->guardar($request->file('respaldo'), $cis[0] ?? 'sin-ci')
+            : [null, null];
+
         $conteo = $registro->anotar($asignacionesPorCi, $desde, $hasta, [
             'tCompleto' => $datos['tCompleto'],
             'goceHaberes' => $datos['goceHaberes'],
             'motivo' => $datos['motivo'],
             'lEntra' => $datos['lEntra'] ?? null,
             'lSale' => $datos['lSale'] ?? null,
+            'adjunto' => $adjunto,
+            'adjuntoNombre' => $adjuntoNombre,
             'usuario' => (string) ($request->user()?->name ?? ''),
             'usuarioId' => $request->user()?->id,
         ]);
@@ -235,6 +246,10 @@ class LicenciaController extends Controller
 
     /**
      * Elimina (lógicamente) una licencia.
+     *
+     * El respaldo **no** se borra del bucket: la eliminación es lógica y la fila
+     * se puede restaurar, además de que otras filas del mismo alta comparten el
+     * archivo. Borrarlo dejaría a esas otras apuntando a la nada.
      */
     public function destroy(Licencia $licencia): RedirectResponse
     {
@@ -243,6 +258,24 @@ class LicenciaController extends Controller
         $licencia->delete();
 
         return back()->with('estado', 'Licencia eliminada.');
+    }
+
+    /**
+     * Redirige al respaldo de la licencia con un enlace temporal y firmado.
+     *
+     * El archivo no se sirve por acá ni se hace público: un certificado médico
+     * no puede quedar accesible con solo adivinar la URL. Se comprueba el
+     * permiso de lectura y recién ahí se pide al bucket un enlace de vida corta.
+     */
+    public function respaldo(Licencia $licencia, RespaldoLicencia $respaldos): RedirectResponse
+    {
+        $this->authorize('viewAny', Licencia::class);
+
+        $enlace = $respaldos->enlace($licencia->adjunto);
+
+        return $enlace === null
+            ? back()->with('error', 'La licencia no tiene respaldo cargado, o el archivo ya no está disponible.')
+            : redirect()->away($enlace);
     }
 
     /**

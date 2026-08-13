@@ -74,10 +74,18 @@ class DiaAsistenciaResource extends JsonResource
             'estadoEtiqueta' => ProcesadorAsistencia::ETIQUETAS[$bloque['estado']] ?? $bloque['estado'],
             'atrasoSegundos' => $bloque['atraso'],
             'atraso' => ProcesadorAsistencia::desvio($bloque['atraso']),
+            // Las dos columnas propias del reporte impreso: «Abandono» se
+            // retiró antes de tiempo, «Falta» no marcó lo que se le exigía.
+            // Van como texto listo —vacío cuando no aplica— para que el
+            // consumidor arme la misma tabla sin conocer los estados.
+            'abandono' => $bloque['estado'] === ProcesadorAsistencia::ABANDONO ? 'ABANDONO' : '',
+            'falta' => ProcesadorAsistencia::FALTAS[$bloque['estado']] ?? '',
             'permanencia' => ProcesadorAsistencia::duracion($bloque['permanencia']),
             'computado' => ProcesadorAsistencia::duracion($bloque['computado']),
             'licencia' => $licencia instanceof Licencia ? [
                 'motivo' => $licencia->motivo ?: null,
+                'entrada' => $licencia->lEntra?->format('H:i'),
+                'salida' => $licencia->lSale?->format('H:i'),
                 'turnoCompleto' => (bool) $licencia->tCompleto,
                 'conGoceDeHaberes' => (bool) $licencia->goceHaberes,
             ] : null,

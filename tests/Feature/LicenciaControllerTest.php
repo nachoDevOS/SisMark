@@ -7,16 +7,30 @@ use App\Models\Role;
 use App\Models\Turno;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->actingAs(asSuperAdmin());
+    // Ningún test toca el bucket real, y el alta exige respaldo: sin el disco
+    // falso, cada prueba subiría un archivo a DigitalOcean.
+    Storage::fake('s3');
 });
+
+/**
+ * Respaldo válido para el alta, que es obligatorio: ninguna licencia se anota
+ * sin el documento que la sostiene.
+ */
+function respaldoDePrueba(): UploadedFile
+{
+    return UploadedFile::fake()->create('respaldo.pdf', 40, 'application/pdf');
+}
 
 /**
  * Funcionario con un turno asignado el día de la semana pedido (convención del
@@ -427,6 +441,116 @@ test('el combo informa el error cuando la API de Mamoré falla', function () {
         ->assertJsonPath('error', 'La API de Mamoré respondió con un error (500).');
 });
 
+test('sube el respaldo al bucket y lo comparte con todas las filas del rango', function () {
+    Storage::fake('s3');
+    [$persona, $asignacion] = funcionarioConTurno(dia: 2);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno',
+        'ci' => $persona->ci,
+        'asignaciones' => [$asignacion->id],
+        'desde' => '2025-03-03',
+        'hasta' => '2025-03-16',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'BAJA MEDICA',
+        'respaldo' => UploadedFile::fake()->create('certificado médico.pdf', 120, 'application/pdf'),
+    ])->assertRedirect();
+
+    $licencias = Licencia::query()->orderBy('fecha')->get();
+
+    // Las dos filas del rango son la misma licencia partida por día: comparten
+    // el archivo en vez de subirlo dos veces.
+    expect($licencias)->toHaveCount(2)
+        ->and($licencias[0]->adjunto)->not->toBeNull()
+        ->and($licencias[1]->adjunto)->toBe($licencias[0]->adjunto)
+        // El nombre original se conserva aparte; el del bucket es aleatorio.
+        ->and($licencias[0]->adjuntoNombre)->toBe('certificado médico.pdf')
+        ->and($licencias[0]->adjunto)->not->toContain('certificado');
+
+    Storage::disk('s3')->assertExists($licencias[0]->adjunto);
+
+    // La ruta se ordena por año y cédula, para que el bucket siga navegable.
+    expect($licencias[0]->adjunto)->toStartWith('licencias/'.now()->format('Y').'/'.trim($persona->ci).'/');
+});
+
+test('no se anota una licencia sin respaldo', function () {
+    [$persona, $asignacion] = funcionarioConTurno(dia: 2);
+
+    // Ninguna licencia se anota sin el documento que la sostiene.
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno',
+        'ci' => $persona->ci,
+        'asignaciones' => [$asignacion->id],
+        'desde' => '2025-03-03',
+        'hasta' => '2025-03-03',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'FERIADO',
+    ])->assertSessionHasErrors('respaldo');
+
+    expect(Licencia::query()->count())->toBe(0);
+});
+
+test('rechaza un respaldo que no sea imagen ni PDF', function () {
+    Storage::fake('s3');
+    [$persona, $asignacion] = funcionarioConTurno(dia: 2);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno',
+        'ci' => $persona->ci,
+        'asignaciones' => [$asignacion->id],
+        'desde' => '2025-03-03',
+        'hasta' => '2025-03-03',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'PRUEBA',
+        'respaldo' => UploadedFile::fake()->create('planilla.xlsx', 50),
+    ])->assertSessionHasErrors('respaldo');
+
+    expect(Licencia::query()->count())->toBe(0);
+    expect(Storage::disk('s3')->allFiles())->toBeEmpty();
+});
+
+test('rechaza un respaldo de más de 5 MB', function () {
+    Storage::fake('s3');
+    [$persona, $asignacion] = funcionarioConTurno(dia: 2);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno',
+        'ci' => $persona->ci,
+        'asignaciones' => [$asignacion->id],
+        'desde' => '2025-03-03',
+        'hasta' => '2025-03-03',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'PRUEBA',
+        'respaldo' => UploadedFile::fake()->create('escaneo.pdf', 6000, 'application/pdf'),
+    ])->assertSessionHasErrors('respaldo');
+
+    expect(Licencia::query()->count())->toBe(0);
+});
+
+test('el listado enlaza el respaldo solo cuando la licencia lo tiene', function () {
+    Persona::factory()->create(['ci' => '7633685']);
+    $conRespaldo = Licencia::factory()->create(['ci' => '7633685', 'adjunto' => 'licencias/2026/7633685/x.pdf']);
+    $sinRespaldo = Licencia::factory()->create(['ci' => '7633685', 'adjunto' => null]);
+
+    $this->get(route('licencias.list'))
+        ->assertOk()
+        ->assertSee(route('licencias.respaldo', $conRespaldo), escape: false)
+        ->assertDontSee(route('licencias.respaldo', $sinRespaldo), escape: false);
+});
+
+test('la descarga del respaldo avisa cuando la licencia no tiene archivo', function () {
+    Storage::fake('s3');
+    $licencia = Licencia::factory()->create(['ci' => '7633685', 'adjunto' => null]);
+
+    $this->get(route('licencias.respaldo', $licencia))
+        ->assertRedirect()
+        ->assertSessionHas('error');
+});
+
 test('anota una licencia por cada día del rango que coincide con el turno', function () {
     [$persona, $asignacion] = funcionarioConTurno(dia: 2); // lunes
 
@@ -440,6 +564,7 @@ test('anota una licencia por cada día del rango que coincide con el turno', fun
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'PRUEBA DIAS',
+        'respaldo' => respaldoDePrueba(),
     ])
         ->assertRedirect(route('licencias.index', ['q' => $persona->ci]))
         ->assertSessionHas('estado');
@@ -474,6 +599,7 @@ test('fechaPedido guarda la fecha y la hora actuales del sistema', function () {
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'VACACION',
+        'respaldo' => respaldoDePrueba(),
     ])->assertRedirect();
 
     expect(Licencia::query()->firstOrFail()->fechaPedido->format('Y-m-d H:i:s'))
@@ -501,6 +627,7 @@ test('la licencia por horas guarda las horas sobre la fecha base 1899-12-30', fu
         'lEntra' => '09:30',
         'lSale' => '12:00',
         'motivo' => 'LLEGADA TARDE',
+        'respaldo' => respaldoDePrueba(),
     ])->assertRedirect();
 
     $licencia = Licencia::query()->firstOrFail();
@@ -524,8 +651,9 @@ test('no duplica una licencia ya registrada para el mismo día y turno', functio
         'motivo' => 'VACACION',
     ];
 
-    $this->post(route('licencias.store'), $envio)->assertRedirect();
-    $this->post(route('licencias.store'), $envio)->assertSessionHas('error');
+    // Un `UploadedFile` se consume al subirlo: cada envío lleva el suyo.
+    $this->post(route('licencias.store'), $envio + ['respaldo' => respaldoDePrueba()])->assertRedirect();
+    $this->post(route('licencias.store'), $envio + ['respaldo' => respaldoDePrueba()])->assertSessionHas('error');
 
     expect(Licencia::query()->count())->toBe(1);
 });
@@ -544,10 +672,10 @@ test('reusa la licencia eliminada lógicamente en vez de romper el índice únic
         'motivo' => 'VACACION',
     ];
 
-    $this->post(route('licencias.store'), $envio)->assertRedirect();
+    $this->post(route('licencias.store'), $envio + ['respaldo' => respaldoDePrueba()])->assertRedirect();
     Licencia::query()->firstOrFail()->delete();
 
-    $this->post(route('licencias.store'), ['motivo' => 'COMISION'] + $envio)
+    $this->post(route('licencias.store'), ['motivo' => 'COMISION', 'respaldo' => respaldoDePrueba()] + $envio)
         ->assertSessionHas('estado');
 
     $licencia = Licencia::query()->firstOrFail();
@@ -577,6 +705,7 @@ test('no anota nada si el rango cae fuera de la vigencia del turno asignado', fu
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'VACACION',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('error');
 
     expect(Licencia::query()->count())->toBe(0);
@@ -595,13 +724,16 @@ test('rechaza turnos que no son del funcionario elegido', function () {
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'VACACION',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('error');
 
     expect(Licencia::query()->count())->toBe(0);
 });
 
 test('valida funcionario, fechas y motivo obligatorios', function () {
-    $this->post(route('licencias.store'), [])
+    $this->post(route('licencias.store'), [
+        'respaldo' => respaldoDePrueba(),
+    ])
         ->assertSessionHasErrors(['ci', 'desde', 'hasta', 'motivo']);
 
     expect(Licencia::query()->count())->toBe(0);
@@ -628,6 +760,7 @@ test('sin turnos elegidos licencia todos los días del rango con turno', functio
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'VACACION',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('estado');
 
     expect(Licencia::query()->count())->toBe(5)
@@ -653,6 +786,7 @@ test('sin turnos elegidos saltea los días sin turno asignado', function () {
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'VACACION',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('estado');
 
     expect(Licencia::query()->count())->toBe(1)
@@ -675,6 +809,7 @@ test('sin turnos elegidos avisa si el funcionario no tiene turnos en el rango', 
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'VACACION',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('error');
 
     expect(Licencia::query()->count())->toBe(0);
@@ -704,6 +839,7 @@ test('con selección manual licencia solo el turno elegido del día doble', func
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'PERMISO TARDE',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('estado');
 
     expect(Licencia::query()->count())->toBe(1)
@@ -729,6 +865,7 @@ test('sin turnos elegidos y con día doble licencia los dos turnos', function ()
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'DIA COMPLETO',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('estado');
 
     expect(Licencia::query()->count())->toBe(2);
@@ -745,6 +882,7 @@ test('exige las horas cuando no es turno completo', function () {
         'hasta' => '2025-03-03',
         'goceHaberes' => '1',
         'motivo' => 'LLEGADA TARDE',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHasErrors(['lEntra', 'lSale']);
 
     expect(Licencia::query()->count())->toBe(0);
@@ -815,6 +953,7 @@ test('licencia grupal: anota a los funcionarios elegidos y deja fuera al resto',
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'COMISION DE VIAJE',
+        'respaldo' => respaldoDePrueba(),
     ])
         ->assertRedirect(route('licencias.index'))
         ->assertSessionHas('estado');
@@ -843,6 +982,7 @@ test('licencia grupal: el modo «todos» alcanza a quien tenga turno en el rango
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'FERIADO VIERNES SANTO',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('estado');
 
     expect(Licencia::query()->count())->toBe(3)
@@ -860,6 +1000,7 @@ test('licencia grupal: expande el rango completo por cada funcionario', function
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'TOLERANCIA GENERAL',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('estado', fn (string $mensaje): bool => str_contains($mensaje, '15 licencia(s) anotada(s)')
         && str_contains($mensaje, '3 funcionario(s)'));
 
@@ -880,8 +1021,9 @@ test('licencia grupal: no duplica lo ya registrado y lo informa', function () {
     ];
 
     // Primero solo uno; después el grupo entero: el que ya estaba no se duplica.
-    $this->post(route('licencias.store'), ['cis' => [$uno->ci]] + $envio)->assertSessionHas('estado');
-    $this->post(route('licencias.store'), $envio)
+    $this->post(route('licencias.store'), ['cis' => [$uno->ci], 'respaldo' => respaldoDePrueba()] + $envio)
+        ->assertSessionHas('estado');
+    $this->post(route('licencias.store'), $envio + ['respaldo' => respaldoDePrueba()])
         ->assertSessionHas('estado', fn (string $mensaje): bool => str_contains($mensaje, '1 licencia(s) anotada(s)')
             && str_contains($mensaje, '1 ya existían'));
 
@@ -902,6 +1044,7 @@ test('licencia grupal: guarda el autor y la fecha de pedido en cada fila', funct
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'FERIADO',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('estado');
 
     // El alta masiva usa insert(), que no dispara eventos: la auditoría y los
@@ -933,6 +1076,7 @@ test('licencia grupal: resuelve el alta masiva en pocas consultas', function () 
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'FERIADO',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('estado');
 
     expect(Licencia::query()->count())->toBe(100)
@@ -949,6 +1093,7 @@ test('licencia grupal: avisa si nadie tiene turno en el rango', function () {
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'FERIADO',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('error');
 
     expect(Licencia::query()->count())->toBe(0);
@@ -962,6 +1107,7 @@ test('licencia grupal: exige la lista de funcionarios en el modo «varios»', fu
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'FERIADO',
+        'respaldo' => respaldoDePrueba(),
     ])->assertSessionHasErrors('cis');
 
     expect(Licencia::query()->count())->toBe(0);
@@ -1081,8 +1227,9 @@ test('anotada desde la ficha, la licencia vuelve a la ficha', function () {
         'motivo' => 'REUNION SINDICAL',
     ];
 
-    // El ancla deja abierta la solapa de licencias al volver.
-    $this->post(route('licencias.store'), $datos + ['origen' => 'local'])
+    // El ancla deja abierta la solapa de licencias al volver. Cada envío lleva
+    // su propio archivo: un `UploadedFile` se consume al subirlo.
+    $this->post(route('licencias.store'), $datos + ['origen' => 'local', 'respaldo' => respaldoDePrueba()])
         ->assertRedirect(route('funcionarios.show', ['persona' => $persona->ci]).'#licencias');
 
     // Cada envío usa otra semana: la misma fecha sería una licencia repetida.
@@ -1090,12 +1237,14 @@ test('anotada desde la ficha, la licencia vuelve a la ficha', function () {
     $ultima = ['desde' => today()->addWeeks(2)->toDateString(), 'hasta' => today()->addWeeks(2)->toDateString()];
 
     // Sin origen sigue yendo al listado filtrado por el carnet, como antes.
-    $this->post(route('licencias.store'), array_merge($datos, $siguiente))
+    $this->post(route('licencias.store'), array_merge($datos, $siguiente, ['respaldo' => respaldoDePrueba()]))
         ->assertRedirect(route('licencias.index', ['q' => $persona->ci]));
 
     // Un origen desconocido no saca al usuario del sistema.
-    $this->post(route('licencias.store'), array_merge($datos, $ultima, ['origen' => 'https://otro-sitio.test']))
-        ->assertRedirect(route('licencias.index', ['q' => $persona->ci]));
+    $this->post(route('licencias.store'), array_merge($datos, $ultima, [
+        'origen' => 'https://otro-sitio.test',
+        'respaldo' => respaldoDePrueba(),
+    ]))->assertRedirect(route('licencias.index', ['q' => $persona->ci]));
 });
 
 test('un invitado no puede ver las licencias', function () {
@@ -1109,5 +1258,7 @@ test('un usuario sin permiso no puede entrar al listado ni anotar licencias', fu
 
     $this->get(route('licencias.index'))->assertForbidden();
     $this->get(route('licencias.create'))->assertForbidden();
-    $this->post(route('licencias.store'), [])->assertForbidden();
+    $this->post(route('licencias.store'), [
+        'respaldo' => respaldoDePrueba(),
+    ])->assertForbidden();
 });

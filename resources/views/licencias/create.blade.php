@@ -24,7 +24,9 @@
         <div class="aviso aviso--error">El CI {{ $ci }} no figura en la API de Mamoré.</div>
     @endif
 
-    <form action="{{ route('licencias.store') }}" method="POST"
+    {{-- `multipart/form-data`: el formulario sube el respaldo de la licencia.
+         Sin esto el archivo no viaja y la validación lo rechaza. --}}
+    <form action="{{ route('licencias.store') }}" method="POST" enctype="multipart/form-data"
           x-data="{
               modo: @js($modoInicial),
               completo: {{ old('tCompleto', 1) ? 'true' : 'false' }},
@@ -353,6 +355,16 @@
                     <input type="text" id="motivo" name="motivo" class="input" maxlength="255"
                            value="{{ old('motivo') }}" required>
                     @error('motivo') <div class="error">{{ $message }}</div> @enderror
+                </div>
+                <div class="campo" style="flex: 1; min-width: 14rem;">
+                    <label for="respaldo">Respaldo <span class="req">*</span></label>
+                    <input type="file" id="respaldo" name="respaldo" class="input"
+                           accept=".jpg,.jpeg,.png,.pdf" required>
+                    <p class="ayuda">
+                        Certificado, memorándum o nota que justifica la ausencia.
+                        Imagen (JPG o PNG) o PDF, hasta 5 MB.
+                    </p>
+                    @error('respaldo') <div class="error">{{ $message }}</div> @enderror
                 </div>
             </div>
 
