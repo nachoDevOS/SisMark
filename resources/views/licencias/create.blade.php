@@ -357,12 +357,12 @@
                     @error('motivo') <div class="error">{{ $message }}</div> @enderror
                 </div>
                 <div class="campo" style="flex: 1; min-width: 14rem;">
-                    <label for="respaldo">Respaldo <span class="req">*</span></label>
+                    <label for="respaldo">Respaldo</label>
                     <input type="file" id="respaldo" name="respaldo" class="input"
-                           accept=".jpg,.jpeg,.png,.pdf" required>
+                           accept=".jpg,.jpeg,.png,.pdf">
                     <p class="ayuda">
-                        Certificado, memorándum o nota que justifica la ausencia.
-                        Imagen (JPG o PNG) o PDF, hasta 5 MB.
+                        Opcional. Certificado, memorándum o nota que justifica la
+                        ausencia. Imagen (JPG o PNG) o PDF, hasta 5 MB.
                     </p>
                     @error('respaldo') <div class="error">{{ $message }}</div> @enderror
                 </div>

@@ -26,6 +26,11 @@ class DiaExcepcional extends Model
     protected $fillable = [
         'fecha',
         'motivoInasistencia',
+        // Respaldo que justifica el día: el decreto, la resolución o el
+        // memorándum. La ruta dentro del disco `s3` y el nombre con el que lo
+        // subieron, que es el que se le muestra a quien lo descarga.
+        'adjunto',
+        'adjuntoNombre',
         'observacion',
         'estado',
     ];

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ImportarMarcacionesRequest;
-use App\Http\Requests\StoreMarcacionRequest;
 use App\Models\Asistencia;
 use App\Services\RegistroAsistencia;
 use App\Services\ResolutorNombres;
@@ -22,6 +21,9 @@ use Illuminate\View\View;
  *
  * Tanto el listado como el import (y la sincronización de equipos) trabajan ya
  * sobre la base local MySQL vía App\Services\RegistroAsistencia.
+ *
+ * El alta manual de una marcación está DESACTIVADA desde el 2026-08-13: el
+ * código quedó comentado más abajo, no borrado.
  */
 class MarcacionController extends Controller
 {
@@ -71,60 +73,71 @@ class MarcacionController extends Controller
         return view('marcaciones.list', compact('marcaciones', 'fichas'));
     }
 
-    /**
-     * Registra una marcación manual (tipo M) sobre la base local. La hora se
-     * guarda sobre la fecha base 1899-12-30, como el resto de las marcaciones.
-     */
-    public function store(StoreMarcacionRequest $request): RedirectResponse
-    {
-        $this->authorize('create', Asistencia::class);
-
-        $ci = $request->validated('ci');
-        $fecha = Carbon::parse($request->validated('fecha'))->startOfDay();
-        $hora = Carbon::parse($request->validated('hora'))->format('H:i:s');
-
-        // `fecha` se compara entera y no con `whereDate()`: siempre está guardada
-        // a medianoche, y así la búsqueda cae sobre el índice único (ci, fecha,
-        // hora) en vez de recorrer todas las marcaciones de esa cédula. `hora` sí
-        // va por `whereTime()`: hay filas viejas del SIA con una fecha base
-        // distinta de 1899-12-30, y compararla entera las dejaría pasar como si
-        // no existieran.
-        $yaExiste = Asistencia::query()
-            ->where('ci', $ci)
-            ->where('fecha', $fecha)
-            ->whereTime('hora', $hora)
-            ->exists();
-
-        if ($yaExiste) {
-            return back()->with('error', 'Ya existe una marcación para ese funcionario en esa fecha y hora.');
-        }
-
-        Asistencia::create([
-            'ci' => $ci,
-            'fecha' => $fecha,
-            'hora' => '1899-12-30 '.$hora,
-            'tipo' => Asistencia::TIPO_MANUAL,
-            'observacion' => $request->validated('observacion'),
-        ]);
-
-        return redirect($this->destino($request, $ci))
-            ->with('estado', 'Marcación manual registrada correctamente.');
-    }
-
-    /**
-     * A dónde volver después de registrar: a la ficha desde la que se abrió el
-     * modal (`local` o `mamore`) o, si se registró desde el listado, al
-     * listado. Solo se aceptan esos dos orígenes conocidos, así un valor
-     * manipulado nunca redirige fuera del sitio.
-     */
-    private function destino(Request $request, string $ci): string
-    {
-        return match ((string) $request->input('origen', '')) {
-            'local' => route('funcionarios.show', ['persona' => $ci]),
-            'mamore' => route('funcionarios.mamore', ['ci' => $ci]),
-            default => route('marcaciones.index'),
-        };
-    }
+    // -------------------------------------------------------------------------
+    // DESACTIVADO (2026-08-13): alta manual de una marcación (tipo M).
+    //
+    // Queda comentado y no borrado para poder reponerlo tal cual estaba. Lo
+    // acompañan, también comentados: la ruta `marcaciones.store` en
+    // routes/web.php, StoreMarcacionRequest, el componente <x-modal-marcacion />
+    // con sus dos usos, y las pruebas del módulo.
+    //
+    // Al reponerlo hay que volver a importar App\Http\Requests\StoreMarcacionRequest.
+    // -------------------------------------------------------------------------
+    //
+    // /**
+    //  * Registra una marcación manual (tipo M) sobre la base local. La hora se
+    //  * guarda sobre la fecha base 1899-12-30, como el resto de las marcaciones.
+    //  */
+    // public function store(StoreMarcacionRequest $request): RedirectResponse
+    // {
+    //     $this->authorize('create', Asistencia::class);
+    //
+    //     $ci = $request->validated('ci');
+    //     $fecha = Carbon::parse($request->validated('fecha'))->startOfDay();
+    //     $hora = Carbon::parse($request->validated('hora'))->format('H:i:s');
+    //
+    //     // `fecha` se compara entera y no con `whereDate()`: siempre está guardada
+    //     // a medianoche, y así la búsqueda cae sobre el índice único (ci, fecha,
+    //     // hora) en vez de recorrer todas las marcaciones de esa cédula. `hora` sí
+    //     // va por `whereTime()`: hay filas viejas del SIA con una fecha base
+    //     // distinta de 1899-12-30, y compararla entera las dejaría pasar como si
+    //     // no existieran.
+    //     $yaExiste = Asistencia::query()
+    //         ->where('ci', $ci)
+    //         ->where('fecha', $fecha)
+    //         ->whereTime('hora', $hora)
+    //         ->exists();
+    //
+    //     if ($yaExiste) {
+    //         return back()->with('error', 'Ya existe una marcación para ese funcionario en esa fecha y hora.');
+    //     }
+    //
+    //     Asistencia::create([
+    //         'ci' => $ci,
+    //         'fecha' => $fecha,
+    //         'hora' => '1899-12-30 '.$hora,
+    //         'tipo' => Asistencia::TIPO_MANUAL,
+    //         'observacion' => $request->validated('observacion'),
+    //     ]);
+    //
+    //     return redirect($this->destino($request, $ci))
+    //         ->with('estado', 'Marcación manual registrada correctamente.');
+    // }
+    //
+    // /**
+    //  * A dónde volver después de registrar: a la ficha desde la que se abrió el
+    //  * modal (`local` o `mamore`) o, si se registró desde el listado, al
+    //  * listado. Solo se aceptan esos dos orígenes conocidos, así un valor
+    //  * manipulado nunca redirige fuera del sitio.
+    //  */
+    // private function destino(Request $request, string $ci): string
+    // {
+    //     return match ((string) $request->input('origen', '')) {
+    //         'local' => route('funcionarios.show', ['persona' => $ci]),
+    //         'mamore' => route('funcionarios.mamore', ['ci' => $ci]),
+    //         default => route('marcaciones.index'),
+    //     };
+    // }
 
     /**
      * Importa a la tabla local `asistencias` el CSV que ya genera

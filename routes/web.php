@@ -95,6 +95,9 @@ Route::middleware('auth')->group(function (): void {
     // Parámetros → Días excepcionales (feriados/tolerancias que no controlan
     // asistencia), base local MySQL. CRUD sin ficha (show).
     Route::get('dias-excepcionales/ajax/list', [DiaExcepcionalController::class, 'list'])->name('dias-excepcionales.list');
+    // Respaldo del día (decreto, resolución). Igual que en licencias: va contra
+    // el bucket con un enlace firmado de vida corta, el archivo nunca es público.
+    Route::get('dias-excepcionales/{diaExcepcional}/respaldo', [DiaExcepcionalController::class, 'respaldo'])->name('dias-excepcionales.respaldo');
     Route::resource('dias-excepcionales', DiaExcepcionalController::class)
         ->parameters(['dias-excepcionales' => 'diaExcepcional'])
         ->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
@@ -106,8 +109,15 @@ Route::middleware('auth')->group(function (): void {
     // que ya exporta "Equipos > Marcaciones > Exportar".
     Route::get('marcaciones', [MarcacionController::class, 'index'])->name('marcaciones.index');
     Route::get('marcaciones/ajax/list', [MarcacionController::class, 'list'])->name('marcaciones.list');
-    Route::post('marcaciones', [MarcacionController::class, 'store'])->name('marcaciones.store');
     Route::post('marcaciones/importar', [MarcacionController::class, 'importar'])->name('marcaciones.importar');
+
+    // DESACTIVADO (2026-08-13): alta manual de una marcación desde el modal.
+    // Se deja comentado y no borrado para poder reponerlo. Junto con esta ruta
+    // están comentados: MarcacionController::store()/destino(),
+    // StoreMarcacionRequest, el componente <x-modal-marcacion /> y sus dos usos
+    // (marcaciones/index y funcionarios/paneles), y sus pruebas en
+    // tests/Feature/MarcacionControllerTest.php.
+    // Route::post('marcaciones', [MarcacionController::class, 'store'])->name('marcaciones.store');
 
     // Reportes: selección de funcionario + generación (pantalla, imprimible o
     // CSV). «Sin procesar» = todas las marcaciones crudas del rango.

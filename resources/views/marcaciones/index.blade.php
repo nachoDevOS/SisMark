@@ -9,11 +9,15 @@
             <h1>Marcaciones</h1>
         </div>
         @can('create', \App\Models\Asistencia::class)
-            {{-- Importar primero: es la vía habitual de cargar marcaciones (un
-                 archivo entero). El alta manual es la excepción, de a una. --}}
+            {{-- Las marcaciones se cargan por archivo: el CSV que exporta
+                 «Biométricos > Marcaciones > Exportar».
+
+                 DESACTIVADO (2026-08-13): acá iba además <x-modal-marcacion />,
+                 el alta manual de a una. Queda comentado —no borrado— junto con
+                 su ruta, su controlador y su Request. --}}
             <div class="acciones">
                 <x-modal-importar-marcaciones />
-                <x-modal-marcacion />
+                {{-- <x-modal-marcacion /> --}}
             </div>
         @endcan
     </div>

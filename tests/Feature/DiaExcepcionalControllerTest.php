@@ -2,13 +2,28 @@
 
 use App\Models\DiaExcepcional;
 use App\Models\User;
+use App\Services\RespaldoDocumento;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->actingAs(asSuperAdmin());
+    // Ningún test toca el bucket real: sin el disco falso, las altas que sí
+    // mandan respaldo subirían un archivo a DigitalOcean.
+    Storage::fake('s3');
 });
+
+/**
+ * Respaldo válido para el alta. Adjuntarlo es opcional: hay tolerancias que se
+ * cargan por instrucción verbal y el decreto llega después, o nunca.
+ */
+function respaldoDelDia(string $nombre = 'decreto.pdf'): UploadedFile
+{
+    return UploadedFile::fake()->create($nombre, 40, 'application/pdf');
+}
 
 test('el listado muestra los días excepcionales', function () {
     DiaExcepcional::factory()->create([
@@ -138,4 +153,146 @@ test('un usuario sin permiso no puede entrar al listado', function () {
     $this->actingAs(User::factory()->create());
 
     $this->get(route('dias-excepcionales.index'))->assertForbidden();
+});
+
+test('se registra un día excepcional sin respaldo', function () {
+    // El respaldo es opcional: hay tolerancias que se cargan por instrucción
+    // verbal y el decreto llega después.
+    $this->post(route('dias-excepcionales.store'), [
+        'fecha' => '2025-03-04',
+        'motivoInasistencia' => 'FERIADO POR CARNAVAL',
+    ])->assertSessionHasNoErrors();
+
+    $dia = DiaExcepcional::query()->sole();
+
+    expect($dia->adjunto)->toBeNull()
+        ->and($dia->adjuntoNombre)->toBeNull();
+});
+
+test('sube el respaldo al bucket y guarda la ruta y el nombre original', function () {
+    $this->post(route('dias-excepcionales.store'), [
+        'fecha' => '2025-03-04',
+        'motivoInasistencia' => 'FERIADO POR CARNAVAL',
+        'respaldo' => respaldoDelDia('decreto departamental.pdf'),
+    ])->assertSessionHasNoErrors();
+
+    $dia = DiaExcepcional::query()->sole();
+
+    // La ruta se ordena por año y el nombre en el bucket es aleatorio: los
+    // archivos que sube la gente traen tildes y espacios.
+    expect($dia->adjunto)->toStartWith('dias-excepcionales/'.now()->format('Y').'/')
+        ->and($dia->adjunto)->not->toContain(' ')
+        ->and($dia->adjuntoNombre)->toBe('decreto departamental.pdf');
+
+    Storage::disk(RespaldoDocumento::DISCO)->assertExists($dia->adjunto);
+});
+
+test('rechaza un respaldo que no sea imagen ni PDF', function () {
+    $this->post(route('dias-excepcionales.store'), [
+        'fecha' => '2025-03-04',
+        'motivoInasistencia' => 'FERIADO POR CARNAVAL',
+        'respaldo' => UploadedFile::fake()->create('planilla.xlsx', 50),
+    ])->assertSessionHasErrors('respaldo');
+
+    expect(DiaExcepcional::query()->count())->toBe(0);
+});
+
+test('rechaza un respaldo de más de 5 MB', function () {
+    $this->post(route('dias-excepcionales.store'), [
+        'fecha' => '2025-03-04',
+        'motivoInasistencia' => 'FERIADO POR CARNAVAL',
+        'respaldo' => UploadedFile::fake()->create('escaneo.pdf', 6000, 'application/pdf'),
+    ])->assertSessionHasErrors('respaldo');
+
+    expect(DiaExcepcional::query()->count())->toBe(0);
+});
+
+test('editar sin elegir archivo deja el respaldo que ya estaba', function () {
+    $dia = DiaExcepcional::factory()->create([
+        'fecha' => '2025-03-04 00:00:00',
+        'adjunto' => 'dias-excepcionales/2025/original.pdf',
+        'adjuntoNombre' => 'decreto.pdf',
+    ]);
+
+    $this->put(route('dias-excepcionales.update', $dia), [
+        'fecha' => '2025-03-04',
+        'motivoInasistencia' => 'FERIADO POR CARNAVAL (CORREGIDO)',
+    ])->assertSessionHasNoErrors();
+
+    expect($dia->fresh()->adjunto)->toBe('dias-excepcionales/2025/original.pdf')
+        ->and($dia->fresh()->adjuntoNombre)->toBe('decreto.pdf')
+        ->and($dia->fresh()->motivoInasistencia)->toBe('FERIADO POR CARNAVAL (CORREGIDO)');
+});
+
+test('editar con archivo nuevo reemplaza el anterior y lo borra del bucket', function () {
+    Storage::disk(RespaldoDocumento::DISCO)->put('dias-excepcionales/2025/viejo.pdf', 'contenido');
+
+    $dia = DiaExcepcional::factory()->create([
+        'fecha' => '2025-03-04 00:00:00',
+        'adjunto' => 'dias-excepcionales/2025/viejo.pdf',
+        'adjuntoNombre' => 'decreto.pdf',
+    ]);
+
+    $this->put(route('dias-excepcionales.update', $dia), [
+        'fecha' => '2025-03-04',
+        'motivoInasistencia' => 'FERIADO POR CARNAVAL',
+        'respaldo' => respaldoDelDia('resolución nueva.pdf'),
+    ])->assertSessionHasNoErrors();
+
+    $dia->refresh();
+
+    // A diferencia de las licencias, el archivo es de una sola fila: nadie más
+    // queda apuntando a él, así que el viejo se borra.
+    expect($dia->adjunto)->not->toBe('dias-excepcionales/2025/viejo.pdf')
+        ->and($dia->adjuntoNombre)->toBe('resolución nueva.pdf');
+
+    Storage::disk(RespaldoDocumento::DISCO)->assertExists($dia->adjunto);
+    Storage::disk(RespaldoDocumento::DISCO)->assertMissing('dias-excepcionales/2025/viejo.pdf');
+});
+
+test('la baja lógica no borra el respaldo del bucket', function () {
+    Storage::disk(RespaldoDocumento::DISCO)->put('dias-excepcionales/2025/decreto.pdf', 'contenido');
+
+    $dia = DiaExcepcional::factory()->create(['adjunto' => 'dias-excepcionales/2025/decreto.pdf']);
+
+    $this->delete(route('dias-excepcionales.destroy', $dia))->assertRedirect();
+
+    // La fila se puede restaurar, con su documento incluido.
+    Storage::disk(RespaldoDocumento::DISCO)->assertExists('dias-excepcionales/2025/decreto.pdf');
+});
+
+test('el listado enlaza el respaldo solo cuando el día lo tiene', function () {
+    $conRespaldo = DiaExcepcional::factory()->create(['adjunto' => 'dias-excepcionales/2025/decreto.pdf']);
+    $sinRespaldo = DiaExcepcional::factory()->create(['adjunto' => null]);
+
+    $this->get(route('dias-excepcionales.list'))
+        ->assertOk()
+        ->assertSee(route('dias-excepcionales.respaldo', $conRespaldo), escape: false)
+        ->assertDontSee(route('dias-excepcionales.respaldo', $sinRespaldo), escape: false);
+});
+
+test('la descarga del respaldo redirige al enlace firmado del bucket', function () {
+    Storage::disk(RespaldoDocumento::DISCO)->put('dias-excepcionales/2025/decreto.pdf', 'contenido');
+
+    $dia = DiaExcepcional::factory()->create(['adjunto' => 'dias-excepcionales/2025/decreto.pdf']);
+
+    // El archivo no se sirve por el sistema ni es público: se comprueba el
+    // permiso y recién ahí se pide al bucket una URL de vida corta.
+    $this->get(route('dias-excepcionales.respaldo', $dia))->assertRedirect();
+});
+
+test('la descarga del respaldo avisa cuando el día no tiene archivo', function () {
+    $dia = DiaExcepcional::factory()->create(['adjunto' => null]);
+
+    $this->get(route('dias-excepcionales.respaldo', $dia))
+        ->assertRedirect()
+        ->assertSessionHas('error');
+});
+
+test('un usuario sin permiso de ver no puede descargar el respaldo', function () {
+    $dia = DiaExcepcional::factory()->create(['adjunto' => 'dias-excepcionales/2025/decreto.pdf']);
+
+    $this->actingAs(User::factory()->create());
+
+    $this->get(route('dias-excepcionales.respaldo', $dia))->assertForbidden();
 });

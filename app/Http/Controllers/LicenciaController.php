@@ -9,7 +9,7 @@ use App\Models\Licencia;
 use App\Services\DirectorioMamore;
 use App\Services\RegistroLicencia;
 use App\Services\ResolutorNombres;
-use App\Services\RespaldoLicencia;
+use App\Services\RespaldoDocumento;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -145,7 +145,7 @@ class LicenciaController extends Controller
      * tengan turno dentro del rango. La expansión (un registro por funcionario,
      * día y turno) la hace el servicio; la validación, el Request.
      */
-    public function store(StoreLicenciaRequest $request, RegistroLicencia $registro, RespaldoLicencia $respaldos): RedirectResponse
+    public function store(StoreLicenciaRequest $request, RegistroLicencia $registro, RespaldoDocumento $respaldos): RedirectResponse
     {
         $datos = $request->validated();
 
@@ -176,7 +176,7 @@ class LicenciaController extends Controller
         // Va después de resolver los turnos, para no dejar un archivo huérfano
         // en el bucket cuando el alta no llega a crear nada.
         [$adjunto, $adjuntoNombre] = $request->hasFile('respaldo')
-            ? $respaldos->guardar($request->file('respaldo'), $cis[0] ?? 'sin-ci')
+            ? $respaldos->guardar($request->file('respaldo'), 'licencias', $cis[0] ?? '')
             : [null, null];
 
         $conteo = $registro->anotar($asignacionesPorCi, $desde, $hasta, [
@@ -267,7 +267,7 @@ class LicenciaController extends Controller
      * no puede quedar accesible con solo adivinar la URL. Se comprueba el
      * permiso de lectura y recién ahí se pide al bucket un enlace de vida corta.
      */
-    public function respaldo(Licencia $licencia, RespaldoLicencia $respaldos): RedirectResponse
+    public function respaldo(Licencia $licencia, RespaldoDocumento $respaldos): RedirectResponse
     {
         $this->authorize('viewAny', Licencia::class);
 

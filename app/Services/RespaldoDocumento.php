@@ -7,18 +7,19 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
- * Guarda y sirve el respaldo que justifica una licencia: el certificado médico,
- * el memorándum o la nota.
+ * Guarda y sirve los documentos que respaldan un registro: el certificado
+ * médico o el memorándum de una licencia, el decreto o la resolución que
+ * declara un día excepcional.
  *
  * Los archivos van al disco `s3` (DigitalOcean Spaces) y no al almacenamiento
  * local: la aplicación corre en un contenedor sin volumen persistente para
  * esto, así que un archivo escrito en disco se pierde en el próximo despliegue.
  *
  * El disco tiene `throw => true`, de modo que un fallo de subida sale como
- * excepción en vez de devolver `false` en silencio: no puede quedar una
- * licencia diciendo que tiene respaldo si el archivo nunca llegó.
+ * excepción en vez de devolver `false` en silencio: no puede quedar un registro
+ * diciendo que tiene respaldo si el archivo nunca llegó.
  */
-class RespaldoLicencia
+class RespaldoDocumento
 {
     /**
      * Disco donde viven los respaldos.
@@ -37,17 +38,23 @@ class RespaldoLicencia
     /**
      * Sube el respaldo y devuelve la ruta guardada y el nombre original.
      *
-     * La ruta se arma por año y cédula (`licencias/2026/7633685/…`) para que el
-     * bucket siga siendo navegable con miles de archivos, y el nombre se
-     * reemplaza por uno aleatorio: los archivos que sube la gente traen tildes,
-     * espacios y a veces el nombre de otra persona. El original se conserva
-     * aparte, que es lo que se le muestra a quien descarga.
+     * La ruta se arma como `{modulo}/{año}/{sufijo}` —`licencias/2026/7633685`,
+     * `dias-excepcionales/2026`— para que el bucket siga siendo navegable con
+     * miles de archivos, y el nombre se reemplaza por uno aleatorio: los
+     * archivos que sube la gente traen tildes, espacios y a veces el nombre de
+     * otra persona. El original se conserva aparte, que es lo que se le muestra
+     * a quien descarga.
      *
+     * @param  string  $modulo  Carpeta raíz del módulo dueño del documento.
+     * @param  string  $sufijo  Tramo final opcional (la cédula, en licencias).
      * @return array{0: string, 1: string} ruta y nombre original
      */
-    public function guardar(UploadedFile $archivo, string $ci): array
+    public function guardar(UploadedFile $archivo, string $modulo, string $sufijo = ''): array
     {
-        $carpeta = 'licencias/'.now()->format('Y').'/'.trim($ci);
+        $carpeta = collect([$modulo, now()->format('Y'), trim($sufijo)])
+            ->filter(fn (string $tramo): bool => $tramo !== '')
+            ->implode('/');
+
         $nombre = Str::random(40).'.'.strtolower($archivo->getClientOriginalExtension());
 
         Storage::disk(self::DISCO)->putFileAs($carpeta, $archivo, $nombre);
@@ -59,7 +66,7 @@ class RespaldoLicencia
     }
 
     /**
-     * Enlace temporal para descargar un respaldo, o `null` si la licencia no
+     * Enlace temporal para descargar un respaldo, o `null` si el registro no
      * tiene o el archivo ya no está en el bucket.
      *
      * Algunos proveedores compatibles con S3 no firman URLs; si eso pasa, se
@@ -95,8 +102,8 @@ class RespaldoLicencia
         try {
             Storage::disk(self::DISCO)->delete($ruta);
         } catch (\Throwable) {
-            // Un respaldo que no se pudo borrar no puede frenar la baja de la
-            // licencia: queda huérfano en el bucket y se limpia aparte.
+            // Un respaldo que no se pudo borrar no puede frenar la baja del
+            // registro: queda huérfano en el bucket y se limpia aparte.
         }
     }
 }

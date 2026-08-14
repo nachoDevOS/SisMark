@@ -9,7 +9,8 @@
     </div>
 
     <div class="card card--padded">
-        <form action="{{ route('dias-excepcionales.store') }}" method="POST">
+        {{-- `multipart/form-data`: el formulario sube el respaldo del día. --}}
+        <form action="{{ route('dias-excepcionales.store') }}" method="POST" enctype="multipart/form-data">
             @csrf
             @include('dias-excepcionales._form')
 

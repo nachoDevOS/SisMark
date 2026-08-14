@@ -9,7 +9,8 @@
     </div>
 
     <div class="card card--padded">
-        <form action="{{ route('dias-excepcionales.update', $diaExcepcional) }}" method="POST">
+        {{-- `multipart/form-data`: el formulario sube el respaldo del día. --}}
+        <form action="{{ route('dias-excepcionales.update', $diaExcepcional) }}" method="POST" enctype="multipart/form-data">
             @csrf
             @method('PUT')
             @include('dias-excepcionales._form')

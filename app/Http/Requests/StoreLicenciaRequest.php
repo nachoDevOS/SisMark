@@ -54,10 +54,12 @@ class StoreLicenciaRequest extends FormRequest
             'lSale' => ['nullable', 'required_if:tCompleto,false', 'date_format:H:i', 'after:lEntra'],
             'motivo' => ['required', 'string', 'max:255'],
             // Respaldo que justifica la licencia: certificado médico,
-            // memorándum o nota. Obligatorio —ninguna licencia se anota sin el
-            // documento que la sostiene— y acotado a imagen o PDF, que es lo
-            // que llega de un escáner o de la cámara del teléfono.
-            'respaldo' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            // memorándum o nota. Opcional: el documento llega a destiempo (el
+            // certificado se presenta al volver) y el alta masiva de un feriado
+            // no tiene uno por funcionario, así que exigirlo frenaba el
+            // registro en vez de mejorarlo. Cuando viene, se acota a imagen o
+            // PDF, que es lo que sale de un escáner o de la cámara del teléfono.
+            'respaldo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ];
     }
 
@@ -104,7 +106,6 @@ class StoreLicenciaRequest extends FormRequest
             'lEntra.required_if' => 'Indicá la hora de entrada o marcá «Turno completo».',
             'lSale.required_if' => 'Indicá la hora de salida o marcá «Turno completo».',
             'lSale.after' => 'La hora de salida debe ser posterior a la de entrada.',
-            'respaldo.required' => 'Adjuntá el documento que respalda la licencia.',
             'respaldo.mimes' => 'El respaldo debe ser una imagen (JPG o PNG) o un PDF.',
             'respaldo.max' => 'El respaldo no puede pesar más de 5 MB.',
         ];

@@ -25,6 +25,10 @@ class StoreDiaExcepcionalRequest extends FormRequest
         return [
             'fecha' => ['required', 'date', Rule::unique('dias_excepcionales', 'fecha')],
             'motivoInasistencia' => ['required', 'string', 'max:255'],
+            // Respaldo del día: decreto, resolución o memorándum. Opcional —hay
+            // tolerancias que se cargan por instrucción verbal y el documento
+            // llega después— y, cuando viene, acotado a imagen o PDF.
+            'respaldo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'observacion' => ['nullable', 'string', 'max:255'],
         ];
     }
@@ -49,6 +53,8 @@ class StoreDiaExcepcionalRequest extends FormRequest
     {
         return [
             'fecha.unique' => 'Ya existe un día excepcional registrado para esa fecha.',
+            'respaldo.mimes' => 'El respaldo debe ser una imagen (JPG o PNG) o un PDF.',
+            'respaldo.max' => 'El respaldo no puede pesar más de 5 MB.',
         ];
     }
 }

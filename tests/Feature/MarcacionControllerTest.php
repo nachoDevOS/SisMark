@@ -309,153 +309,163 @@ test('la columna funcionario muestra «Sin persona» si el CI no está en ningú
         ->assertSee('Sin persona');
 });
 
-test('registra una marcación manual de tipo M', function () {
-    DB::table('personas')->insert([
-        'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
-    ]);
-
-    $this->post(route('marcaciones.store'), [
-        'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30',
-        'observacion' => 'Papeleta firmada por el jefe de unidad.',
-    ])
-        ->assertRedirect(route('marcaciones.index'))
-        ->assertSessionHas('estado');
-
-    $marcacion = DB::table('asistencias')->where('ci', '888')->first();
-
-    expect($marcacion)->not->toBeNull()
-        ->and(trim($marcacion->tipo))->toBe('M')
-        ->and($marcacion->fecha)->toContain('2026-07-20')
-        ->and($marcacion->hora)->toContain('08:30:00')
-        ->and($marcacion->observacion)->toBe('Papeleta firmada por el jefe de unidad.');
-});
-
-test('la marcación manual exige el motivo', function () {
-    DB::table('personas')->insert([
-        'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
-    ]);
-
-    $this->post(route('marcaciones.store'), ['ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30'])
-        ->assertSessionHasErrors('observacion');
-
-    // Un motivo de dos letras no explica nada: se pide un mínimo.
-    $this->post(route('marcaciones.store'), [
-        'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30', 'observacion' => 'ok',
-    ])->assertSessionHasErrors('observacion');
-
-    expect(DB::table('asistencias')->count())->toBe(0);
-});
-
-test('el modal de marcación manual pide el motivo', function () {
-    $this->get(route('marcaciones.index'))
-        ->assertOk()
-        ->assertSee('name="observacion" rows="2" required', escape: false);
-});
-
-test('registrada desde la ficha, la marcación vuelve a la ficha', function () {
-    DB::table('personas')->insert([
-        'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
-    ]);
-
-    $this->post(route('marcaciones.store'), [
-        'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30', 'origen' => 'local',
-        'observacion' => 'Olvidó marcar la entrada.',
-    ])->assertRedirect(route('funcionarios.show', ['persona' => '888']));
-
-    $this->post(route('marcaciones.store'), [
-        'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '09:30', 'origen' => 'mamore',
-        'observacion' => 'Olvidó marcar la entrada.',
-    ])->assertRedirect(route('funcionarios.mamore', ['ci' => '888']));
-
-    // Un origen desconocido no saca al usuario del sistema.
-    $this->post(route('marcaciones.store'), [
-        'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '10:30', 'origen' => 'https://otro-sitio.test',
-        'observacion' => 'Olvidó marcar la entrada.',
-    ])->assertRedirect(route('marcaciones.index'));
-});
-
-test('el modal de marcación manual está en el listado y en la ficha del funcionario', function () {
-    DB::table('personas')->insert([
-        'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
-    ]);
-
-    // En el listado el CI se escribe a mano.
-    $this->get(route('marcaciones.index'))
-        ->assertOk()
-        ->assertSee('Nueva marcación')
-        ->assertSee('Nueva marcación manual')
-        ->assertSee('id="ci-global"', escape: false);
-
-    // En la ficha el funcionario ya viene dado y el origen hace que se vuelva ahí.
-    $this->get(route('funcionarios.show', ['persona' => '888']))
-        ->assertOk()
-        ->assertSee('Nueva marcación manual')
-        ->assertSee('<input type="hidden" name="ci" value="888">', escape: false)
-        ->assertSee('<input type="hidden" name="origen" value="local">', escape: false)
-        ->assertDontSee('id="ci-global"', escape: false);
-});
-
-test('un usuario sin permiso de crear no ve el modal de marcación manual', function () {
-    DB::table('personas')->insert([
-        'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
-    ]);
-
-    foreach (['ViewAny:Asistencia', 'ViewAny:Persona', 'View:Persona'] as $permiso) {
-        Permission::firstOrCreate(['name' => $permiso, 'guard_name' => 'web']);
-    }
-
-    $rol = Role::create(['name' => 'solo_lectura_marcaciones', 'guard_name' => 'web']);
-    $rol->givePermissionTo('ViewAny:Asistencia', 'ViewAny:Persona', 'View:Persona');
-
-    $this->actingAs(User::factory()->create()->assignRole($rol));
-
-    $this->get(route('marcaciones.index'))
-        ->assertOk()
-        ->assertDontSee('Nueva marcación manual');
-
-    $this->get(route('funcionarios.show', ['persona' => '888']))
-        ->assertOk()
-        ->assertDontSee('Nueva marcación manual');
-});
-
-test('la marcación manual valida CI, fecha y hora', function () {
-    $this->post(route('marcaciones.store'), ['ci' => '', 'fecha' => '', 'hora' => ''])
-        ->assertSessionHasErrors(['ci', 'fecha', 'hora']);
-
-    expect(DB::table('asistencias')->count())->toBe(0);
-});
-
-test('la marcación manual rechaza un CI que no es de ningún funcionario', function () {
-    $this->post(route('marcaciones.store'), ['ci' => '000', 'fecha' => '2026-07-20', 'hora' => '08:30'])
-        ->assertSessionHasErrors('ci');
-
-    expect(DB::table('asistencias')->count())->toBe(0);
-});
-
-test('la marcación manual no duplica la misma ci, fecha y hora', function () {
-    DB::table('personas')->insert([
-        'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
-    ]);
-    DB::table('asistencias')->insert([
-        'ci' => '888', 'fecha' => '2026-07-20 00:00:00', 'hora' => '1899-12-30 08:30:00', 'tipo' => 'M',
-    ]);
-
-    $this->post(route('marcaciones.store'), [
-        'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30',
-        'observacion' => 'Se vuelve a cargar por las dudas.',
-    ])
-        ->assertRedirect()
-        ->assertSessionHas('error');
-
-    expect(DB::table('asistencias')->where('ci', '888')->count())->toBe(1);
-});
-
-test('un usuario sin permiso no puede registrar una marcación manual', function () {
-    $this->actingAs(User::factory()->create());
-
-    $this->post(route('marcaciones.store'), ['ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30'])
-        ->assertForbidden();
-});
+// -----------------------------------------------------------------------------
+// DESACTIVADO (2026-08-13): pruebas del alta manual de marcaciones.
+//
+// Quedan comentadas y no borradas, igual que el código que ejercitaban: la
+// ruta `marcaciones.store`, MarcacionController::store()/destino(),
+// StoreMarcacionRequest y el componente <x-modal-marcacion />. Sin la ruta,
+// `route('marcaciones.store')` revienta con RouteNotFoundException.
+//
+// Al reponer la funcionalidad se descomentan estas y vuelven a pasar tal cual.
+// -----------------------------------------------------------------------------
+// test('registra una marcación manual de tipo M', function () {
+//     DB::table('personas')->insert([
+//         'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
+//     ]);
+//
+//     $this->post(route('marcaciones.store'), [
+//         'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30',
+//         'observacion' => 'Papeleta firmada por el jefe de unidad.',
+//     ])
+//         ->assertRedirect(route('marcaciones.index'))
+//         ->assertSessionHas('estado');
+//
+//     $marcacion = DB::table('asistencias')->where('ci', '888')->first();
+//
+//     expect($marcacion)->not->toBeNull()
+//         ->and(trim($marcacion->tipo))->toBe('M')
+//         ->and($marcacion->fecha)->toContain('2026-07-20')
+//         ->and($marcacion->hora)->toContain('08:30:00')
+//         ->and($marcacion->observacion)->toBe('Papeleta firmada por el jefe de unidad.');
+// });
+//
+// test('la marcación manual exige el motivo', function () {
+//     DB::table('personas')->insert([
+//         'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
+//     ]);
+//
+//     $this->post(route('marcaciones.store'), ['ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30'])
+//         ->assertSessionHasErrors('observacion');
+//
+//     // Un motivo de dos letras no explica nada: se pide un mínimo.
+//     $this->post(route('marcaciones.store'), [
+//         'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30', 'observacion' => 'ok',
+//     ])->assertSessionHasErrors('observacion');
+//
+//     expect(DB::table('asistencias')->count())->toBe(0);
+// });
+//
+// test('el modal de marcación manual pide el motivo', function () {
+//     $this->get(route('marcaciones.index'))
+//         ->assertOk()
+//         ->assertSee('name="observacion" rows="2" required', escape: false);
+// });
+//
+// test('registrada desde la ficha, la marcación vuelve a la ficha', function () {
+//     DB::table('personas')->insert([
+//         'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
+//     ]);
+//
+//     $this->post(route('marcaciones.store'), [
+//         'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30', 'origen' => 'local',
+//         'observacion' => 'Olvidó marcar la entrada.',
+//     ])->assertRedirect(route('funcionarios.show', ['persona' => '888']));
+//
+//     $this->post(route('marcaciones.store'), [
+//         'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '09:30', 'origen' => 'mamore',
+//         'observacion' => 'Olvidó marcar la entrada.',
+//     ])->assertRedirect(route('funcionarios.mamore', ['ci' => '888']));
+//
+//     // Un origen desconocido no saca al usuario del sistema.
+//     $this->post(route('marcaciones.store'), [
+//         'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '10:30', 'origen' => 'https://otro-sitio.test',
+//         'observacion' => 'Olvidó marcar la entrada.',
+//     ])->assertRedirect(route('marcaciones.index'));
+// });
+//
+// test('el modal de marcación manual está en el listado y en la ficha del funcionario', function () {
+//     DB::table('personas')->insert([
+//         'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
+//     ]);
+//
+//     // En el listado el CI se escribe a mano.
+//     $this->get(route('marcaciones.index'))
+//         ->assertOk()
+//         ->assertSee('Nueva marcación')
+//         ->assertSee('Nueva marcación manual')
+//         ->assertSee('id="ci-global"', escape: false);
+//
+//     // En la ficha el funcionario ya viene dado y el origen hace que se vuelva ahí.
+//     $this->get(route('funcionarios.show', ['persona' => '888']))
+//         ->assertOk()
+//         ->assertSee('Nueva marcación manual')
+//         ->assertSee('<input type="hidden" name="ci" value="888">', escape: false)
+//         ->assertSee('<input type="hidden" name="origen" value="local">', escape: false)
+//         ->assertDontSee('id="ci-global"', escape: false);
+// });
+//
+// test('un usuario sin permiso de crear no ve el modal de marcación manual', function () {
+//     DB::table('personas')->insert([
+//         'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
+//     ]);
+//
+//     foreach (['ViewAny:Asistencia', 'ViewAny:Persona', 'View:Persona'] as $permiso) {
+//         Permission::firstOrCreate(['name' => $permiso, 'guard_name' => 'web']);
+//     }
+//
+//     $rol = Role::create(['name' => 'solo_lectura_marcaciones', 'guard_name' => 'web']);
+//     $rol->givePermissionTo('ViewAny:Asistencia', 'ViewAny:Persona', 'View:Persona');
+//
+//     $this->actingAs(User::factory()->create()->assignRole($rol));
+//
+//     $this->get(route('marcaciones.index'))
+//         ->assertOk()
+//         ->assertDontSee('Nueva marcación manual');
+//
+//     $this->get(route('funcionarios.show', ['persona' => '888']))
+//         ->assertOk()
+//         ->assertDontSee('Nueva marcación manual');
+// });
+//
+// test('la marcación manual valida CI, fecha y hora', function () {
+//     $this->post(route('marcaciones.store'), ['ci' => '', 'fecha' => '', 'hora' => ''])
+//         ->assertSessionHasErrors(['ci', 'fecha', 'hora']);
+//
+//     expect(DB::table('asistencias')->count())->toBe(0);
+// });
+//
+// test('la marcación manual rechaza un CI que no es de ningún funcionario', function () {
+//     $this->post(route('marcaciones.store'), ['ci' => '000', 'fecha' => '2026-07-20', 'hora' => '08:30'])
+//         ->assertSessionHasErrors('ci');
+//
+//     expect(DB::table('asistencias')->count())->toBe(0);
+// });
+//
+// test('la marcación manual no duplica la misma ci, fecha y hora', function () {
+//     DB::table('personas')->insert([
+//         'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
+//     ]);
+//     DB::table('asistencias')->insert([
+//         'ci' => '888', 'fecha' => '2026-07-20 00:00:00', 'hora' => '1899-12-30 08:30:00', 'tipo' => 'M',
+//     ]);
+//
+//     $this->post(route('marcaciones.store'), [
+//         'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30',
+//         'observacion' => 'Se vuelve a cargar por las dudas.',
+//     ])
+//         ->assertRedirect()
+//         ->assertSessionHas('error');
+//
+//     expect(DB::table('asistencias')->where('ci', '888')->count())->toBe(1);
+// });
+//
+// test('un usuario sin permiso no puede registrar una marcación manual', function () {
+//     $this->actingAs(User::factory()->create());
+//
+//     $this->post(route('marcaciones.store'), ['ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30'])
+//         ->assertForbidden();
+// });
 
 test('un usuario sin permiso de crear marcaciones no puede importar', function () {
     $this->actingAs(User::factory()->create());
@@ -473,11 +483,14 @@ test('un invitado no puede importar marcaciones', function () {
     $this->post(route('marcaciones.importar'), ['archivo' => $archivo])->assertRedirect();
 });
 
-test('importar CSV va antes que el alta manual en la cabecera', function () {
-    $this->get(route('marcaciones.index'))
-        ->assertOk()
-        ->assertSeeInOrder(['Importar CSV', 'Nueva marcación']);
-});
+// DESACTIVADO (2026-08-13): con el alta manual fuera, la cabecera tiene una
+// sola acción y no hay orden que verificar.
+//
+// test('importar CSV va antes que el alta manual en la cabecera', function () {
+//     $this->get(route('marcaciones.index'))
+//         ->assertOk()
+//         ->assertSeeInOrder(['Importar CSV', 'Nueva marcación']);
+// });
 
 test('el import explica el formato del archivo antes de elegirlo', function () {
     $this->get(route('marcaciones.index'))
@@ -537,7 +550,7 @@ test('el origen de cada marcación se explica con palabras, no solo con la letra
         ->assertSeeInOrder(['Desde', 'Hasta', 'Origen']);
 });
 
-test('un usuario sin permiso de crear no ve ninguna de las dos acciones', function () {
+test('un usuario sin permiso de crear no ve la acción de importar', function () {
     foreach (['ViewAny:Asistencia'] as $permiso) {
         Permission::firstOrCreate(['name' => $permiso, 'guard_name' => 'web']);
     }
@@ -547,10 +560,10 @@ test('un usuario sin permiso de crear no ve ninguna de las dos acciones', functi
 
     $this->actingAs(User::factory()->create()->assignRole($rol));
 
+    // Antes eran dos acciones; el alta manual se desactivó el 2026-08-13.
     $this->get(route('marcaciones.index'))
         ->assertOk()
-        ->assertDontSee('Importar CSV')
-        ->assertDontSee('Nueva marcación');
+        ->assertDontSee('Importar CSV');
 });
 
 test('el rango incluye los dos días extremos y deja fuera los vecinos', function () {

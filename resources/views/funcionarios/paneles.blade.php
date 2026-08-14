@@ -7,8 +7,11 @@
     tabla, no tres).
 
     Espera: $ci, $desde, $hasta, $tipo, $reporteUrl (o null), $hayPersonaLocal
-    y $origen (`local` / `mamore`, para volver acá tras asignar un turno o
-    registrar una marcación).
+    y $origen (`local` / `mamore`, para volver acá tras asignar un turno).
+
+    `$hayPersonaLocal` hoy no se usa: lo pedía el alta manual de marcaciones,
+    desactivada el 2026-08-13. Las fichas lo siguen pasando para que reponer
+    esa funcionalidad sea descomentar y nada más.
 --}}
 @php
     $verLicencias = auth()->user()?->can('viewAny', \App\Models\Licencia::class) ?? false;
@@ -54,11 +57,15 @@
                     <option value="{{ \App\Models\Asistencia::TIPO_A }}" @selected($tipo === \App\Models\Asistencia::TIPO_A)>A</option>
                     <option value="{{ \App\Models\Asistencia::TIPO_MANUAL }}" @selected($tipo === \App\Models\Asistencia::TIPO_MANUAL)>M</option>
                 </select>
-                {{-- Una marcación manual necesita al funcionario en la base
-                     local: sin eso el alta no pasaría la validación. --}}
-                @if ($hayPersonaLocal ?? false)
-                    <x-modal-marcacion :ci="$ci" :origen="$origen ?? ''" />
-                @endif
+                {{-- DESACTIVADO (2026-08-13): acá iba el alta manual de una
+                     marcación para este funcionario, condicionada a que
+                     estuviera en la base local (sin eso no pasaba la
+                     validación). Queda comentado —no borrado— junto con su
+                     ruta, su controlador y su Request:
+
+                     @if ($hayPersonaLocal ?? false)
+                         <x-modal-marcacion :ci="$ci" :origen="$origen ?? ''" />
+                     @endif --}}
 
                 @if ($reporteUrl)
                     <a id="m-reporte" class="btn btn--gris" target="_blank" rel="noopener" href="{{ $reporteUrl }}">

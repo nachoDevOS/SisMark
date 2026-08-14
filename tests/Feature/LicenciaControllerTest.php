@@ -18,14 +18,14 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->actingAs(asSuperAdmin());
-    // Ningún test toca el bucket real, y el alta exige respaldo: sin el disco
-    // falso, cada prueba subiría un archivo a DigitalOcean.
+    // Ningún test toca el bucket real: sin el disco falso, las altas que sí
+    // mandan respaldo subirían un archivo a DigitalOcean.
     Storage::fake('s3');
 });
 
 /**
- * Respaldo válido para el alta, que es obligatorio: ninguna licencia se anota
- * sin el documento que la sostiene.
+ * Respaldo válido para las altas que lo mandan. Adjuntarlo es opcional; el
+ * archivo se sigue ejercitando en las pruebas que cubren la subida al bucket.
  */
 function respaldoDePrueba(): UploadedFile
 {
@@ -474,10 +474,11 @@ test('sube el respaldo al bucket y lo comparte con todas las filas del rango', f
     expect($licencias[0]->adjunto)->toStartWith('licencias/'.now()->format('Y').'/'.trim($persona->ci).'/');
 });
 
-test('no se anota una licencia sin respaldo', function () {
+test('se anota una licencia sin respaldo', function () {
     [$persona, $asignacion] = funcionarioConTurno(dia: 2);
 
-    // Ninguna licencia se anota sin el documento que la sostiene.
+    // El respaldo es opcional: el certificado se suele presentar al volver, y
+    // el alta masiva de un feriado no tiene un documento por funcionario.
     $this->post(route('licencias.store'), [
         'modo' => 'uno',
         'ci' => $persona->ci,
@@ -487,9 +488,12 @@ test('no se anota una licencia sin respaldo', function () {
         'tCompleto' => '1',
         'goceHaberes' => '1',
         'motivo' => 'FERIADO',
-    ])->assertSessionHasErrors('respaldo');
+    ])->assertSessionHasNoErrors();
 
-    expect(Licencia::query()->count())->toBe(0);
+    $licencia = Licencia::query()->sole();
+
+    expect($licencia->adjunto)->toBeNull()
+        ->and($licencia->adjuntoNombre)->toBeNull();
 });
 
 test('rechaza un respaldo que no sea imagen ni PDF', function () {
