@@ -9,15 +9,13 @@
             <h1>Marcaciones</h1>
         </div>
         @can('create', \App\Models\Asistencia::class)
-            {{-- Las marcaciones se cargan por archivo: el CSV que exporta
-                 «Biométricos > Marcaciones > Exportar».
-
-                 DESACTIVADO (2026-08-13): acá iba además <x-modal-marcacion />,
-                 el alta manual de a una. Queda comentado —no borrado— junto con
-                 su ruta, su controlador y su Request. --}}
+            {{-- Dos vías de carga: el CSV que exporta «Biométricos >
+                 Marcaciones > Exportar» —lo habitual, por lote— y el alta
+                 manual de a una, para lo que el reloj no registró. El import va
+                 primero porque es el camino normal. --}}
             <div class="acciones">
                 <x-modal-importar-marcaciones />
-                {{-- <x-modal-marcacion /> --}}
+                <x-modal-marcacion />
             </div>
         @endcan
     </div>

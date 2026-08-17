@@ -9,9 +9,9 @@
     Espera: $ci, $desde, $hasta, $tipo, $reporteUrl (o null), $hayPersonaLocal
     y $origen (`local` / `mamore`, para volver acá tras asignar un turno).
 
-    `$hayPersonaLocal` hoy no se usa: lo pedía el alta manual de marcaciones,
-    desactivada el 2026-08-13. Las fichas lo siguen pasando para que reponer
-    esa funcionalidad sea descomentar y nada más.
+    `$hayPersonaLocal` decide si se ofrece el alta manual de marcaciones: el CI
+    se valida contra `personas`, así que en una ficha que solo está en Mamoré el
+    botón no aparece.
 --}}
 @php
     $verLicencias = auth()->user()?->can('viewAny', \App\Models\Licencia::class) ?? false;
@@ -57,15 +57,12 @@
                     <option value="{{ \App\Models\Asistencia::TIPO_A }}" @selected($tipo === \App\Models\Asistencia::TIPO_A)>A</option>
                     <option value="{{ \App\Models\Asistencia::TIPO_MANUAL }}" @selected($tipo === \App\Models\Asistencia::TIPO_MANUAL)>M</option>
                 </select>
-                {{-- DESACTIVADO (2026-08-13): acá iba el alta manual de una
-                     marcación para este funcionario, condicionada a que
-                     estuviera en la base local (sin eso no pasaba la
-                     validación). Queda comentado —no borrado— junto con su
-                     ruta, su controlador y su Request:
-
-                     @if ($hayPersonaLocal ?? false)
-                         <x-modal-marcacion :ci="$ci" :origen="$origen ?? ''" />
-                     @endif --}}
+                {{-- Alta manual para este funcionario. Solo si está en la base
+                     local: el CI se valida contra `personas`, así que desde una
+                     ficha que solo existe en Mamoré la carga rebotaría. --}}
+                @if ($hayPersonaLocal ?? false)
+                    <x-modal-marcacion :ci="$ci" :origen="$origen ?? ''" />
+                @endif
 
                 @if ($reporteUrl)
                     <a id="m-reporte" class="btn btn--gris" target="_blank" rel="noopener" href="{{ $reporteUrl }}">

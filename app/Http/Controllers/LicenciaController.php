@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\MamoreException;
+use App\Http\Requests\RevisarLicenciaRequest;
 use App\Http\Requests\StoreLicenciaRequest;
 use App\Models\AsignacionTurno;
 use App\Models\Licencia;
 use App\Services\DirectorioMamore;
+use App\Services\ProcesadorAsistencia;
 use App\Services\RegistroLicencia;
 use App\Services\ResolutorNombres;
 use App\Services\RespaldoDocumento;
@@ -36,8 +38,9 @@ class LicenciaController extends Controller
 
         $busqueda = trim((string) $request->query('q', ''));
         $porPagina = $this->porPagina($request);
+        $estado = $this->estado($request);
 
-        return view('licencias.index', compact('busqueda', 'porPagina'));
+        return view('licencias.index', compact('busqueda', 'porPagina', 'estado'));
     }
 
     /**
@@ -49,20 +52,133 @@ class LicenciaController extends Controller
 
         $busqueda = trim((string) $request->query('q', ''));
         $porPagina = $this->porPagina($request);
+        $estado = $this->estado($request);
 
-        $licencias = Licencia::query()
-            ->with('turno')
-            ->when($busqueda !== '', fn (Builder $query) => $query->buscar($busqueda))
-            ->orderByDesc('fecha')
-            ->orderBy('idTurno')
-            ->paginate($porPagina)
-            ->withQueryString();
+        // Una fila por solicitud, no por día: el alta expande el rango a una
+        // fila por día y turno, así que sin esto «14 al 15 de agosto» sale como
+        // dos licencias y parece que hay que aprobarlas por separado.
+        //
+        // Va en dos pasos —primero qué solicitudes entran, después la fila que
+        // abre cada una—; ver la migración `agregar_solicitud_a_licencias`.
+        $licencias = Licencia::paginarPorSolicitud(
+            Licencia::query()
+                ->when($busqueda !== '', fn (Builder $query) => $query->buscar($busqueda))
+                ->when($estado !== '', fn (Builder $query) => $query->where('estado', $estado)),
+            $porPagina,
+        )->withQueryString();
+
+        // Hasta qué día llega cada una y cuántos días abarca. Solo de las
+        // solicitudes de esta página, así que es una consulta chica por índice.
+        $resumen = Licencia::resumenDe($licencias->pluck('solicitud'));
 
         // La columna «Funcionario» (nombre y cargo) sale de Mamoré y, si el CI no
         // está ahí, de la base local (App\Services\ResolutorNombres).
         $fichas = $resolutor->fichasPorCi($licencias->pluck('ci'));
 
-        return view('licencias.list', compact('licencias', 'fichas', 'busqueda'));
+        return view('licencias.list', compact('licencias', 'fichas', 'resumen', 'busqueda'));
+    }
+
+    /**
+     * Ficha de la solicitud: el rango completo con todos sus días, el motivo, el
+     * respaldo y en qué quedó.
+     *
+     * Se entra por una fila del listado, pero se muestra la **solicitud entera**
+     * —todas las filas hermanas—, porque eso es lo que pidió el funcionario: el
+     * alta expande el rango a una fila por día y turno, y aprobar de a una
+     * obligaría a abrir cinco fichas para una licencia de una semana.
+     *
+     * Es el paso previo obligado a resolver: no se aprueba un permiso sin haber
+     * mirado qué días abarca y qué respaldo trae.
+     */
+    public function show(Licencia $licencia, ResolutorNombres $resolutor): View
+    {
+        $this->authorize('view', $licencia);
+
+        $dias = Licencia::query()
+            ->with(['turno', 'revisor'])
+            ->deLaSolicitud($licencia)
+            ->orderBy('fecha')
+            ->get();
+
+        $ficha = $resolutor->fichaPorCi(trim((string) $licencia->ci));
+
+        // Cuántos días esperan decisión: es lo que rotula el botón («Aprobar los
+        // 5 días») y lo que se va a modificar realmente.
+        $pendientes = $dias->where('estado', Licencia::PENDIENTE);
+
+        return view('licencias.show', compact('licencia', 'dias', 'ficha', 'pendientes'));
+    }
+
+    /**
+     * Aprueba la solicitud: los días pendientes pasan a «Aprobado» y recién ahí
+     * el cálculo de asistencia los descuenta ({@see ProcesadorAsistencia}
+     * solo mira las aprobadas).
+     */
+    public function aprobar(RevisarLicenciaRequest $request, Licencia $licencia): RedirectResponse
+    {
+        return $this->resolver($request, $licencia, Licencia::APROBADO);
+    }
+
+    /**
+     * Rechaza la solicitud. El motivo es obligatorio: el funcionario lo ve en su
+     * perfil, y sin él se entera de que le negaron el permiso pero no de por qué.
+     */
+    public function rechazar(RevisarLicenciaRequest $request, Licencia $licencia): RedirectResponse
+    {
+        return $this->resolver($request, $licencia, Licencia::RECHAZADO);
+    }
+
+    /**
+     * Deja la solicitud en el estado decidido, en una sola consulta.
+     *
+     * Solo toca los días que siguen «Pendiente»: si otro usuario resolvió la
+     * misma solicitud mientras esta pantalla estaba abierta, su decisión no se
+     * pisa —se informa que no quedaba nada por resolver—.
+     */
+    private function resolver(RevisarLicenciaRequest $request, Licencia $licencia, string $estado): RedirectResponse
+    {
+        $afectados = Licencia::query()
+            ->deLaSolicitud($licencia)
+            ->pendientes()
+            ->update([
+                'estado' => $estado,
+                'observacion' => $request->validated('observacion'),
+                'revisadoPor_id' => $request->user()?->id,
+                'revisadoEn' => now(),
+            ]);
+
+        if ($afectados === 0) {
+            return back()->with('error', 'Esta solicitud ya había sido resuelta por otro usuario.');
+        }
+
+        $verbo = $estado === Licencia::APROBADO ? 'aprobó' : 'rechazó';
+        $mensaje = "Se {$verbo} la solicitud ({$afectados} día(s)).";
+
+        // Al rechazar se vuelve a la ficha del funcionario: el pedido quedó
+        // cerrado y ahí no queda nada por hacer, mientras que en su ficha se ve
+        // el resto de sus licencias. Al aprobar se queda donde está, para poder
+        // comprobar cómo quedaron los días.
+        return $estado === Licencia::RECHAZADO
+            ? redirect($this->fichaDelFuncionario($licencia))->with('estado', $mensaje)
+            : back()->with('estado', $mensaje);
+    }
+
+    /**
+     * Ficha del funcionario dueño de la licencia, abierta en la solapa de
+     * licencias.
+     *
+     * Se prefiere la ficha local cuando la persona está en `personas`; si no
+     * está —el padrón lo manda Mamoré y no todos tienen registro local— se va a
+     * la ficha por cédula, que no necesita fila en esta base.
+     */
+    private function fichaDelFuncionario(Licencia $licencia): string
+    {
+        $ci = trim((string) $licencia->ci);
+
+        // El ancla deja abierta la solapa de licencias al llegar.
+        return $licencia->persona
+            ? route('funcionarios.show', ['persona' => $licencia->persona]).'#licencias'
+            : route('funcionarios.mamore', ['ci' => $ci]).'#licencias';
     }
 
     /**
@@ -245,19 +361,41 @@ class LicenciaController extends Controller
     }
 
     /**
-     * Elimina (lógicamente) una licencia.
+     * Elimina (lógicamente) la solicitud entera: todos sus días.
      *
-     * El respaldo **no** se borra del bucket: la eliminación es lógica y la fila
-     * se puede restaurar, además de que otras filas del mismo alta comparten el
-     * archivo. Borrarlo dejaría a esas otras apuntando a la nada.
+     * Da de baja la solicitud y no la fila porque es lo que se ve en pantalla:
+     * borrar un día suelto de un pedido de cinco dejaría una licencia a la que
+     * le falta un día en el medio, sin que nadie lo haya decidido. En lo migrado
+     * del SIA, que no tiene `solicitud`, la fila **es** la licencia y se elimina
+     * una sola.
+     *
+     * Se recorre fila por fila en vez de un borrado masivo para que el trait de
+     * auditoría escriba quién la dio de baja y por qué en cada una.
+     *
+     * El respaldo **no** se borra del bucket: la eliminación es lógica y las
+     * filas se pueden restaurar.
      */
     public function destroy(Licencia $licencia): RedirectResponse
     {
         $this->authorize('delete', $licencia);
 
-        $licencia->delete();
+        // Qué no se da de baja y por qué lo decide el modelo, así el botón y el
+        // servidor usan el mismo criterio. No va en la policy: el `Gate::before`
+        // de `AppServiceProvider` le concede todo al rol super_admin sin llegar
+        // a ejecutarla.
+        if ($motivo = $licencia->motivoParaNoEliminar()) {
+            return back()->with('error', $motivo);
+        }
 
-        return back()->with('estado', 'Licencia eliminada.');
+        $dias = Licencia::query()->deLaSolicitud($licencia)->get();
+
+        foreach ($dias as $dia) {
+            $dia->delete();
+        }
+
+        return back()->with('estado', $dias->count() === 1
+            ? 'Licencia eliminada.'
+            : "Se eliminó la solicitud ({$dias->count()} días).");
     }
 
     /**
@@ -276,6 +414,20 @@ class LicenciaController extends Controller
         return $enlace === null
             ? back()->with('error', 'La licencia no tiene respaldo cargado, o el archivo ya no está disponible.')
             : redirect()->away($enlace);
+    }
+
+    /**
+     * Estado por el que se filtra el listado, o cadena vacía por «todos».
+     *
+     * Se valida contra la lista conocida en vez de pasarlo tal cual: es un valor
+     * del navegador que entra en un `where`, y así un estado inventado devuelve
+     * el listado completo en lugar de una tabla vacía sin explicación.
+     */
+    private function estado(Request $request): string
+    {
+        $estado = trim((string) $request->query('estado', ''));
+
+        return in_array($estado, Licencia::ESTADOS, true) ? $estado : '';
     }
 
     /**
@@ -307,19 +459,7 @@ class LicenciaController extends Controller
      */
     private function turnosDelRango(array $cis, Carbon $desde, Carbon $hasta, array $elegidas): Collection
     {
-        return AsignacionTurno::query()
-            ->with('turno')
-            ->whereHas('turno')
-            ->when($cis !== [], fn (Builder $query) => $query->whereIn('ci', $cis))
-            ->when($elegidas !== [], fn (Builder $query) => $query->whereIn('id', $elegidas))
-            // Solapamiento de rangos: la asignación sirve si empieza antes de
-            // que termine el pedido y termina después de que empiece. Con
-            // selección manual no se aplica, para permitir altas retroactivas.
-            ->when($elegidas === [], fn (Builder $query) => $query
-                ->where('desde', '<=', $hasta->copy()->endOfDay())
-                ->where('hasta', '>=', $desde))
-            ->get()
-            ->groupBy(fn (AsignacionTurno $asignacion): string => trim((string) $asignacion->ci));
+        return app(RegistroLicencia::class)->turnosDelRango($cis, $desde, $hasta, $elegidas);
     }
 
     /**

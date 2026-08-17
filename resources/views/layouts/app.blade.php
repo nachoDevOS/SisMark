@@ -101,8 +101,41 @@
         .cuenta__salir:hover { background: #fef2f2; }
         .cuenta__salir svg { width: 1.05rem; height: 1.05rem; }
 
+        /* Periodo de una licencia: las dos fechas pesan igual, con el «al»
+           chico entre medio. Apiladas porque la columna es angosta. */
+        .periodo { display: inline-flex; flex-direction: column; align-items: flex-start;
+            line-height: 1.25; font-weight: 700; white-space: nowrap; }
+        .periodo__al { font-weight: 400; font-size: .7rem; color: var(--muted); }
+
+        /* Aviso de solicitudes por resolver, a la izquierda de la cuenta */
+        /* `margin-left: auto` lo pega a la cuenta: la barra usa
+           `space-between`, y sin esto quedaba flotando en el medio. */
+        .aviso-pendientes { display: inline-flex; align-items: center; gap: .35rem; margin-left: auto;
+            padding: .2rem .5rem; border-radius: 9999px; background: #fef3c7; color: #92400e;
+            font-size: .75rem; font-weight: 600; border: 1px solid #fde68a; }
+        .aviso-pendientes:hover { background: #fde68a; }
+        .aviso-pendientes svg { width: .9rem; height: .9rem; }
+        .aviso-pendientes__conteo { display: inline-flex; align-items: center; justify-content: center;
+            min-width: 1.1rem; height: 1.1rem; padding: 0 .25rem; border-radius: 9999px;
+            background: var(--danger); color: #fff; font-size: .6875rem; font-weight: 700;
+            animation: tintineo 1.6s ease-in-out infinite; }
+
+        /* El conteo late para que se note desde cualquier pantalla. Va sobre el
+           número y no sobre todo el aviso: animar el bloque entero mueve el
+           renglón de la barra. `box-shadow` y `transform` no reflowean. */
+        @keyframes tintineo {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, .6); }
+            50%      { transform: scale(1.15); box-shadow: 0 0 0 .25rem rgba(239, 68, 68, 0); }
+        }
+
+        /* Quien pidió menos movimiento en el sistema operativo no lo recibe. */
+        @media (prefers-reduced-motion: reduce) {
+            .aviso-pendientes__conteo { animation: none; }
+        }
+
         @media (max-width: 640px) {
             .cuenta__nombre { display: none; }
+            .aviso-pendientes__texto { display: none; }
         }
 
         .contenedor { padding: 1.5rem; }
@@ -707,6 +740,20 @@
                 <x-heroicon-o-bars-3 />
             </button>
             <span></span>
+
+            {{-- Solicitudes de licencia esperando decisión. Solo aparece si hay
+                 alguna: un cero permanente deja de mirarse a los dos días. El
+                 número son solicitudes, no filas —un pedido de cinco días es
+                 uno—, y el enlace lleva al listado ya filtrado. --}}
+            @if (($licenciasPendientes ?? 0) > 0)
+                <a href="{{ route('licencias.index', ['estado' => \App\Models\Licencia::PENDIENTE]) }}"
+                   class="aviso-pendientes"
+                   title="{{ $licenciasPendientes }} solicitud(es) de licencia esperando tu decisión">
+                    <x-heroicon-o-clipboard-document-check />
+                    <span class="aviso-pendientes__texto">Licencias pendientes</span>
+                    <span class="aviso-pendientes__conteo">{{ $licenciasPendientes }}</span>
+                </a>
+            @endif
 
             {{-- Menú de la cuenta: quién está usando el sistema y cómo salir. --}}
             @auth

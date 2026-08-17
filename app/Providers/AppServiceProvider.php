@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Database\SqlServer2008Connection;
+use App\Models\Licencia;
 use App\Models\Role;
 use App\Policies\RolePolicy;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -11,7 +12,9 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\View\View as Vista;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -39,6 +42,18 @@ class AppServiceProvider extends ServiceProvider
 
         // super_admin puede todo, sin permisos individuales asignados.
         Gate::before(fn ($user): ?bool => $user->hasRole('super_admin') ? true : null);
+
+        // Cuántas solicitudes de licencia esperan decisión, para el aviso de la
+        // barra superior. Va por composer y no dentro del Blade para que la
+        // vista no consulte la base, y solo se cuenta si hay alguien en sesión
+        // que pueda resolverlas: al resto el aviso no le sirve de nada.
+        View::composer('layouts.app', function (Vista $vista): void {
+            $usuario = auth()->user();
+
+            $vista->with('licenciasPendientes', $usuario?->can('viewAny', Licencia::class)
+                ? Licencia::solicitudesPendientes()
+                : 0);
+        });
 
         // Límite de la API de asistencia. Va por clave y no por IP: el sistema
         // consumidor llama desde su servidor, así que todos sus pedidos —los de

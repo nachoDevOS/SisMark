@@ -14,10 +14,6 @@ use Illuminate\Validation\Rule;
  * del reloj, así que tiene que quedar escrito por qué se cargó a mano —papeleta,
  * olvido del funcionario, equipo caído—. Sin eso, en el informe procesado
  * aparece indistinguible de una marcación real y no hay a quién preguntarle.
- *
- * DESACTIVADO (2026-08-13): esta clase quedó sin uso. La acción que la recibía
- * —MarcacionController::store()— y su ruta están comentadas, igual que el
- * modal. El archivo se conserva entero para reponer la funcionalidad tal cual.
  */
 class StoreMarcacionRequest extends FormRequest
 {

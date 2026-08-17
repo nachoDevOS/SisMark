@@ -18,13 +18,7 @@
 
 {{-- Alta manual de una marcación (tipo M) sobre la base local. Vive en un
      componente porque se usa en dos lados: la pantalla de Marcaciones y la
-     solapa de marcaciones de la ficha del funcionario.
-
-     DESACTIVADO (2026-08-13): el componente quedó sin usar. Sus dos llamadas
-     están comentadas en marcaciones/index.blade.php y funcionarios/paneles.blade.php,
-     igual que la ruta `marcaciones.store`, MarcacionController::store() y
-     StoreMarcacionRequest. El archivo se conserva entero para reponerlo tal
-     cual; hoy no lo renderiza nadie. --}}
+     solapa de marcaciones de la ficha del funcionario. --}}
 @can('create', \App\Models\Asistencia::class)
     <div x-data="{ abierto: {{ $abierto }} }" {{ $attributes }}>
         <button type="button" class="btn" x-on:click="abierto = true">

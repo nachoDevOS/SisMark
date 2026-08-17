@@ -10,7 +10,9 @@ use App\Models\Turno;
 use App\Models\User;
 use App\Services\DirectorioMamore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 
 uses(RefreshDatabase::class);
@@ -341,7 +343,7 @@ test('un valor raro en el filtro de contrato cae en «todos»', function () {
         && ! str_contains($request->url(), 'contrato='));
 });
 
-test('la búsqueda Mamoré por varias palabras filtra localmente (nombre + apellido)', function () {
+test('la búsqueda Mamoré por varias palabras se delega entera a la API', function () {
     config()->set('services.mamore.url', 'http://mamore.test/api/personal');
     config()->set('services.mamore.key', 'secreta');
 
@@ -349,16 +351,35 @@ test('la búsqueda Mamoré por varias palabras filtra localmente (nombre + apell
         'mamore.test/api/personal/people*' => Http::response([
             'data' => [
                 ['id' => 1, 'ci' => '111', 'full_name' => 'SERGIO MILTON MORALES FLORES'],
-                ['id' => 2, 'ci' => '222', 'full_name' => 'JUANA MORALES PEREZ'],
             ],
-            'meta' => ['total' => 2, 'per_page' => 10, 'current_page' => 1],
+            'meta' => ['total' => 1, 'per_page' => 10, 'current_page' => 1],
         ], 200),
     ]);
 
     $this->get(route('funcionarios.list', ['q' => 'milton morales']))
         ->assertOk()
-        ->assertSee('SERGIO MILTON MORALES FLORES')
-        ->assertDontSee('JUANA MORALES PEREZ');
+        ->assertSee('SERGIO MILTON MORALES FLORES');
+
+    // Las dos palabras viajan juntas: filtrar de este lado obligaba a traer un
+    // lote acotado y perdía a quien cayera fuera de él.
+    Http::assertSent(fn ($request) => str_contains(urldecode($request->url()), 'search=milton morales'));
+});
+
+test('la búsqueda Mamoré de varias palabras pide una sola página, no un lote grande', function () {
+    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
+    config()->set('services.mamore.key', 'secreta');
+
+    Http::fake([
+        'mamore.test/api/personal/people*' => Http::response([
+            'data' => [],
+            'meta' => ['total' => 0, 'per_page' => 25, 'current_page' => 1],
+        ], 200),
+    ]);
+
+    $this->get(route('funcionarios.list', ['q' => 'maria rene', 'por_pagina' => 25]))->assertOk();
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'limit=25')
+        && ! str_contains($request->url(), 'limit=100'));
 });
 
 test('la fuente Mamoré avisa si la API responde con error', function () {
@@ -796,4 +817,32 @@ test('sin permiso sobre los turnos, la ficha no muestra el panel', function () {
         ->assertOk()
         ->assertDontSee('LUN: 08:00 - 16:00')
         ->assertDontSee(route('turnos-asignados.index', ['buscar' => '7633685']), escape: false);
+});
+
+test('la solapa de licencias de la ficha agrupa los días de un mismo pedido', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+    $turno = Turno::factory()->create(['dia' => '2']);
+    $solicitud = (string) Str::ulid();
+
+    // Tres días del mismo pedido: solo el primero abre la solicitud.
+    collect(range(0, 2))->each(fn (int $i) => Licencia::factory()->create([
+        'ci' => $persona->ci,
+        'turno_id' => $turno->id,
+        'fecha' => Carbon::parse('2026-08-03')->addWeeks($i)->toDateString(),
+        'solicitud' => $solicitud,
+        'motivo' => 'CONSULTA MEDICA',
+    ]));
+
+    $contenido = $this->get(route('funcionarios.licencias.list', ['ci' => $persona->ci]))
+        ->assertOk()
+        ->assertSee('03/08/2026')
+        ->assertSee('17/08/2026')
+        ->getContent();
+
+    // Una sola fila, no tres.
+    expect(substr_count($contenido, 'CONSULTA MEDICA'))->toBe(1);
+
+    // Y el aviso de baja dice cuántos días se van: `destroy` elimina la
+    // solicitud entera, así que prometer «la licencia del 03/08» sería mentir.
+    expect($contenido)->toContain('Se eliminan los 3 d');
 });

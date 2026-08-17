@@ -25,6 +25,19 @@
             registros
         </label>
 
+        {{-- Filtro de estado: es cómo Recursos Humanos encuentra las solicitudes
+             que llegaron de Mamoré y todavía esperan decisión, sin tener que
+             barrer un listado dominado por el histórico ya aprobado. --}}
+        <label class="tabla-filtros__mostrar">
+            Estado
+            <select id="f-estado" aria-label="Filtrar por estado de aprobación">
+                <option value="">Todos</option>
+                @foreach (\App\Models\Licencia::ESTADOS as $e)
+                    <option value="{{ $e }}" @selected($estado === $e)>{{ $e }}</option>
+                @endforeach
+            </select>
+        </label>
+
         <div class="buscador">
             <x-heroicon-o-magnifying-glass />
             <input type="text" id="f-buscar" value="{{ $busqueda }}" placeholder="Buscar por CI, funcionario o motivo…">
@@ -42,10 +55,12 @@
             const resultados = document.getElementById('div-results');
             const inputBuscar = document.getElementById('f-buscar');
             const selPaginate = document.getElementById('f-paginate');
+            const selEstado = document.getElementById('f-estado');
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
                     q: inputBuscar.value,
+                    estado: selEstado.value,
                     por_pagina: selPaginate.value,
                     page: page,
                 });
@@ -71,6 +86,7 @@
             });
 
             selPaginate.addEventListener('change', () => cargar(1));
+            selEstado.addEventListener('change', () => cargar(1));
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }

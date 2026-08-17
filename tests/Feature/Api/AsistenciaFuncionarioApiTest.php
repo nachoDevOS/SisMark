@@ -6,6 +6,9 @@ use App\Models\Licencia;
 use App\Models\Persona;
 use App\Models\Turno;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
@@ -277,4 +280,201 @@ test('una cédula sin marcaciones devuelve vacío y no un error', function () {
         ->assertOk()
         ->assertJsonCount(0, 'data')
         ->assertJsonPath('meta.funcionario.ci', '9999999');
+});
+
+/**
+ * Pedido de varios días: una `solicitud` compartida, y solo la primera fila la
+ * abre. Es lo que deja `RegistroLicencia`.
+ *
+ * @return Collection<int, Licencia>
+ */
+function pedidoDeVariosDias(array $fechas, string $motivo = 'CONSULTA MEDICA'): Collection
+{
+    $turno = Turno::query()->first();
+    $solicitud = (string) Str::ulid();
+
+    return collect($fechas)->values()->map(fn (string $fecha, int $i) => Licencia::factory()->create([
+        'ci' => '7633685',
+        'turno_id' => $turno->id,
+        'fecha' => $fecha,
+        'solicitud' => $solicitud,
+        'motivo' => $motivo,
+    ]));
+}
+
+test('un pedido de varios días llega como una sola licencia', function () {
+    funcionarioConAsistencia();
+    pedidoDeVariosDias(['2026-08-03', '2026-08-10', '2026-08-17']);
+
+    // Tres filas en la base, una licencia para el funcionario.
+    expect(Licencia::count())->toBe(3);
+
+    comoMamore('/api/v1/funcionarios/7633685/licencias?desde=2026-08-01&hasta=2026-08-31')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.fecha', '2026-08-03')
+        ->assertJsonPath('data.0.hasta', '2026-08-17')
+        ->assertJsonPath('data.0.dias', 3)
+        ->assertJsonPath('data.0.unSoloDia', false);
+});
+
+test('una licencia de un solo día se marca como tal', function () {
+    funcionarioConAsistencia();
+    pedidoDeVariosDias(['2026-08-03']);
+
+    comoMamore('/api/v1/funcionarios/7633685/licencias?desde=2026-08-01&hasta=2026-08-31')
+        ->assertOk()
+        ->assertJsonPath('data.0.dias', 1)
+        ->assertJsonPath('data.0.unSoloDia', true)
+        ->assertJsonPath('data.0.hasta', '2026-08-03');
+});
+
+test('un pedido que empezó antes del rango se ve entero y no cortado', function () {
+    funcionarioConAsistencia();
+    // Empieza en julio y sigue en agosto.
+    pedidoDeVariosDias(['2026-07-27', '2026-08-03']);
+
+    // Consultando agosto tiene que aparecer igual, con su periodo real: quien
+    // pidió del 27 de julio al 3 de agosto no pidió dos licencias.
+    comoMamore('/api/v1/funcionarios/7633685/licencias?desde=2026-08-01&hasta=2026-08-31')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.fecha', '2026-07-27')
+        ->assertJsonPath('data.0.hasta', '2026-08-03')
+        ->assertJsonPath('data.0.dias', 2);
+});
+
+test('un pedido fuera del rango no aparece', function () {
+    funcionarioConAsistencia();
+    pedidoDeVariosDias(['2026-06-01', '2026-06-08']);
+
+    comoMamore('/api/v1/funcionarios/7633685/licencias?desde=2026-08-01&hasta=2026-08-31')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});
+
+test('los días resueltos de distinta manera se avisan como parciales', function () {
+    funcionarioConAsistencia();
+    $dias = pedidoDeVariosDias(['2026-08-03', '2026-08-10']);
+
+    Licencia::whereKey($dias->last()->id)->update(['estado' => Licencia::RECHAZADO]);
+
+    comoMamore('/api/v1/funcionarios/7633685/licencias?desde=2026-08-01&hasta=2026-08-31')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.estadoMixto', true);
+});
+
+test('las licencias llegan de la más reciente a la más vieja', function () {
+    funcionarioConAsistencia();
+
+    // Tres pedidos sueltos, creados en desorden a propósito.
+    pedidoDeVariosDias(['2026-08-10'], 'DEL MEDIO');
+    pedidoDeVariosDias(['2026-08-24'], 'LA MAS NUEVA');
+    pedidoDeVariosDias(['2026-08-03'], 'LA MAS VIEJA');
+
+    comoMamore('/api/v1/funcionarios/7633685/licencias?desde=2026-08-01&hasta=2026-08-31')
+        ->assertOk()
+        // Lo último que pidió es lo que viene a mirar: en un rango largo, con
+        // orden cronológico quedaba al fondo de la tabla.
+        ->assertJsonPath('data.0.motivo', 'LA MAS NUEVA')
+        ->assertJsonPath('data.1.motivo', 'DEL MEDIO')
+        ->assertJsonPath('data.2.motivo', 'LA MAS VIEJA');
+});
+
+test('el respaldo de una licencia propia se entrega como enlace temporal', function () {
+    Storage::fake('s3');
+    funcionarioConAsistencia();
+
+    $licencia = pedidoDeVariosDias(['2026-08-03'])->first();
+    $licencia->update(['adjunto' => 'licencias/2026/7633685/x.pdf', 'adjuntoNombre' => 'certificado.pdf']);
+    Storage::disk('s3')->put('licencias/2026/7633685/x.pdf', 'contenido');
+
+    comoMamore("/api/v1/funcionarios/7633685/licencias/{$licencia->id}/respaldo")
+        ->assertOk()
+        ->assertJsonPath('nombre', 'certificado.pdf')
+        ->assertJsonStructure(['url', 'nombre']);
+});
+
+test('no se puede pedir el respaldo de la licencia de otro funcionario', function () {
+    Storage::fake('s3');
+    funcionarioConAsistencia();
+
+    // Licencia de otra persona, con su certificado médico.
+    $otro = Persona::factory()->create(['ci' => '6522875']);
+    $ajena = Licencia::factory()->create([
+        'ci' => $otro->ci,
+        'turno_id' => Turno::query()->first()->id,
+        'adjunto' => 'licencias/2026/6522875/y.pdf',
+        'adjuntoNombre' => 'certificado-ajeno.pdf',
+    ]);
+    Storage::disk('s3')->put('licencias/2026/6522875/y.pdf', 'contenido');
+
+    // El id es un número corrido: sin esta comprobación, subirlo de a uno daría
+    // los certificados de todo el personal.
+    comoMamore("/api/v1/funcionarios/7633685/licencias/{$ajena->id}/respaldo")
+        ->assertNotFound()
+        // Y el mensaje no confirma que exista: solo «no existe».
+        ->assertJsonMissing(['nombre' => 'certificado-ajeno.pdf']);
+});
+
+test('una licencia sin respaldo devuelve 404 y no un enlace roto', function () {
+    Storage::fake('s3');
+    funcionarioConAsistencia();
+
+    $licencia = pedidoDeVariosDias(['2026-08-03'])->first();
+
+    comoMamore("/api/v1/funcionarios/7633685/licencias/{$licencia->id}/respaldo")
+        ->assertNotFound();
+});
+
+test('sin la clave compartida no se entrega ningún respaldo', function () {
+    Storage::fake('s3');
+    funcionarioConAsistencia();
+
+    $licencia = pedidoDeVariosDias(['2026-08-03'])->first();
+
+    test()->getJson("/api/v1/funcionarios/7633685/licencias/{$licencia->id}/respaldo")
+        ->assertUnauthorized();
+});
+
+test('la ficha de una licencia trae el pedido y sus días', function () {
+    funcionarioConAsistencia();
+    $dias = pedidoDeVariosDias(['2026-08-03', '2026-08-10', '2026-08-17'], 'CONSULTA MEDICA');
+
+    comoMamore('/api/v1/funcionarios/7633685/licencias/'.$dias->first()->id)
+        ->assertOk()
+        ->assertJsonPath('licencia.fecha', '2026-08-03')
+        ->assertJsonPath('licencia.hasta', '2026-08-17')
+        ->assertJsonPath('licencia.dias', 3)
+        ->assertJsonPath('licencia.motivo', 'CONSULTA MEDICA')
+        ->assertJsonCount(3, 'dias')
+        ->assertJsonPath('dias.0.fecha', '2026-08-03')
+        ->assertJsonStructure(['dias' => [['fecha', 'diaSemana', 'turno', 'estado']]]);
+});
+
+test('se abre por cualquiera de sus días y siempre muestra el pedido entero', function () {
+    funcionarioConAsistencia();
+    $dias = pedidoDeVariosDias(['2026-08-03', '2026-08-10'], 'COMISION');
+
+    // Entrando por el segundo día se ve el pedido desde el primero.
+    comoMamore('/api/v1/funcionarios/7633685/licencias/'.$dias->last()->id)
+        ->assertOk()
+        ->assertJsonPath('licencia.fecha', '2026-08-03')
+        ->assertJsonCount(2, 'dias');
+});
+
+test('no se puede abrir la ficha de la licencia de otro funcionario', function () {
+    funcionarioConAsistencia();
+
+    $otro = Persona::factory()->create(['ci' => '6522875']);
+    $ajena = Licencia::factory()->create([
+        'ci' => $otro->ci,
+        'turno_id' => Turno::query()->first()->id,
+        'motivo' => 'RESERVADO',
+    ]);
+
+    comoMamore('/api/v1/funcionarios/7633685/licencias/'.$ajena->id)
+        ->assertNotFound()
+        ->assertJsonMissing(['motivo' => 'RESERVADO']);
 });

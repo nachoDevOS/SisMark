@@ -37,6 +37,11 @@ class RolePolicy
         'Create' => 'Crear',
         'Update' => 'Editar',
         'Delete' => 'Eliminar',
+        // Resolver una solicitud (aprobarla o rechazarla). Va aparte de
+        // `Update` porque no es editar el registro: una licencia aprobada
+        // justifica una ausencia, y quién puede decidir eso no tiene por qué
+        // ser quien puede corregir datos.
+        'Approve' => 'Aprobar',
         'Export' => 'Exportar',
         'Sync' => 'Sincronizar',
         'Clear' => 'Vaciar',
@@ -86,8 +91,10 @@ class RolePolicy
         ],
         'Licencia' => [
             'etiqueta' => 'Licencias',
-            // Sin edición: una licencia se anota o se elimina.
-            'habilidades' => ['ViewAny', 'Create', 'Delete'],
+            // Sin edición: una licencia se anota o se elimina. `View` es la
+            // ficha de la solicitud, y `Approve` la decisión sobre las que
+            // piden los funcionarios desde Mamoré y llegan «Pendiente».
+            'habilidades' => ['ViewAny', 'View', 'Create', 'Approve', 'Delete'],
         ],
         'DiaExcepcional' => [
             'etiqueta' => 'Días excepcionales',

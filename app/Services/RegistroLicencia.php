@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Models\AsignacionTurno;
 use App\Models\Licencia;
 use App\Models\Turno;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
  * Anota licencias expandiendo un rango de fechas contra los turnos asignados de
@@ -17,10 +19,13 @@ use Illuminate\Support\Collection;
  * más de 400 personas, así que la existencia se consulta de una sola vez y las
  * altas van con `insert()` por bloques, en vez de una consulta por fila.
  *
- * La clave natural de la tabla es ci + fecha + turno_id, así que un mismo día y
- * turno nunca se duplica: si ya existe se informa, y si estaba eliminado
- * lógicamente se restaura con los datos nuevos. El código de turno del SIA
- * (`idTurno`) no se escribe: el horario va por la FK.
+ * Un día con una licencia vigente no se vuelve a licenciar: se informa y se
+ * saltea. Lo **rechazado** y lo **dado de baja** no ocupan el día —se puede
+ * volver a pedir— y **nunca se reescriben**: quedan como historial de qué se
+ * pidió y cómo terminó. Por eso el pedido nuevo siempre es una fila nueva, y el
+ * índice único incluye `solicitud`.
+ *
+ * El código de turno del SIA (`idTurno`) no se escribe: el horario va por la FK.
  */
 class RegistroLicencia
 {
@@ -36,10 +41,42 @@ class RegistroLicencia
     private const LOTE = 500;
 
     /**
+     * Turnos asignados que caen dentro del rango, agrupados por carnet: es lo
+     * que hace licenciable a un funcionario en esas fechas.
+     *
+     * Vive acá y no en el controlador porque la usan la pantalla de Recursos
+     * Humanos y la API de solicitudes; la regla de solapamiento es sutil y dos
+     * copias que se despeguen licenciarían turnos distintos.
+     *
+     * Con `$cis` vacío no acota por carnet: el rango define a quiénes alcanza,
+     * que es como se anota un feriado para todo el personal.
+     *
+     * @param  list<string>  $cis
+     * @param  list<int>  $elegidas  asignaciones puntuales; sin ellas se toman todas las del rango
+     * @return Collection<string, Collection<int, AsignacionTurno>>
+     */
+    public function turnosDelRango(array $cis, Carbon $desde, Carbon $hasta, array $elegidas = []): Collection
+    {
+        return AsignacionTurno::query()
+            ->with('turno')
+            ->whereHas('turno')
+            ->when($cis !== [], fn (Builder $query) => $query->whereIn('ci', $cis))
+            ->when($elegidas !== [], fn (Builder $query) => $query->whereIn('id', $elegidas))
+            // Solapamiento de rangos: la asignación sirve si empieza antes de
+            // que termine el pedido y termina después de que empiece. Con
+            // selección manual no se aplica, para permitir altas retroactivas.
+            ->when($elegidas === [], fn (Builder $query) => $query
+                ->where('desde', '<=', $hasta->copy()->endOfDay())
+                ->where('hasta', '>=', $desde))
+            ->get()
+            ->groupBy(fn (AsignacionTurno $asignacion): string => trim((string) $asignacion->ci));
+    }
+
+    /**
      * Anota las licencias y devuelve el conteo por resultado.
      *
      * @param  Collection<string, Collection<int, AsignacionTurno>>  $asignacionesPorCi  turnos a licenciar, agrupados por carnet
-     * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int}  $datos
+     * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int, estado?: string, origen?: string}  $datos
      * @return array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, funcionarios: int}
      */
     public function anotar(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array $datos): array
@@ -65,6 +102,17 @@ class RegistroLicencia
             // de ellas sin un join en el listado.
             'adjunto' => $datos['adjunto'] ?? null,
             'adjuntoNombre' => $datos['adjuntoNombre'] ?? null,
+            // `Licencia::insert()` no dispara el modelo, así que el default de la
+            // columna no se aplica y hay que escribir el estado a mano.
+            //
+            // «Aprobado» por defecto: lo que anota Recursos Humanos desde el
+            // sistema surte efecto en el acto, como siempre. «Pendiente» lo pide
+            // explícitamente la API cuando la licencia la solicita el propio
+            // funcionario desde Mamoré y todavía nadie la revisó.
+            'estado' => $datos['estado'] ?? 'Aprobado',
+            // Por dónde entró. «propio» por defecto: es lo que corresponde a la
+            // pantalla de Recursos Humanos, que es quien más usa este servicio.
+            'origen' => $datos['origen'] ?? Licencia::ORIGEN_PROPIO,
         ];
 
         $candidatos = $this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo);
@@ -73,16 +121,24 @@ class RegistroLicencia
             return $conteo;
         }
 
-        $existentes = $this->existentes($asignacionesPorCi->keys()->all(), $desde, $hasta);
+        // Una solicitud por funcionario, no una por alta: un feriado alcanza a
+        // más de 400 personas y agruparlas todas bajo el mismo identificador
+        // dejaría el listado con una fila para 400 legajos, y la ficha —que
+        // muestra a una persona— sin saber a cuál.
+        $solicitudes = $this->solicitudes($asignacionesPorCi->keys());
+
+        // Solo lo que de verdad ocupa el día: lo vigente y sin rechazar. Lo
+        // rechazado y lo dado de baja no bloquean, y **no se tocan**: son el
+        // historial de lo que se pidió y de cómo se resolvió.
+        $ocupados = $this->ocupados($asignacionesPorCi->keys()->all(), $desde, $hasta);
 
         $aInsertar = [];
-        $aRestaurar = [];
         $alcanzados = [];
 
         foreach ($candidatos as $clave => $candidato) {
-            $existente = $existentes->get($clave);
-
-            if ($existente && $existente->deleted_at === null) {
+            // Un día ya licenciado no se pisa: o está justificado, o ya hay un
+            // pedido esperando decisión.
+            if ($ocupados->has($clave)) {
                 $conteo['existentes']++;
 
                 continue;
@@ -90,15 +146,17 @@ class RegistroLicencia
 
             $alcanzados[$candidato['ci']] = true;
 
-            if ($existente) {
-                $aRestaurar[] = $existente->id;
-
-                continue;
-            }
-
-            // insert() no dispara eventos de modelo, así que el autor y los
+            // Siempre una fila nueva, aunque para ese día haya un pedido
+            // rechazado o dado de baja: reescribir aquella fila borraría la
+            // constancia de que se pidió y de cómo se resolvió. Por eso el
+            // índice único incluye `solicitud` —ver la migración
+            // `agregar_solicitud_a_licencias`—, así dos pedidos distintos del
+            // mismo día conviven.
+            //
+            // `insert()` no dispara eventos de modelo, así que el autor y los
             // timestamps que normalmente pone el trait de auditoría van a mano.
             $aInsertar[] = $candidato + $comunes + [
+                'solicitud' => $solicitudes[$candidato['ci']],
                 'created_at' => $ahora,
                 'updated_at' => $ahora,
                 'registerUser_id' => $datos['usuarioId'] ?? null,
@@ -109,19 +167,26 @@ class RegistroLicencia
             Licencia::insert($bloque);
         }
 
-        foreach (array_chunk($aRestaurar, self::LOTE) as $bloque) {
-            Licencia::withTrashed()->whereIn('id', $bloque)->update($comunes + [
-                'deleted_at' => null,
-                'deleteUser_id' => null,
-                'deleteObservacion' => null,
-                'updated_at' => $ahora,
-            ]);
-        }
-
-        $conteo['creadas'] = count($aInsertar) + count($aRestaurar);
+        $conteo['creadas'] = count($aInsertar);
         $conteo['funcionarios'] = count($alcanzados);
 
         return $conteo;
+    }
+
+    /**
+     * Un identificador de solicitud por carnet alcanzado.
+     *
+     * ULID y no autoincremental: se genera en PHP antes del `insert()` masivo,
+     * sin ida y vuelta a la base para reservar el número.
+     *
+     * @param  Collection<int, mixed>  $cis
+     * @return array<string, string>
+     */
+    private function solicitudes(Collection $cis): array
+    {
+        return $cis
+            ->mapWithKeys(fn ($ci): array => [(string) $ci => (string) Str::ulid()])
+            ->all();
     }
 
     /**
@@ -175,19 +240,29 @@ class RegistroLicencia
     }
 
     /**
-     * Licencias que ya existen para esos funcionarios en el rango, indexadas por
-     * la clave natural. Incluye las eliminadas lógicamente: el índice único
-     * también las cuenta, así que hay que reusarlas en vez de insertar.
+     * Días que ya están ocupados para esos funcionarios dentro del rango,
+     * indexados por la clave natural.
+     *
+     * Solo cuenta lo que **de verdad ocupa** el día: lo vigente y sin rechazar.
+     *
+     * - Lo **rechazado** no ocupa nada: el pedido se resolvió que no, y el día
+     *   quedó libre para volver a pedirlo.
+     * - Lo **dado de baja** tampoco: la fila sobrevive como historial, pero no
+     *   licencia nada.
+     *
+     * Ninguna de las dos se reescribe. Son la constancia de qué se pidió y de
+     * cómo terminó, y el funcionario las ve en su perfil.
      *
      * @param  list<string>  $cis
      * @return Collection<string, Licencia>
      */
-    private function existentes(array $cis, Carbon $desde, Carbon $hasta): Collection
+    private function ocupados(array $cis, Carbon $desde, Carbon $hasta): Collection
     {
-        return Licencia::withTrashed()
+        return Licencia::query()
             ->whereIn('ci', $cis)
+            ->where('estado', '!=', Licencia::RECHAZADO)
             ->whereBetween('fecha', [$desde->toDateString(), $hasta->toDateString()])
-            ->get(['id', 'ci', 'fecha', 'turno_id', 'deleted_at'])
+            ->get(['id', 'ci', 'fecha', 'turno_id'])
             ->keyBy(fn (Licencia $licencia): string => self::clave(
                 trim((string) $licencia->ci),
                 $licencia->fecha->toDateString(),

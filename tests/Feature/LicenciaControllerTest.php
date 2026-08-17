@@ -9,9 +9,11 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 
 uses(RefreshDatabase::class);
@@ -662,7 +664,7 @@ test('no duplica una licencia ya registrada para el mismo día y turno', functio
     expect(Licencia::query()->count())->toBe(1);
 });
 
-test('reusa la licencia eliminada lógicamente en vez de romper el índice único', function () {
+test('una licencia dada de baja no se pisa: el pedido nuevo es otra fila', function () {
     [$persona, $asignacion] = funcionarioConTurno(dia: 2);
 
     $envio = [
@@ -684,9 +686,13 @@ test('reusa la licencia eliminada lógicamente en vez de romper el índice únic
 
     $licencia = Licencia::query()->firstOrFail();
 
-    expect(Licencia::withTrashed()->count())->toBe(1)
+    // La dada de baja queda como historial y el pedido nuevo entra aparte: por
+    // eso el índice único incluye `solicitud`.
+    expect(Licencia::withTrashed()->count())->toBe(2)
+        ->and(Licencia::count())->toBe(1)
         ->and($licencia->motivo)->toBe('COMISION')
-        ->and($licencia->trashed())->toBeFalse();
+        ->and($licencia->trashed())->toBeFalse()
+        ->and(Licencia::onlyTrashed()->firstOrFail()->motivo)->toBe('VACACION');
 });
 
 test('no anota nada si el rango cae fuera de la vigencia del turno asignado', function () {
@@ -1265,4 +1271,455 @@ test('un usuario sin permiso no puede entrar al listado ni anotar licencias', fu
     $this->post(route('licencias.store'), [
         'respaldo' => respaldoDePrueba(),
     ])->assertForbidden();
+});
+
+/**
+ * Solicitud hecha desde Mamoré: varias filas de la misma tanda —una por día y
+ * turno—, en «Pendiente» y sin usuario de SisMark detrás del alta.
+ *
+ * @return Collection<int, Licencia>
+ */
+function solicitudPendiente(string $ci = '7633685', int $dias = 3, string $origen = Licencia::ORIGEN_MAMORE): Collection
+{
+    Persona::factory()->create(['ci' => $ci, 'nombres' => 'IGNACIO', 'paterno' => 'MOLINA']);
+    $turno = Turno::factory()->create(['dia' => '2', 'nombreTurno' => 'LUN: 08:00 - 16:00']);
+
+    // `solicitud` es lo que agrupa la tanda: `RegistroLicencia` escribe el mismo
+    // ULID en todas las filas de un alta, por funcionario.
+    $solicitud = (string) Str::ulid();
+
+    $licencias = collect(range(0, $dias - 1))->map(fn (int $i) => Licencia::factory()->create([
+        'ci' => $ci,
+        'turno_id' => $turno->id,
+        'fecha' => Carbon::parse('2026-08-03')->addWeeks($i)->toDateString(),
+        'fechaPedido' => Carbon::parse('2026-08-15 09:12:00'),
+        'solicitud' => $solicitud,
+        'motivo' => 'CONSULTA MEDICA',
+        'usuario' => 'Ignacio Molina',
+        'estado' => Licencia::PENDIENTE,
+        'origen' => $origen,
+    ]));
+
+    // `RegistersUserEvents` escribe `registerUser_id` con el usuario en sesión
+    // al crear, así que el valor no se puede fijar desde la factory. En
+    // producción la API no pasa por ahí —usa `Licencia::insert()`, que no
+    // dispara eventos de modelo—, que es justo por qué la columna queda nula en
+    // lo que llega de Mamoré.
+    Licencia::whereIn('id', $licencias->pluck('id'))->update(['registerUser_id' => null]);
+
+    return $licencias->map->fresh();
+}
+
+test('la ficha muestra la solicitud entera, no solo el día que se abrió', function () {
+    $licencias = solicitudPendiente(dias: 3);
+
+    $this->get(route('licencias.show', $licencias->first()))
+        ->assertOk()
+        ->assertSee('CONSULTA MEDICA')
+        // Los tres días de la tanda, no solo el de la fila abierta.
+        ->assertSee('03/08/2026')
+        ->assertSee('10/08/2026')
+        ->assertSee('17/08/2026')
+        // Y de dónde vino el pedido, que ahora lo dice la columna `origen`.
+        ->assertSee('Mamoré')
+        ->assertSee('Aprobar 3 día(s)');
+});
+
+test('aprobar resuelve todos los días pendientes de la solicitud', function () {
+    $licencias = solicitudPendiente(dias: 3);
+
+    $this->patch(route('licencias.aprobar', $licencias->first()))
+        ->assertRedirect()
+        ->assertSessionHas('estado');
+
+    expect(Licencia::where('estado', Licencia::APROBADO)->count())->toBe(3);
+
+    $aprobada = Licencia::firstOrFail();
+
+    expect($aprobada->revisadoPor_id)->toBe(auth()->id())
+        ->and($aprobada->revisadoEn)->not->toBeNull();
+});
+
+test('la aprobación no alcanza a otra solicitud del mismo funcionario', function () {
+    $primera = solicitudPendiente(dias: 2);
+
+    // Misma persona y mismo turno, pero pedida en otro momento: es otra tanda.
+    $otra = Licencia::factory()->create([
+        'ci' => $primera->first()->ci,
+        'turno_id' => $primera->first()->turno_id,
+        'fecha' => '2026-09-07',
+        'fechaPedido' => Carbon::parse('2026-09-01 08:00:00'),
+        'estado' => Licencia::PENDIENTE,
+        'registerUser_id' => null,
+    ]);
+
+    $this->patch(route('licencias.aprobar', $primera->first()))->assertRedirect();
+
+    expect($otra->fresh()->estado)->toBe(Licencia::PENDIENTE);
+});
+
+test('rechazar exige el motivo y se lo guarda para el funcionario', function () {
+    $licencias = solicitudPendiente(dias: 2);
+
+    // Sin motivo no se resuelve nada: el funcionario vería «Rechazado» sin saber
+    // qué le faltó.
+    $this->patch(route('licencias.rechazar', $licencias->first()))
+        ->assertSessionHasErrors('observacion');
+
+    expect(Licencia::where('estado', Licencia::PENDIENTE)->count())->toBe(2);
+
+    $this->patch(route('licencias.rechazar', $licencias->first()), [
+        'observacion' => 'Falta el certificado médico.',
+    ])->assertRedirect();
+
+    expect(Licencia::where('estado', Licencia::RECHAZADO)->count())->toBe(2)
+        ->and(Licencia::firstOrFail()->observacion)->toBe('Falta el certificado médico.');
+});
+
+test('lo ya resuelto no se vuelve a aprobar desde la ficha', function () {
+    $licencias = solicitudPendiente(dias: 2);
+
+    $this->patch(route('licencias.aprobar', $licencias->first()))->assertRedirect();
+
+    // La política solo autoriza sobre lo «Pendiente»: aprobar hacia atrás
+    // cambiaría reportes que Recursos Humanos ya firmó.
+    $this->patch(route('licencias.rechazar', $licencias->first()->fresh()), [
+        'observacion' => 'Me arrepentí.',
+    ])->assertForbidden();
+
+    expect(Licencia::where('estado', Licencia::APROBADO)->count())->toBe(2);
+});
+
+test('la ficha de una licencia ya aprobada no ofrece resolverla', function () {
+    $licencia = Licencia::factory()->create(['estado' => Licencia::APROBADO]);
+
+    $this->get(route('licencias.show', $licencia))
+        ->assertOk()
+        ->assertDontSee('Resolver la solicitud');
+});
+
+test('el listado filtra por estado', function () {
+    Licencia::factory()->create(['motivo' => 'PEDIDO NUEVO', 'estado' => Licencia::PENDIENTE]);
+    Licencia::factory()->create(['motivo' => 'FERIADO VIEJO', 'estado' => Licencia::APROBADO]);
+
+    $this->get(route('licencias.list', ['estado' => Licencia::PENDIENTE]))
+        ->assertOk()
+        ->assertSee('PEDIDO NUEVO')
+        ->assertDontSee('FERIADO VIEJO');
+
+    // Un estado inventado devuelve el listado completo, no una tabla vacía sin
+    // explicación.
+    $this->get(route('licencias.list', ['estado' => 'Inventado']))
+        ->assertOk()
+        ->assertSee('PEDIDO NUEVO')
+        ->assertSee('FERIADO VIEJO');
+});
+
+test('sin permiso de aprobación no se resuelve ninguna solicitud', function () {
+    $licencias = solicitudPendiente();
+
+    $usuario = User::factory()->create();
+    $usuario->givePermissionTo(Permission::firstOrCreate(['name' => 'View:Licencia', 'guard_name' => 'web']));
+    $this->actingAs($usuario);
+
+    // Puede mirar la solicitud, pero no decidirla.
+    $this->get(route('licencias.show', $licencias->first()))->assertOk();
+    $this->patch(route('licencias.aprobar', $licencias->first()))->assertForbidden();
+
+    expect(Licencia::where('estado', Licencia::PENDIENTE)->count())->toBe($licencias->count());
+});
+
+test('un alta de varios días sale como una sola licencia en el listado', function () {
+    [$persona, $asignacion] = funcionarioConTurno(dia: 2); // martes
+
+    // `dia = 2` es lunes en la convención del SIA (1 = Domingo). Del 3 al 17 de
+    // agosto de 2026 caen tres: el alta genera tres filas, una por día y turno.
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno',
+        'ci' => $persona->ci,
+        'desde' => '2026-08-03',
+        'hasta' => '2026-08-17',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'CONSULTA MEDICA',
+    ])->assertRedirect();
+
+    expect(Licencia::count())->toBe(3)
+        // Las tres comparten la solicitud: es lo que las agrupa.
+        ->and(Licencia::distinct()->pluck('solicitud'))->toHaveCount(1)
+        ->and(Licencia::first()->solicitud)->not->toBeNull();
+
+    // Y en pantalla son una sola fila, con el periodo completo.
+    $contenido = $this->get(route('licencias.list'))
+        ->assertOk()
+        ->assertSee('03/08/2026')
+        ->assertSee('17/08/2026')
+        ->getContent();
+
+    // El motivo aparece una sola vez: sin agrupar saldría tres.
+    expect(substr_count($contenido, 'CONSULTA MEDICA'))->toBe(1);
+});
+
+test('un alta para varios funcionarios da una solicitud por cada uno', function () {
+    // Un solo turno compartido: `funcionarioConTurno` fija `idTurno` a partir
+    // del día, y crear dos con el mismo día chocaría contra su índice único.
+    $turno = Turno::factory()->create(['dia' => '2', 'nombreTurno' => 'LUN: 08:00 - 16:00']);
+
+    $cis = collect(['7633685', '6522875'])->each(function (string $ci) use ($turno): void {
+        Persona::factory()->create(['ci' => $ci]);
+        AsignacionTurno::factory()->create([
+            'ci' => $ci,
+            'turno_id' => $turno->id,
+            'idTurno' => $turno->idTurno,
+            'desde' => '2020-01-01 00:00:00',
+            'hasta' => '2030-12-31 00:00:00',
+        ]);
+    });
+
+    [$uno, $otro] = [(object) ['ci' => $cis[0]], (object) ['ci' => $cis[1]]];
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'varios',
+        'cis' => [$uno->ci, $otro->ci],
+        'desde' => '2026-08-03',
+        'hasta' => '2026-08-10',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'FERIADO DEPARTAMENTAL',
+    ])->assertRedirect();
+
+    // Dos días × dos funcionarios = cuatro filas, pero dos solicitudes: la
+    // licencia es de cada persona, no del alta.
+    expect(Licencia::count())->toBe(4)
+        ->and(Licencia::distinct()->pluck('solicitud'))->toHaveCount(2);
+
+    foreach ([$uno->ci, $otro->ci] as $ci) {
+        expect(Licencia::where('ci', $ci)->distinct()->pluck('solicitud'))->toHaveCount(1);
+    }
+});
+
+test('lo migrado del SIA no se agrupa: cada fila es su propia licencia', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+    $turnos = collect([2, 3, 4])->map(fn (int $d) => Turno::factory()->create(['dia' => (string) $d]));
+
+    // Mismo `fechaPedido` —el 62% del histórico ni siquiera trae la hora— pero
+    // cada fila con su propia `solicitud`, que es como la dejó la migración de
+    // relleno: en el SIA la fila es la licencia.
+    $historicas = $turnos->map(fn ($turno, $i) => Licencia::factory()->create([
+        'ci' => $persona->ci,
+        'turno_id' => $turno->id,
+        'fecha' => Carbon::parse('2021-06-14')->addDays($i)->toDateString(),
+        'fechaPedido' => Carbon::parse('2021-06-14 00:00:00'),
+        'motivo' => 'HISTORICO SIA',
+    ]));
+
+    // La ficha de una histórica muestra esa fila y nada más: agrupar por
+    // `fechaPedido` traería 10.308 filas de hasta 20 años de diferencia.
+    $this->get(route('licencias.show', $historicas->first()))
+        ->assertOk()
+        ->assertSee('14/06/2021')
+        ->assertDontSee('15/06/2021');
+
+    // Y el listado las muestra sueltas: tres filas, no una.
+    $contenido = $this->get(route('licencias.list'))->getContent();
+    expect(substr_count($contenido, 'HISTORICO SIA'))->toBe(3);
+});
+
+test('la baja desde la ficha elimina la solicitud entera', function () {
+    // Cargada en SisMark: lo que viene de Mamoré no se elimina, se resuelve.
+    $licencias = solicitudPendiente(dias: 3, origen: Licencia::ORIGEN_PROPIO);
+
+    $this->delete(route('licencias.destroy', $licencias->first()))
+        ->assertRedirect()
+        ->assertSessionHas('estado');
+
+    expect(Licencia::count())->toBe(0)
+        ->and(Licencia::withTrashed()->count())->toBe(3);
+});
+
+test('la baja de una licencia histórica no arrastra a las demás', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+    $turno = Turno::factory()->create(['dia' => '2']);
+
+    $primera = Licencia::factory()->create([
+        'ci' => $persona->ci, 'turno_id' => $turno->id,
+        'fecha' => '2021-06-14', 'fechaPedido' => '2021-06-14 00:00:00', 'solicitud' => null,
+    ]);
+    Licencia::factory()->create([
+        'ci' => $persona->ci, 'turno_id' => $turno->id,
+        'fecha' => '2021-06-21', 'fechaPedido' => '2021-06-14 00:00:00', 'solicitud' => null,
+    ]);
+
+    $this->delete(route('licencias.destroy', $primera))->assertRedirect();
+
+    expect(Licencia::count())->toBe(1);
+});
+
+test('el listado agrupado pagina por solicitud y no por día', function () {
+    // 12 solicitudes de 2 días = 24 filas en la base. Con 10 por página (el
+    // default), agrupando son 2 páginas; sin agrupar serían 3.
+    collect(range(1, 12))->each(fn (int $i) => solicitudPendiente(ci: '90000'.$i, dias: 2));
+
+    expect(Licencia::count())->toBe(24);
+
+    $this->get(route('licencias.list'))
+        ->assertOk()
+        ->assertSee('page=2')
+        ->assertDontSee('page=3');
+});
+
+test('una licencia rechazada no se puede eliminar', function () {
+    $licencias = solicitudPendiente(dias: 2);
+
+    $this->patch(route('licencias.rechazar', $licencias->first()), [
+        'observacion' => 'Falta el certificado.',
+    ])->assertRedirect();
+
+    // La fila es la constancia de que se pidió y se negó, con su motivo:
+    // borrarla dejaría al funcionario sin saber qué pasó.
+    $this->delete(route('licencias.destroy', $licencias->first()->fresh()))
+        ->assertRedirect()
+        ->assertSessionHas('error');
+
+    expect(Licencia::count())->toBe(2)
+        ->and(Licencia::withTrashed()->whereNotNull('deleted_at')->count())->toBe(0);
+});
+
+test('el listado no ofrece eliminar una licencia rechazada', function () {
+    // Cargada acá, así que antes de rechazarla sí se puede eliminar: lo que se
+    // prueba es la regla del rechazo, no la del origen.
+    $licencias = solicitudPendiente(dias: 1, origen: Licencia::ORIGEN_PROPIO);
+
+    $contenido = $this->get(route('licencias.list'))->assertOk()->getContent();
+    expect($contenido)->toContain('$store.eliminar.abrir(');
+
+    $this->patch(route('licencias.rechazar', $licencias->first()), ['observacion' => 'No.'])->assertRedirect();
+
+    $contenido = $this->get(route('licencias.list'))->assertOk()->getContent();
+    expect($contenido)->not->toContain('$store.eliminar.abrir(');
+});
+
+test('el listado dice de dónde salió cada licencia', function () {
+    [$persona] = funcionarioConTurno(dia: 2);
+
+    // Lo que carga Recursos Humanos acá es «Propio».
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno',
+        'ci' => $persona->ci,
+        'desde' => '2026-08-03',
+        'hasta' => '2026-08-03',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'CARGADA EN SISMARK',
+    ])->assertRedirect();
+
+    expect(Licencia::firstOrFail()->origen)->toBe(Licencia::ORIGEN_PROPIO);
+
+    $this->get(route('licencias.list'))->assertOk()->assertSee('Propio');
+});
+
+test('una licencia pedida desde Mamoré no se elimina, se resuelve', function () {
+    $licencias = solicitudPendiente(dias: 2);
+
+    expect($licencias->first()->origen)->toBe(Licencia::ORIGEN_MAMORE);
+
+    $this->delete(route('licencias.destroy', $licencias->first()))
+        ->assertRedirect()
+        ->assertSessionHas('error');
+
+    expect(Licencia::count())->toBe(2);
+
+    // Lo que sí se puede es resolverla.
+    $this->patch(route('licencias.aprobar', $licencias->first()))->assertRedirect();
+
+    expect(Licencia::where('estado', Licencia::APROBADO)->count())->toBe(2);
+});
+
+test('aprobada desde Mamoré tampoco se elimina', function () {
+    $licencias = solicitudPendiente(dias: 1);
+    $this->patch(route('licencias.aprobar', $licencias->first()))->assertRedirect();
+
+    $this->delete(route('licencias.destroy', $licencias->first()->fresh()))
+        ->assertRedirect()
+        ->assertSessionHas('error');
+
+    expect(Licencia::count())->toBe(1);
+});
+
+test('el listado no ofrece eliminar lo que vino de Mamoré', function () {
+    solicitudPendiente(dias: 1);
+
+    $contenido = $this->get(route('licencias.list'))->assertOk()->getContent();
+
+    expect($contenido)->toContain('Mamoré')
+        ->and($contenido)->not->toContain('$store.eliminar.abrir(');
+});
+
+test('al rechazar se vuelve a la ficha del funcionario', function () {
+    $licencias = solicitudPendiente(dias: 2);
+    $persona = Persona::where('ci', $licencias->first()->ci)->firstOrFail();
+
+    // El pedido quedó cerrado: lo que sigue es mirar el resto de sus licencias.
+    $this->patch(route('licencias.rechazar', $licencias->first()), [
+        'observacion' => 'No corresponde.',
+    ])->assertRedirect(route('funcionarios.show', ['persona' => $persona]).'#licencias')
+        ->assertSessionHas('estado');
+
+    expect(Licencia::where('estado', Licencia::RECHAZADO)->count())->toBe(2);
+});
+
+test('sin registro local, el rechazo vuelve a la ficha por cédula', function () {
+    $licencias = solicitudPendiente(dias: 1);
+    // El padrón lo manda Mamoré: no todos tienen fila en `personas`.
+    Persona::where('ci', $licencias->first()->ci)->forceDelete();
+
+    $this->patch(route('licencias.rechazar', $licencias->first()->fresh()), [
+        'observacion' => 'No corresponde.',
+    ])->assertRedirect(route('funcionarios.mamore', ['ci' => '7633685']).'#licencias');
+});
+
+test('al aprobar se queda en la ficha de la solicitud', function () {
+    $licencias = solicitudPendiente(dias: 2);
+
+    // Se queda donde está, para poder comprobar cómo quedaron los días.
+    $this->from(route('licencias.show', $licencias->first()))
+        ->patch(route('licencias.aprobar', $licencias->first()))
+        ->assertRedirect(route('licencias.show', $licencias->first()));
+});
+
+test('la barra avisa cuántas solicitudes esperan decisión', function () {
+    // Un pedido de tres días es **una** solicitud, no tres.
+    solicitudPendiente(ci: '7633685', dias: 3);
+    solicitudPendiente(ci: '6522875', dias: 2);
+
+    expect(Licencia::count())->toBe(5)
+        ->and(Licencia::solicitudesPendientes())->toBe(2);
+
+    $this->get(route('licencias.index'))
+        ->assertOk()
+        ->assertSee('Licencias pendientes')
+        // El enlace lleva al listado ya filtrado.
+        ->assertSee(route('licencias.index', ['estado' => Licencia::PENDIENTE]), escape: false);
+});
+
+test('sin solicitudes pendientes no se muestra el aviso', function () {
+    $licencias = solicitudPendiente(dias: 1);
+    $this->patch(route('licencias.aprobar', $licencias->first()))->assertRedirect();
+
+    // Un cero permanente deja de mirarse: si no hay nada, no aparece.
+    expect(Licencia::solicitudesPendientes())->toBe(0);
+
+    $this->get(route('licencias.index'))->assertOk()->assertDontSee('Licencias pendientes');
+});
+
+test('quien no puede ver licencias no recibe el aviso', function () {
+    solicitudPendiente(dias: 1);
+
+    $usuario = User::factory()->create();
+    $usuario->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:Persona', 'guard_name' => 'web']));
+
+    // El aviso solo le sirve a quien puede resolverlas.
+    $this->actingAs($usuario)->get(route('funcionarios.index'))
+        ->assertOk()
+        ->assertDontSee('Licencias pendientes');
 });

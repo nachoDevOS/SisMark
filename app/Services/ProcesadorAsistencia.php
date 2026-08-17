@@ -789,6 +789,11 @@ class ProcesadorAsistencia
     {
         return Licencia::query()
             ->where('ci', $ci)
+            // Solo las aprobadas justifican la ausencia. Una solicitud que el
+            // funcionario cargó desde Mamoré y que Recursos Humanos todavía no
+            // miró no puede taparle la falta, y una rechazada menos: alcanzaría
+            // con pedir una licencia para que el día dejara de contar.
+            ->where('estado', 'Aprobado')
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)
             ->get()

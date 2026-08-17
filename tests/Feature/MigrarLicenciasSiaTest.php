@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Licencia;
 use App\Models\Sia\DiaTurno;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -121,4 +122,54 @@ test('no escribe sobre la base del SIA (origen intacto)', function () {
     $this->artisan('sia:migrar-licencias')->assertSuccessful();
 
     expect(DB::connection('sia')->table('Licencias')->count())->toBe(1);
+});
+
+test('los días de un mismo pedido del SIA quedan en una sola solicitud', function () {
+    // Mismo funcionario, mismo momento del pedido y mismo motivo: en el SIA eso
+    // es UNA licencia partida en un día por fila.
+    foreach (['2026-06-22', '2026-06-23', '2026-06-24'] as $dia) {
+        insertarLicenciaSia(['Fecha' => $dia.' 00:00:00']);
+    }
+
+    // Otro pedido del mismo funcionario, en otro momento.
+    insertarLicenciaSia(['Fecha' => '2026-07-06 00:00:00', 'FechaPedido' => '2026-07-01 08:00:00']);
+    // Y otro con el mismo momento pero distinto motivo.
+    insertarLicenciaSia(['Fecha' => '2026-07-07 00:00:00', 'Motivo' => 'VACACION']);
+
+    $this->artisan('sia:migrar-licencias')->assertSuccessful();
+
+    expect(Licencia::count())->toBe(5)
+        ->and(Licencia::distinct()->count('solicitud'))->toBe(3);
+
+    // Los tres días del primer pedido comparten solicitud.
+    $comision = Licencia::where('motivo', 'COMISION')->whereBetween('fecha', ['2026-06-22', '2026-06-24'])->get();
+
+    expect($comision)->toHaveCount(3)
+        ->and($comision->pluck('solicitud')->unique())->toHaveCount(1);
+});
+
+test('reejecutar la copia no le cambia la solicitud a lo ya migrado', function () {
+    insertarLicenciaSia();
+    insertarLicenciaSia(['Fecha' => '2026-06-23 00:00:00']);
+
+    $this->artisan('sia:migrar-licencias')->assertSuccessful();
+    $antes = Licencia::orderBy('fecha')->pluck('solicitud');
+
+    // El identificador se deriva de la clave y no se sortea: la segunda corrida
+    // llega al mismo valor, así que los agrupamientos no se mueven.
+    $this->artisan('sia:migrar-licencias')->assertSuccessful();
+
+    expect(Licencia::count())->toBe(2)
+        ->and(Licencia::orderBy('fecha')->pluck('solicitud')->all())->toBe($antes->all());
+});
+
+test('licencias de funcionarios distintos no comparten solicitud', function () {
+    // Un feriado se anota para todos con el mismo momento y motivo: cada
+    // funcionario tiene que quedar con su propia licencia.
+    insertarLicenciaSia(['IdPersona' => '10790063']);
+    insertarLicenciaSia(['IdPersona' => '4191164', 'IdTurno' => 'EKX']);
+
+    $this->artisan('sia:migrar-licencias')->assertSuccessful();
+
+    expect(Licencia::distinct()->count('solicitud'))->toBe(2);
 });

@@ -33,16 +33,21 @@ class MigrarLicenciasSia extends Command
     ];
 
     /**
-     * Clave natural de una licencia (una por funcionario, día y turno). Es por
+     * Clave natural de una licencia: funcionario, día, turno y **pedido**. Es por
      * lo que deduplica el upsert. Solo columnas NOT NULL: en un índice único de
      * MySQL, varios NULL cuentan como distintos y romperían la idempotencia.
+     *
+     * `solicitud` entra en la clave porque un día puede tener más de un pedido
+     * —uno rechazado y otro nuevo—, y los dos se conservan. Acá no rompe la
+     * idempotencia porque el identificador del SIA se **deriva** de la fila
+     * (`ci|fechaPedido|motivo`): reejecutar la copia llega siempre al mismo valor.
      *
      * El turno va por la FK `turno_id`, no por el código del SIA: `idTurno` se
      * copia pero solo como dato histórico, ya no identifica la fila.
      *
      * @var list<string>
      */
-    private const CLAVE = ['ci', 'fecha', 'turno_id'];
+    private const CLAVE = ['ci', 'fecha', 'turno_id', 'solicitud'];
 
     /**
      * Copia las licencias del SIA a la tabla local `licencias`. Idempotente:
@@ -130,6 +135,44 @@ class MigrarLicenciasSia extends Command
     }
 
     /**
+     * A qué solicitud pertenece una fila del SIA.
+     *
+     * El SIA no tiene noción de «un pedido de varios días»: guarda una fila por
+     * día y turno, igual que acá. Lo que sí conserva es de qué alta salió cada
+     * una —mismo carnet, mismo momento del pedido y mismo motivo—, y eso alcanza
+     * para reconstruir el pedido.
+     *
+     * Medido sobre las 1.110.346 filas reales, la clave agrupa bien: 256.422
+     * solicitudes, 4,3 filas de promedio. Los grupos grandes son licencias que de
+     * verdad lo son —«CUARENTENA TOTAL» de abril a junio de 2020, 117 filas; un
+     * memorándum retroactivo de 20 años, 10.308—, no mezclas de pedidos
+     * distintos.
+     *
+     * ---
+     * **El identificador se deriva de la clave, no se sortea.**
+     *
+     * Con un ULID por fila habría que arrastrar un mapa de 256.422 entradas
+     * durante toda la copia, y reejecutarla cambiaría los agrupamientos. Un
+     * `sha2` de la clave es estable entre corridas y no necesita memoria: la
+     * misma licencia del SIA cae siempre en la misma solicitud.
+     * ---
+     *
+     * @param  array<string, mixed>  $local
+     */
+    private static function solicitudDelSia(array $local): string
+    {
+        $clave = implode('|', [
+            trim((string) ($local['ci'] ?? '')),
+            (string) ($local['fechaPedido'] ?? ''),
+            trim((string) ($local['motivo'] ?? '')),
+        ]);
+
+        // 26 caracteres, el ancho de la columna. Son 104 bits: la probabilidad de
+        // que dos licencias distintas caigan en el mismo valor es despreciable.
+        return substr(hash('sha256', $clave), 0, 26);
+    }
+
+    /**
      * Traduce una fila del SIA a la fila local (renombra columnas, recorta el
      * padding de los char() y descarta la hora de `fecha`).
      *
@@ -151,6 +194,9 @@ class MigrarLicenciasSia extends Command
         if ($local['fecha'] !== null) {
             $local['fecha'] = Carbon::parse($local['fecha'])->toDateString();
         }
+
+        $local['solicitud'] = self::solicitudDelSia($local);
+        $local['origen'] = 'sia';
 
         return $local;
     }

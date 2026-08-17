@@ -10,6 +10,7 @@ use App\Models\Asistencia;
 use App\Models\Licencia;
 use App\Services\ProcesadorAsistencia;
 use App\Services\ResolutorNombres;
+use App\Services\RespaldoDocumento;
 use App\Services\ResumenEscritorio;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -122,22 +123,140 @@ class AsistenciaFuncionarioController extends Controller
     }
 
     /**
-     * Licencias del funcionario en el rango.
+     * Licencias del funcionario en el rango, **una por pedido**.
+     *
+     * Un alta expande el rango a una fila por día y turno, así que un permiso
+     * del 14 al 15 de agosto son dos filas. Devolverlas sueltas le mostraba al
+     * funcionario dos licencias donde pidió una; se agrupan por `solicitud`,
+     * igual que las pantallas de Recursos Humanos.
+     *
+     * El rango se aplica **para elegir qué solicitudes entran**, no para
+     * recortarlas: si un permiso empezó en julio y sigue en agosto, quien
+     * consulta agosto tiene que verlo entero y no un pedazo. Por eso las
+     * solicitudes se buscan por sus días dentro del rango y después se traen
+     * completas.
      */
     public function licencias(Request $request, string $ci): AnonymousResourceCollection
     {
         [$ci, $desde, $hasta] = $this->parametros($request, $ci);
 
-        $licencias = Licencia::query()
-            ->with('turno')
+        $solicitudes = Licencia::query()
             ->where('ci', $ci)
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)
-            ->orderBy('fecha')
+            ->distinct()
+            ->pluck('solicitud');
+
+        $licencias = Licencia::query()
+            ->with('turno')
+            ->whereIn('solicitud', $solicitudes)
+            // La fila que abre cada pedido: la que lleva la fecha de inicio.
+            ->iniciosDeSolicitud()
+            // Lo más reciente primero, igual que el listado de Recursos
+            // Humanos: lo que el funcionario acaba de pedir es lo que viene a
+            // mirar, y en un rango largo quedaba al fondo de la tabla.
+            ->orderByDesc('fecha')
             ->get();
+
+        // Hasta qué día llega cada pedido y cuántos días abarca. Se cuelga de
+        // cada modelo para que el recurso lo encuentre sin recibir un mapa.
+        $resumen = Licencia::resumenDe($solicitudes);
+
+        $licencias->each(function (Licencia $licencia) use ($resumen): void {
+            $datos = $resumen[$licencia->solicitud] ?? null;
+
+            $licencia->hastaSolicitud = $datos->hasta ?? $licencia->fecha?->toDateString();
+            $licencia->diasSolicitud = (int) ($datos->dias ?? 1);
+            $licencia->estadosSolicitud = (int) ($datos->estados ?? 1);
+        });
 
         return LicenciaApiResource::collection($licencias)
             ->additional($this->meta($ci, $desde, $hasta));
+    }
+
+    /**
+     * Ficha de una licencia propia: el pedido y el desglose día por día.
+     *
+     * Es lo que la pantalla de Recursos Humanos muestra al abrir una solicitud,
+     * recortado a lo que le sirve al funcionario: no van los avisos internos ni
+     * quién la revisó, solo qué pidió, qué días abarcó y en qué quedó.
+     *
+     * Se comprueba que la licencia sea de esa cédula, por lo mismo que el
+     * respaldo: acá el identificador es el id de una fila, un número corrido.
+     */
+    public function licencia(string $ci, Licencia $licencia): JsonResponse
+    {
+        $ci = trim($ci);
+
+        // 404 y no 403: que el mensaje no confirme que existe una licencia
+        // ajena con ese número.
+        if ($ci === '' || trim((string) $licencia->ci) !== $ci) {
+            return response()->json(['message' => 'La licencia no existe.'], 404);
+        }
+
+        $dias = Licencia::query()
+            ->with('turno')
+            ->deLaSolicitud($licencia)
+            ->orderBy('fecha')
+            ->get();
+
+        // El pedido se describe con la fila que lo abre, que es la que el
+        // listado muestra: si se entró por otro día, igual se ve el pedido.
+        $inicio = $dias->first() ?? $licencia;
+        $inicio->hastaSolicitud = $dias->last()?->fecha?->toDateString();
+        $inicio->diasSolicitud = $dias->count();
+        $inicio->estadosSolicitud = $dias->pluck('estado')->unique()->count();
+
+        return response()->json([
+            'licencia' => (new LicenciaApiResource($inicio))->resolve(),
+            'dias' => $dias->map(fn (Licencia $dia): array => [
+                'fecha' => $dia->fecha?->toDateString(),
+                'diaSemana' => $dia->fecha?->locale('es')->dayName,
+                'turno' => $dia->resumen_turno,
+                'estado' => $dia->estado,
+            ])->all(),
+        ]);
+    }
+
+    /**
+     * Enlace temporal para descargar el respaldo de una licencia.
+     *
+     * ---
+     * **Se comprueba que la licencia sea de esa cédula.**
+     *
+     * Es la única parte de esta API donde el identificador no es la cédula sino
+     * el id de una fila, y ese id es un número corrido: sin esta comprobación,
+     * quien tenga la clave compartida podría pedir `…/licencias/1/respaldo` e ir
+     * subiendo el número para bajarse los certificados médicos de todo el
+     * personal. El consumidor manda la cédula de su sesión, y acá se exige que
+     * la fila le pertenezca.
+     * ---
+     *
+     * Se devuelve la URL en vez de redirigir: quien llama es otro servidor, que
+     * necesita el enlace para dárselo a su propio navegador.
+     */
+    public function respaldo(Request $request, string $ci, Licencia $licencia, RespaldoDocumento $respaldos): JsonResponse
+    {
+        $ci = trim($ci);
+
+        if ($ci === '' || trim((string) $licencia->ci) !== $ci) {
+            // 404 y no 403: que el mensaje no confirme que la licencia existe
+            // pero es de otra persona.
+            return response()->json(['message' => 'La licencia no existe.'], 404);
+        }
+
+        $enlace = $respaldos->enlace($licencia->adjunto);
+
+        if ($enlace === null) {
+            return response()->json([
+                'message' => 'La licencia no tiene respaldo cargado, o el archivo ya no está disponible.',
+            ], 404);
+        }
+
+        return response()->json([
+            'url' => $enlace,
+            'nombre' => $licencia->adjuntoNombre ?: 'respaldo',
+        ]);
     }
 
     /**

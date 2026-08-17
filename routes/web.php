@@ -89,8 +89,15 @@ Route::middleware('auth')->group(function (): void {
     // Respaldo de la licencia (certificado, memorándum). Va contra el bucket
     // con un enlace firmado de vida corta: el archivo nunca es público.
     Route::get('licencias/{licencia}/respaldo', [LicenciaController::class, 'respaldo'])->name('licencias.respaldo');
+    // Resolución de las solicitudes que llegan de Mamoré en estado «Pendiente».
+    // Aprobar y rechazar son rutas distintas y no un campo del formulario: así
+    // un envío manipulado no puede convertir un rechazo en una aprobación.
+    Route::patch('licencias/{licencia}/aprobar', [LicenciaController::class, 'aprobar'])->name('licencias.aprobar');
+    Route::patch('licencias/{licencia}/rechazar', [LicenciaController::class, 'rechazar'])->name('licencias.rechazar');
+    // `show` es la ficha de la solicitud completa (todos sus días), que es el
+    // paso previo obligado a aprobarla.
     Route::resource('licencias', LicenciaController::class)
-        ->only(['index', 'create', 'store', 'destroy']);
+        ->only(['index', 'create', 'store', 'show', 'destroy']);
 
     // Parámetros → Días excepcionales (feriados/tolerancias que no controlan
     // asistencia), base local MySQL. CRUD sin ficha (show).
@@ -105,19 +112,13 @@ Route::middleware('auth')->group(function (): void {
     // funcionario en un rango), con el formato del sistema de escritorio viejo.
     Route::get('funcionarios/{persona}/reporte-marcaciones', [PersonaController::class, 'reporteMarcaciones'])->name('funcionarios.reporte');
 
-    // El listado es de solo lectura; la única escritura es importar el CSV
-    // que ya exporta "Equipos > Marcaciones > Exportar".
+    // Dos formas de cargar marcaciones: el CSV que ya exporta
+    // "Equipos > Marcaciones > Exportar" y el alta manual de a una (tipo M)
+    // desde el modal, para lo que el reloj no registró (papeleta, equipo caído).
     Route::get('marcaciones', [MarcacionController::class, 'index'])->name('marcaciones.index');
     Route::get('marcaciones/ajax/list', [MarcacionController::class, 'list'])->name('marcaciones.list');
     Route::post('marcaciones/importar', [MarcacionController::class, 'importar'])->name('marcaciones.importar');
-
-    // DESACTIVADO (2026-08-13): alta manual de una marcación desde el modal.
-    // Se deja comentado y no borrado para poder reponerlo. Junto con esta ruta
-    // están comentados: MarcacionController::store()/destino(),
-    // StoreMarcacionRequest, el componente <x-modal-marcacion /> y sus dos usos
-    // (marcaciones/index y funcionarios/paneles), y sus pruebas en
-    // tests/Feature/MarcacionControllerTest.php.
-    // Route::post('marcaciones', [MarcacionController::class, 'store'])->name('marcaciones.store');
+    Route::post('marcaciones', [MarcacionController::class, 'store'])->name('marcaciones.store');
 
     // Reportes: selección de funcionario + generación (pantalla, imprimible o
     // CSV). «Sin procesar» = todas las marcaciones crudas del rango.

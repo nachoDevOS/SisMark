@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\Licencia;
 use App\Models\Turno;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Licencia>
@@ -18,6 +19,9 @@ class LicenciaFactory extends Factory
     {
         return [
             'fechaPedido' => now(),
+            // Cada licencia de prueba es su propia solicitud, salvo que el test
+            // arme una tanda pasando el mismo valor a varias filas.
+            'solicitud' => (string) Str::ulid(),
             'usuario' => fake()->name(),
             'fecha' => fake()->dateTimeBetween('-1 year', 'now')->format('Y-m-d'),
             'ci' => (string) fake()->unique()->numberBetween(1000000, 9999999),
@@ -32,7 +36,7 @@ class LicenciaFactory extends Factory
             ]),
             'goceHaberes' => true,
             'observacion' => null,
-            'estado' => 1,
+            'estado' => 'Aprobado',
         ];
     }
 

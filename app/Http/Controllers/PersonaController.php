@@ -117,14 +117,22 @@ class PersonaController extends Controller
 
         $ci = trim((string) $request->query('ci', ''));
 
-        $licencias = Licencia::query()
-            ->with('turno')
-            ->where('ci', $ci)
-            ->orderByDesc('fecha')
-            ->paginate($this->porPagina($request))
-            ->withQueryString();
+        // Una fila por solicitud, igual que el listado general: el alta expande
+        // el rango a una fila por día y turno, y mostrarlas sueltas hacía que un
+        // permiso de cinco días pareciera cinco licencias. Importa además porque
+        // la baja de esta pantalla alcanza a la solicitud entera.
+        //
+        // Sin `with('turno')`: la tabla ya no muestra el horario —un pedido de
+        // cinco días puede abarcar turnos distintos y poner el del primer día
+        // engañaba—. El desglose día por día, con su turno, está en la ficha.
+        $licencias = Licencia::paginarPorSolicitud(
+            Licencia::query()->where('ci', $ci),
+            $this->porPagina($request),
+        )->withQueryString();
 
-        return view('funcionarios.licencias-list', compact('licencias'));
+        $resumen = Licencia::resumenDe($licencias->pluck('solicitud'));
+
+        return view('funcionarios.licencias-list', compact('licencias', 'resumen'));
     }
 
     /**
@@ -289,61 +297,36 @@ class PersonaController extends Controller
      * trae su contrato firmado (de donde salen el cargo y la dirección) o `null`.
      * El filtro por situación de contrato lo resuelve la propia API.
      *
-     * La API busca por un solo término (no cruza nombre + apellido). Para
-     * buscar por varias palabras, se trae un lote por el término más largo y se
-     * filtra localmente por todas las palabras.
+     * La búsqueda se delega entera a la API, incluida la de varias palabras.
+     *
+     * Antes se filtraba acá: la API solo sabía buscar una frase, así que este
+     * método pedía 100 filas por la palabra más larga y cruzaba el resto en
+     * memoria. Eso perdía gente sin avisar —«maria» cruza con 220 personas, y
+     * las que caían después de la 100, ordenadas por apellido, no aparecían
+     * nunca—: buscar «maria rene» no encontraba a MARIA RENE TELLEZ, pero
+     * «maria rene tellez» sí, porque ahí la palabra más larga era selectiva.
+     * La API pasó a cruzar todas las palabras contra todos los campos, que es
+     * donde corresponde hacerlo: en la base que tiene los datos.
      *
      * @return array{0: LengthAwarePaginator, 1: ?string, 2: array{con: ?int, sin: ?int}}
      */
     private function funcionariosMamore(Request $request, MamoreClient $mamore, string $busqueda, int $porPagina, string $contrato): array
     {
-        $terminos = preg_split('/\s+/', trim($busqueda), -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $pagina = max(1, (int) $request->query('page', 1));
 
         try {
-            if (count($terminos) <= 1) {
-                $respuesta = $mamore->people($pagina, $porPagina, $busqueda, $contrato);
-                $meta = $respuesta['meta'] ?? [];
-
-                $paginador = new Paginador(
-                    $this->normalizarMamore($respuesta['data'] ?? []),
-                    (int) ($meta['total'] ?? count($respuesta['data'] ?? [])),
-                    (int) ($meta['per_page'] ?? $porPagina),
-                    (int) ($meta['current_page'] ?? $pagina),
-                    ['path' => $request->url(), 'query' => $request->query()],
-                );
-
-                return [$paginador, null, $this->totalesPorContrato($meta)];
-            }
-
-            $terminoMasLargo = collect($terminos)->sortByDesc(fn (string $t): int => mb_strlen($t))->first();
-            $respuesta = $mamore->people(1, 100, (string) $terminoMasLargo, $contrato);
-
-            $filtrados = collect($this->normalizarMamore($respuesta['data'] ?? []))
-                ->filter(function (array $fila) use ($terminos): bool {
-                    $heno = mb_strtolower($fila['nombre'].' '.$fila['ci']);
-
-                    foreach ($terminos as $termino) {
-                        if (! str_contains($heno, mb_strtolower($termino))) {
-                            return false;
-                        }
-                    }
-
-                    return true;
-                })
-                ->values();
+            $respuesta = $mamore->people($pagina, $porPagina, $busqueda, $contrato);
+            $meta = $respuesta['meta'] ?? [];
 
             $paginador = new Paginador(
-                $filtrados->forPage($pagina, $porPagina)->values()->all(),
-                $filtrados->count(),
-                $porPagina,
-                $pagina,
+                $this->normalizarMamore($respuesta['data'] ?? []),
+                (int) ($meta['total'] ?? count($respuesta['data'] ?? [])),
+                (int) ($meta['per_page'] ?? $porPagina),
+                (int) ($meta['current_page'] ?? $pagina),
                 ['path' => $request->url(), 'query' => $request->query()],
             );
 
-            // Con búsqueda de varias palabras el filtrado es local, así que los
-            // totales de la API no corresponden a lo que se está mostrando.
-            return [$paginador, null, ['con' => null, 'sin' => null]];
+            return [$paginador, null, $this->totalesPorContrato($meta)];
         } catch (MamoreException $e) {
             return [$this->paginadorVacio($request, $porPagina), $e->getMessage(), ['con' => null, 'sin' => null]];
         }

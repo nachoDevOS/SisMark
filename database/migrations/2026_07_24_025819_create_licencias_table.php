@@ -42,7 +42,21 @@ return new class extends Migration
             $table->boolean('goceHaberes');
 
             $table->text('observacion')->nullable();
-            $table->smallInteger('estado')->default(1);
+            // Estado de aprobación: «Pendiente», «Aprobado» o «Rechazado».
+            //
+            // El default es «Aprobado» porque es lo que corresponde a todo lo que
+            // entra por los dos caminos que ya existen: lo que copia
+            // `MigrarLicenciasSia` del SIA y lo que carga Recursos Humanos a mano.
+            // Esas licencias surten efecto desde el momento en que se registran;
+            // nadie las aprueba después.
+            //
+            // «Pendiente» es solo para lo que solicita el funcionario desde
+            // Mamoré, que sí necesita el visto bueno de Recursos Humanos. Por eso
+            // el default no puede ser «Pendiente»: dejaría sin efecto un millón de
+            // licencias históricas, y `MigrarLicenciasSia` —que no escribe esta
+            // columna— traería del SIA licencias ya otorgadas como si estuvieran
+            // esperando aprobación.
+            $table->string('estado', 12)->default('Aprobado');
 
             $table->timestamps();
             $table->foreignId('registerUser_id')->nullable()->constrained('users');
