@@ -57,6 +57,25 @@
         </div>
     @endif
 
+    {{-- Solicitudes esperando decisión. Va arriba de todo porque es lo único
+         del escritorio que pide una acción de una persona: el resto informa. --}}
+    @if (($licenciasPendientes ?? 0) > 0)
+        <div class="aviso aviso--advertencia escritorio__aviso">
+            <x-heroicon-o-clipboard-document-check />
+            <div>
+                {{-- La frase se arma entera en una expresión: partida en varias
+                     líneas, el HTML queda con saltos en medio del texto. --}}
+                <strong>{{ $licenciasPendientes === 1
+                    ? '1 solicitud de licencia espera tu decisión.'
+                    : $licenciasPendientes.' solicitudes de licencia esperan tu decisión.' }}</strong>
+                Las pidieron los funcionarios desde su perfil. Mientras sigan pendientes
+                <strong>no justifican la ausencia</strong>: el cálculo de asistencia solo
+                descuenta las aprobadas, así que esos días se les siguen contando como falta.
+                <a href="{{ route('licencias.index', ['estado' => \App\Models\Licencia::PENDIENTE]) }}">Revisarlas</a>.
+            </div>
+        </div>
+    @endif
+
     {{-- 1 · ¿Puedo confiar en los datos de hoy? --}}
     <h2 class="escritorio__seccion">Estado de la captura</h2>
     <div class="stats-grid">

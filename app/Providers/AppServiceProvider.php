@@ -47,7 +47,10 @@ class AppServiceProvider extends ServiceProvider
         // barra superior. Va por composer y no dentro del Blade para que la
         // vista no consulte la base, y solo se cuenta si hay alguien en sesión
         // que pueda resolverlas: al resto el aviso no le sirve de nada.
-        View::composer('layouts.app', function (Vista $vista): void {
+        // El escritorio va aparte de `layouts.app`: con `@extends`, la vista
+        // hija se arma antes que el layout, así que lo que se comparte con el
+        // layout no le llega.
+        View::composer(['layouts.app', 'dashboard.index'], function (Vista $vista): void {
             $usuario = auth()->user();
 
             $vista->with('licenciasPendientes', $usuario?->can('viewAny', Licencia::class)

@@ -1723,3 +1723,18 @@ test('quien no puede ver licencias no recibe el aviso', function () {
         ->assertOk()
         ->assertDontSee('Licencias pendientes');
 });
+
+test('el escritorio avisa las solicitudes que esperan decisión', function () {
+    solicitudPendiente(ci: '7633685', dias: 3);
+
+    $this->get(route('dashboard'))
+        ->assertOk()
+        // Una sola solicitud, aunque sean tres días.
+        ->assertSee('1 solicitud de licencia espera')
+        ->assertSee('no justifican la ausencia', escape: false)
+        ->assertSee(route('licencias.index', ['estado' => Licencia::PENDIENTE]), escape: false);
+});
+
+test('sin pendientes el escritorio no muestra el aviso', function () {
+    $this->get(route('dashboard'))->assertOk()->assertDontSee('espera tu decisión');
+});
