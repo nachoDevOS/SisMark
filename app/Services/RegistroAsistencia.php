@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Asistencia;
+use App\Models\Equipo;
 use App\Models\Persona;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
@@ -19,10 +20,14 @@ class RegistroAsistencia
     /**
      * Procesa las filas y devuelve el conteo por resultado.
      *
+     * `$equipo` es el reloj del que salieron, y queda guardado en cada marcación
+     * que se inserte. Va en null cuando la fuente no lo sabe: el CSV no dice de
+     * qué equipo se exportó, y el alta manual no viene de ninguno.
+     *
      * @param  iterable<array{ci: ?string, momento: ?Carbon}>  $filas
      * @return array{insertadas: int, existentes: int, sinFuncionario: int, invalidas: int}
      */
-    public function registrar(iterable $filas): array
+    public function registrar(iterable $filas, ?Equipo $equipo = null): array
     {
         $conteo = ['insertadas' => 0, 'existentes' => 0, 'sinFuncionario' => 0, 'invalidas' => 0];
 
@@ -80,6 +85,7 @@ class RegistroAsistencia
                     // La hora se guarda sobre la fecha base 1899-12-30, como el SIA real.
                     'hora' => '1899-12-30 '.$momento->format('H:i:s'),
                     'tipo' => Asistencia::TIPO_RELOJ,
+                    'equipo_id' => $equipo?->id,
                 ]);
 
                 $conteo['insertadas']++;

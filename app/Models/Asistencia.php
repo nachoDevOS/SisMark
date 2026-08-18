@@ -56,6 +56,9 @@ class Asistencia extends Model
         'fecha',
         'hora',
         'tipo',
+        // De qué reloj salió. Null en lo migrado del SIA, en el alta manual y en
+        // el CSV, que no dice de qué equipo se exportó.
+        'equipo_id',
         'observacion',
         'estado',
     ];
@@ -74,6 +77,20 @@ class Asistencia extends Model
     public function persona(): BelongsTo
     {
         return $this->belongsTo(Persona::class, 'ci', 'ci');
+    }
+
+    /**
+     * Reloj del que salió la marcación.
+     *
+     * Null cuando no vino de ninguno, o cuando el equipo se borró físicamente
+     * de la base (la FK es `nullOnDelete`: la marcación es del funcionario y no
+     * se va con el aparato).
+     *
+     * @return BelongsTo<Equipo, $this>
+     */
+    public function equipo(): BelongsTo
+    {
+        return $this->belongsTo(Equipo::class);
     }
 
     /**

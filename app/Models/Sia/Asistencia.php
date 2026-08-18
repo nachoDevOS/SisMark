@@ -12,10 +12,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Marcación de asistencia registrada en el sistema SIA.
  *
  * Tabla legada con clave primaria compuesta (IdPersona, Fecha, Hora), por eso
- * $primaryKey es null. Solo se escribe desde MarcacionController::importar()
- * (import de CSV); el resto de la app la usa de solo lectura. `Fecha` guarda
- * solo la fecha (medianoche) y `Hora` solo la hora (sobre la fecha base
- * 1899-12-30, patrón clásico de SQL Server 2008).
+ * $primaryKey es null. `Fecha` guarda solo la fecha (medianoche) y `Hora` solo
+ * la hora (sobre la fecha base 1899-12-30, patrón clásico de SQL Server 2008).
+ *
+ * **Solo lectura.** El sistema nunca escribe en el SIA: las marcaciones se
+ * guardan en la tabla local `asistencias` (MySQL) y el SQL Server es únicamente
+ * el origen del que se copia con `sia:migrar-marcaciones`. El servicio que
+ * escribía acá se eliminó.
  */
 class Asistencia extends Model
 {

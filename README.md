@@ -234,9 +234,10 @@ configurar por separado.
 | Base MySQL | Recurso aparte. En Coolify: «+ New» → «Database» → «MySQL». |
 | Microservicio de biométricos | Su propia imagen, desde `device-service/`. |
 
-> La imagen **no** trae el driver de SQL Server: desde la migración a MySQL, la
-> conexión `sia` solo se usa en la máquina de desarrollo para correr los
-> comandos `sia:migrar-*`. Al servidor sube la base ya migrada.
+> La imagen trae el driver de SQL Server (`msodbcsql18` + `pdo_sqlsrv`), así que
+> los comandos `sia:migrar-*` se pueden correr también desde el contenedor si el
+> servidor tiene ruta al SQL Server. Van siempre **en un solo sentido**: leen del
+> SIA y escriben en MySQL. El sistema nunca escribe en el SIA.
 
 ### Variables de entorno
 

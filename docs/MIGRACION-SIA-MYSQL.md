@@ -187,15 +187,18 @@ Para migrar otra tabla del SIA, repetir el patrón:
 
 ---
 
-## 5. Pendiente: el «flip» a MySQL
+## 5. El «flip» a MySQL: hecho
 
-Copiar los datos es la mitad. La app **todavía lee del SQL Server** (los
-controllers y servicios usan `App\Models\Sia\*`). Para que el sistema use MySQL:
+Toda la aplicación —tablero, marcaciones, funcionarios, reportes, horarios—
+trabaja sobre MySQL. Nada del flujo normal toca el SQL Server.
 
-1. Cambiar los controllers/servicios de `App\Models\Sia\*` → `App\Models\*`
-   (dashboard, `MarcacionController`, `PersonaController`,
-   `ReporteMarcacionController`, `DiaTurnoController`, `RegistroAsistenciaSia`).
-2. Ajustar el código que usa `IdPersona` en Asistencia → `ci`.
-3. Ajustar las claves de ruta (route binding) al nuevo `id` / `ci`.
+**El SIA es solo origen, nunca destino.** Los comandos `sia:migrar-*` (y el
+`MigrarSiaSeeder` que los agrupa) leen del SQL Server y copian a MySQL. En la
+otra dirección no se escribe nada: el servicio que lo hacía,
+`RegistroAsistenciaSia`, se eliminó al confirmarse que ningún otro sistema de la
+institución espera recibir las marcaciones nuevas por ahí.
 
-Recién ahí el SQL Server deja de usarse.
+Consecuencia práctica: si hay que reconstruir la base local, se corre
+`migrate:fresh` y después `db:seed --class=MigrarSiaSeeder`, que vuelve a traer
+personas, marcaciones, licencias, turnos, asignaciones y días excepcionales. El
+SQL Server queda intacto, pase lo que pase de este lado.

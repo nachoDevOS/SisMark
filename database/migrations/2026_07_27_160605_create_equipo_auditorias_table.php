@@ -12,6 +12,11 @@ use Illuminate\Support\Facades\Schema;
  * Guarda una copia de los datos del equipo (`datos_equipo`) en vez de depender
  * del join: si después le cambian la IP, la ubicación o lo eliminan, la fila de
  * la bitácora sigue mostrando cómo estaba el equipo en ese momento.
+ *
+ * De cada sincronización guarda el desglose completo —cuántas trajo el reloj,
+ * cuántas se guardaron, cuántas ya estaban, cuántas no cruzaron con ningún
+ * funcionario y cuántas fallaron— porque «se sincronizó» no alcanza para saber
+ * si el equipo está aportando algo o repitiendo lo mismo todos los días.
  */
 return new class extends Migration
 {
@@ -31,7 +36,25 @@ return new class extends Migration
             // ubicación, algoritmo…). Sin comm_key: es la clave del reloj.
             $table->json('datos_equipo');
 
-            $table->unsignedInteger('total_marcaciones')->nullable(); // Cuántas se leyeron/afectaron.
+            // Cuántas marcaciones entregó el equipo para el rango pedido. Es el
+            // total contra el que tienen que cerrar las cuatro columnas de
+            // abajo: si no suman, algo se perdió en el camino.
+            $table->unsignedInteger('total_marcaciones')->nullable();
+
+            // Desglose de qué pasó con cada una de esas marcaciones. Sin esto la
+            // bitácora decía «se sincronizó» y nada más: no había forma de saber
+            // si un equipo trae 400 marcaciones nuevas por día o 400 repetidas,
+            // ni de detectar que un funcionario marca todos los días y ninguna
+            // de sus marcas entra porque su ID de reloj no cruza con el padrón.
+            $table->unsignedInteger('nuevas')->nullable();          // Se guardaron.
+            $table->unsignedInteger('repetidas')->nullable();       // Ya estaban en la base.
+            $table->unsignedInteger('sin_funcionario')->nullable(); // El ID del reloj no cruza con `personas.ci`.
+            $table->unsignedInteger('fallidas')->nullable();        // Fecha basura del RTC o error al insertar.
+            // El reloj manda de más: el protocolo ZK no siempre respeta el rango
+            // pedido. Se cuentan igual para que el desglose cierre contra el
+            // total y ninguna marcación desaparezca sin dejar rastro.
+            $table->unsignedInteger('fuera_de_rango')->nullable();
+
             $table->string('desde', 10)->nullable(); // Rango pedido, si hubo.
             $table->string('hasta', 10)->nullable();
             $table->text('detalle')->nullable(); // Mensaje de resultado o de error.

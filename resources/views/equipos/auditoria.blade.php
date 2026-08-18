@@ -14,6 +14,11 @@
     <p style="margin: -.4rem 0 1.1rem; color: var(--muted); font-size: .85rem;">
         Quién exportó, envió a la base del SIA, limpió o dio de baja cada equipo biométrico.
         Las acciones que borran información llevan el motivo escrito por quien las hizo.
+        En las sincronizaciones se detalla qué pasó con cada marcación que entregó el reloj:
+        <strong>repetidas</strong> es lo normal —el equipo devuelve todo su historial en cada
+        lectura y el sistema no lo duplica—, mientras que <strong>sin funcionario</strong>
+        señala a alguien que marca con un ID que no está en el padrón, y sus marcas no se
+        están registrando.
     </p>
 
     <x-tabla-filtros :action="route('equipos.auditoria')" :busqueda="$busqueda"
@@ -37,7 +42,12 @@
                     <th>Acción</th>
                     <th>Equipo</th>
                     <th>Motivo / detalle</th>
-                    <th>Marcaciones</th>
+                    <th style="text-align: right;" title="Marcaciones que entregó el reloj para el rango pedido">En el equipo</th>
+                    <th style="text-align: right;" title="Se guardaron en el sistema">Nuevas</th>
+                    <th style="text-align: right;" title="Ya estaban registradas: el reloj las vuelve a entregar en cada lectura">Repetidas</th>
+                    <th style="text-align: right;" title="El ID del reloj no cruza con ningún funcionario del padrón">Sin funcionario</th>
+                    <th style="text-align: right;" title="Fecha inválida del reloj o error al guardar">Con error</th>
+                    <th style="text-align: right;" title="El reloj las mandó aunque quedaban fuera del rango pedido">Fuera de rango</th>
                 </tr>
             </thead>
             <tbody>
@@ -88,11 +98,45 @@
                                 —
                             @endif
                         </td>
-                        <td>{{ $registro->total_marcaciones ?? '—' }}</td>
+                        {{-- El desglose solo existe en las sincronizaciones: exportar,
+                             limpiar y eliminar no reparten las marcaciones en categorías. --}}
+                        <td style="text-align: right;">{{ $registro->total_marcaciones ?? '—' }}</td>
+                        <td style="text-align: right;">
+                            @if ($registro->nuevas === null)
+                                —
+                            @elseif ($registro->nuevas > 0)
+                                <strong style="color: var(--verde);">{{ $registro->nuevas }}</strong>
+                            @else
+                                0
+                            @endif
+                        </td>
+                        <td style="text-align: right; color: var(--muted);">{{ $registro->repetidas ?? '—' }}</td>
+                        <td style="text-align: right;">
+                            @if ($registro->sin_funcionario === null)
+                                —
+                            @elseif ($registro->sin_funcionario > 0)
+                                {{-- No es un fallo del sistema: es un ID de reloj que no está
+                                     en el padrón. Se marca porque significa que alguien está
+                                     marcando y sus marcas no le llegan a nadie. --}}
+                                <strong style="color: var(--danger);">{{ $registro->sin_funcionario }}</strong>
+                            @else
+                                0
+                            @endif
+                        </td>
+                        <td style="text-align: right;">
+                            @if ($registro->fallidas === null)
+                                —
+                            @elseif ($registro->fallidas > 0)
+                                <strong style="color: var(--danger);">{{ $registro->fallidas }}</strong>
+                            @else
+                                0
+                            @endif
+                        </td>
+                        <td style="text-align: right; color: var(--muted);">{{ $registro->fuera_de_rango ?? '—' }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="vacio">Todavía no hay movimientos registrados.</td>
+                        <td colspan="11" class="vacio">Todavía no hay movimientos registrados.</td>
                     </tr>
                 @endforelse
             </tbody>

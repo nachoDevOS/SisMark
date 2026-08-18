@@ -62,7 +62,13 @@ class EquipoAuditoria extends Model
         'accion',
         'motivo',
         'datos_equipo',
+        // Cuántas entregó el reloj, y qué pasó con ellas.
         'total_marcaciones',
+        'nuevas',
+        'repetidas',
+        'sin_funcionario',
+        'fallidas',
+        'fuera_de_rango',
         'desde',
         'hasta',
         'detalle',
@@ -79,6 +85,11 @@ class EquipoAuditoria extends Model
             'datos_equipo' => 'array',
             'exito' => 'boolean',
             'total_marcaciones' => 'integer',
+            'nuevas' => 'integer',
+            'repetidas' => 'integer',
+            'sin_funcionario' => 'integer',
+            'fallidas' => 'integer',
+            'fuera_de_rango' => 'integer',
         ];
     }
 
@@ -89,7 +100,7 @@ class EquipoAuditoria extends Model
      * trait RegistersUserEvents en `registerUser_id`. Quien llama solo pasa lo
      * propio de la acción.
      *
-     * @param  array{motivo?: ?string, total_marcaciones?: ?int, desde?: ?string, hasta?: ?string, detalle?: ?string, exito?: bool}  $extra
+     * @param  array{motivo?: ?string, total_marcaciones?: ?int, nuevas?: ?int, repetidas?: ?int, sin_funcionario?: ?int, fallidas?: ?int, fuera_de_rango?: ?int, desde?: ?string, hasta?: ?string, detalle?: ?string, exito?: bool}  $extra
      */
     public static function registrar(Equipo $equipo, string $accion, array $extra = []): self
     {

@@ -38,24 +38,44 @@ class SincronizadorEquipos
      */
     public function marcaciones(Equipo $equipo, string $desde = '', string $hasta = ''): array
     {
+        [$filtradas, $error] = $this->leer($equipo, $desde, $hasta);
+
+        return [$filtradas, $error];
+    }
+
+    /**
+     * Igual que {@see marcaciones()}, pero devuelve además **cuántas entregó el
+     * reloj antes de aplicar el filtro por rango**.
+     *
+     * Las dos cifras hacen falta para que la bitácora cierre. El equipo manda de
+     * más —el protocolo ZK no siempre respeta el rango, y el RTC con la batería
+     * gastada devuelve marcaciones con años tipo 2064—, y esas se recortan acá.
+     * Contando solo las que sobreviven al filtro, la marcación descartada
+     * desaparece sin quedar registrada en ningún lado y el desglose no suma.
+     *
+     * @return array{0: array<int, array<string, mixed>>, 1: ?string, 2: int}
+     */
+    private function leer(Equipo $equipo, string $desde, string $hasta): array
+    {
         try {
             $todas = $this->deviceService->attendance($equipo, $desde ?: null, $hasta ?: null)['marcaciones'] ?? [];
         } catch (DeviceServiceException $e) {
-            return [[], $e->getMessage()];
+            return [[], $e->getMessage(), 0];
         }
 
-        return [$this->filtrarPorRango($todas, $desde, $hasta), null];
+        return [$this->filtrarPorRango($todas, $desde, $hasta), null, count($todas)];
     }
 
     /**
      * Baja las marcaciones del equipo y las registra en `asistencias`, dejando
-     * la acción en la bitácora (también cuando falla la lectura del reloj).
+     * la acción en la bitácora (también cuando falla la lectura del reloj) con
+     * el desglose de qué pasó con cada marcación que entregó el reloj.
      *
-     * @return array{exito: bool, mensaje: string, total: int}
+     * @return array{exito: bool, mensaje: string, total: int, conteo: array{insertadas: int, existentes: int, sinFuncionario: int, invalidas: int}}
      */
     public function sincronizar(Equipo $equipo, string $desde = '', string $hasta = ''): array
     {
-        [$todas, $error] = $this->marcaciones($equipo, $desde, $hasta);
+        [$todas, $error, $entregadas] = $this->leer($equipo, $desde, $hasta);
 
         if ($error) {
             EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_SINCRONIZAR, [
@@ -65,7 +85,12 @@ class SincronizadorEquipos
                 'exito' => false,
             ]);
 
-            return ['exito' => false, 'mensaje' => $error, 'total' => 0];
+            return [
+                'exito' => false,
+                'mensaje' => $error,
+                'total' => 0,
+                'conteo' => ['insertadas' => 0, 'existentes' => 0, 'sinFuncionario' => 0, 'invalidas' => 0],
+            ];
         }
 
         $filas = array_map(fn (array $marcacion): array => [
@@ -73,17 +98,30 @@ class SincronizadorEquipos
             'momento' => filled($marcacion['timestamp'] ?? null) ? Carbon::parse($marcacion['timestamp']) : null,
         ], $todas);
 
-        $conteo = $this->registro->registrar($filas);
+        $conteo = $this->registro->registrar($filas, $equipo);
         $mensaje = $this->registro->mensaje($conteo, "Sincronización de «{$equipo->nombre}»");
 
+        // El desglose va en columnas y no solo dentro del texto de `detalle`:
+        // así la bitácora se puede leer de un vistazo y, sobre todo, sumar. Un
+        // equipo que trae 400 marcaciones y las 400 son repetidas está tan
+        // «sincronizado» como uno que trae 400 nuevas, y con una sola cifra los
+        // dos casos se ven idénticos.
         EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_SINCRONIZAR, [
             'desde' => $desde ?: null,
             'hasta' => $hasta ?: null,
-            'total_marcaciones' => count($todas),
+            // Lo que entregó el reloj, sin recortar: es «cuántos datos hay en el
+            // equipo». Las cinco columnas de abajo reparten ese total y tienen
+            // que sumarlo exacto.
+            'total_marcaciones' => $entregadas,
+            'fuera_de_rango' => $entregadas - count($todas),
+            'nuevas' => $conteo['insertadas'],
+            'repetidas' => $conteo['existentes'],
+            'sin_funcionario' => $conteo['sinFuncionario'],
+            'fallidas' => $conteo['invalidas'],
             'detalle' => $mensaje,
         ]);
 
-        return ['exito' => true, 'mensaje' => $mensaje, 'total' => count($todas)];
+        return ['exito' => true, 'mensaje' => $mensaje, 'total' => count($todas), 'conteo' => $conteo];
     }
 
     /**

@@ -127,14 +127,44 @@ return new class extends Migration
         });
     }
 
+    /**
+     * Cada paso se comprueba antes de ejecutarlo.
+     *
+     * El `up()` toca la tabla en dos tandas con el relleno de un millón de filas
+     * en el medio, así que se puede cortar por la mitad —un timeout, un Ctrl-C—
+     * y dejar la tabla con la columna puesta pero sin los índices. Un `down()`
+     * que da por hecho que todo está termina con «Can't DROP … check that
+     * column/key exists» y bloquea el rollback: la migración queda marcada como
+     * aplicada y no hay forma de volver atrás sin tocar la base a mano.
+     */
     public function down(): void
     {
         Schema::table('licencias', function (Blueprint $table): void {
-            $table->dropUnique(['ci', 'fecha', 'turno_id', 'solicitud']);
-            $table->dropIndex(['solicitud', 'fecha']);
-            $table->dropIndex(['estado', 'fecha']);
-            $table->dropColumn(['solicitud', 'origen']);
-            $table->unique(['ci', 'fecha', 'turno_id']);
+            if (Schema::hasIndex('licencias', 'licencias_ci_fecha_turno_id_solicitud_unique')) {
+                $table->dropUnique(['ci', 'fecha', 'turno_id', 'solicitud']);
+            }
+
+            if (Schema::hasIndex('licencias', 'licencias_solicitud_fecha_index')) {
+                $table->dropIndex(['solicitud', 'fecha']);
+            }
+
+            if (Schema::hasIndex('licencias', 'licencias_estado_fecha_index')) {
+                $table->dropIndex(['estado', 'fecha']);
+            }
+
+            $columnas = array_values(array_filter(
+                ['solicitud', 'origen'],
+                fn (string $columna): bool => Schema::hasColumn('licencias', $columna),
+            ));
+
+            if ($columnas !== []) {
+                $table->dropColumn($columnas);
+            }
+
+            // Se devuelve la clave natural que había antes, si no volvió sola.
+            if (! Schema::hasIndex('licencias', 'licencias_ci_fecha_turno_id_unique')) {
+                $table->unique(['ci', 'fecha', 'turno_id']);
+            }
         });
     }
 

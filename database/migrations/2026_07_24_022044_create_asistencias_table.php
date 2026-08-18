@@ -20,6 +20,10 @@ use Illuminate\Support\Facades\Schema;
  * que sirve de clave natural para el upsert idempotente. `ci` también se indexa
  * aparte para los joins con personas (sin FK: el legado tiene marcaciones
  * huérfanas). `hora` guarda solo la hora sobre la fecha base 1899-12-30.
+ *
+ * `equipo_id` dice de qué reloj salió la marcación, cuando salió de uno. Es lo
+ * que permite auditar una corrida —«qué trajo este equipo el martes»— y separar
+ * lo que registró un aparato de lo que cargó una persona a mano.
  */
 return new class extends Migration
 {
@@ -32,6 +36,15 @@ return new class extends Migration
             $table->dateTime('hora');
             $table->char('tipo', 1);
 
+            // De qué reloj salió la marcación.
+            //
+            // Nullable porque la mayoría no vino de ninguno: los 4,4 millones
+            // migrados del SIA, lo que se carga a mano por papeleta y lo que
+            // entra por CSV —donde el archivo no dice de qué equipo se exportó—.
+            // `nullOnDelete` para que dar de baja un equipo no se lleve puestas
+            // sus marcaciones: la marcación es del funcionario, no del aparato.
+            $table->foreignId('equipo_id')->nullable()->constrained('equipos')->nullOnDelete();
+
             $table->text('observacion')->nullable();
             $table->smallInteger('estado')->default(1);
 
@@ -40,6 +53,9 @@ return new class extends Migration
 
             $table->unique(['ci', 'fecha', 'hora']);
             $table->index('ci');
+            // «Qué trajo este reloj y cuándo», que es como se lee la bitácora
+            // cuando hay que auditar una corrida.
+            $table->index(['equipo_id', 'fecha']);
         });
     }
 
