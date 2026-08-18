@@ -4,6 +4,7 @@ use App\Models\Equipo;
 use App\Models\EquipoAuditoria;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Permission;
@@ -690,4 +691,206 @@ test('el respaldo previo al borrado pide el historial completo, sin rango', func
 
     Http::assertSent(fn ($request) => ! str_contains($request->url(), 'desde=')
         && ! str_contains($request->url(), 'hasta='));
+});
+
+test('guarda las horas de sincronización automática del equipo', function () {
+    $this->post(route('equipos.store'), [
+        'nombre' => 'iClock Portón',
+        'ip' => '192.168.1.90',
+        'puerto' => 4370,
+        'comm_key' => 0,
+        'activo' => '1',
+        'sync_automatica' => '1',
+        'sync_horarios' => ['08:30', '13:00', '19:00'],
+    ])->assertRedirect(route('equipos.index'));
+
+    $equipo = Equipo::query()->where('ip', '192.168.1.90')->first();
+
+    expect($equipo->sync_automatica)->toBeTrue()
+        ->and($equipo->horariosSync())->toBe(['08:30', '13:00', '19:00']);
+});
+
+test('encender la sincronización automática exige al menos una hora', function () {
+    $this->post(route('equipos.store'), [
+        'nombre' => 'iClock Portón',
+        'ip' => '192.168.1.91',
+        'puerto' => 4370,
+        'comm_key' => 0,
+        'sync_automatica' => '1',
+        // El repetidor manda una fila vacía cuando el usuario no cargó ninguna.
+        'sync_horarios' => [''],
+    ])->assertSessionHasErrors('sync_horarios');
+
+    $this->assertDatabaseMissing('equipos', ['ip' => '192.168.1.91']);
+});
+
+test('rechaza una hora de sincronización que no es una hora', function () {
+    $this->post(route('equipos.store'), [
+        'nombre' => 'iClock Portón',
+        'ip' => '192.168.1.92',
+        'puerto' => 4370,
+        'comm_key' => 0,
+        'sync_automatica' => '1',
+        'sync_horarios' => ['25:99'],
+    ])->assertSessionHasErrors('sync_horarios.0');
+});
+
+test('se pueden cambiar las horas de un equipo ya registrado', function () {
+    $equipo = Equipo::factory()->create([
+        'sync_automatica' => true,
+        'sync_horarios' => ['08:30'],
+    ]);
+
+    $this->put(route('equipos.update', $equipo), [
+        'nombre' => $equipo->nombre,
+        'ip' => $equipo->ip,
+        'puerto' => $equipo->puerto,
+        'comm_key' => $equipo->comm_key,
+        'activo' => '1',
+        'sync_automatica' => '1',
+        'sync_horarios' => ['07:00', '15:30'],
+    ])->assertRedirect(route('equipos.index'));
+
+    expect($equipo->fresh()->horariosSync())->toBe(['07:00', '15:30']);
+});
+
+test('apagar la sincronización automática no exige horas', function () {
+    $equipo = Equipo::factory()->create([
+        'sync_automatica' => true,
+        'sync_horarios' => ['08:30'],
+    ]);
+
+    $this->put(route('equipos.update', $equipo), [
+        'nombre' => $equipo->nombre,
+        'ip' => $equipo->ip,
+        'puerto' => $equipo->puerto,
+        'comm_key' => $equipo->comm_key,
+        'activo' => '1',
+        'sync_horarios' => [],
+    ])->assertRedirect(route('equipos.index'));
+
+    expect($equipo->fresh()->sync_automatica)->toBeFalse();
+});
+
+test('el formulario ofrece configurar el horario de sincronización', function () {
+    $this->get(route('equipos.create'))
+        ->assertOk()
+        ->assertSee('Sincronizar automáticamente en días y horas fijas')
+        ->assertSee('name="sync_horarios[]"', escape: false);
+});
+
+test('la ficha muestra las horas configuradas', function () {
+    $equipo = Equipo::factory()->create([
+        'sync_automatica' => true,
+        'sync_horarios' => ['08:30', '19:00'],
+    ]);
+
+    $this->get(route('equipos.show', $equipo))
+        ->assertOk()
+        ->assertSee('08:30 · 19:00');
+});
+
+test('guarda los días de sincronización automática del equipo', function () {
+    $this->post(route('equipos.store'), [
+        'nombre' => 'iClock Portón',
+        'ip' => '192.168.1.93',
+        'puerto' => 4370,
+        'comm_key' => 0,
+        'activo' => '1',
+        'sync_automatica' => '1',
+        'sync_horarios' => ['08:30'],
+        // Lunes a viernes, con la numeración de `Turno::DIAS`.
+        'sync_dias' => ['2', '3', '4', '5', '6'],
+    ])->assertRedirect(route('equipos.index'));
+
+    $equipo = Equipo::query()->where('ip', '192.168.1.93')->first();
+
+    expect($equipo->diasSync())->toBe([2, 3, 4, 5, 6])
+        ->and($equipo->nombresDiasSync())->toBe(['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']);
+});
+
+test('sin días marcados el equipo queda sincronizando todos los días', function () {
+    $this->post(route('equipos.store'), [
+        'nombre' => 'iClock Portón',
+        'ip' => '192.168.1.94',
+        'puerto' => 4370,
+        'comm_key' => 0,
+        'activo' => '1',
+        'sync_automatica' => '1',
+        'sync_horarios' => ['08:30'],
+    ])->assertRedirect(route('equipos.index'));
+
+    $equipo = Equipo::query()->where('ip', '192.168.1.94')->first();
+
+    // Lista vacía significa «todos»: el domingo también le toca.
+    expect($equipo->diasSync())->toBe([])
+        ->and($equipo->tocaSincronizar(Carbon::parse('2026-07-12 08:30:00')))->toBeTrue();
+});
+
+test('rechaza un día de sincronización que no es un día de la semana', function () {
+    $this->post(route('equipos.store'), [
+        'nombre' => 'iClock Portón',
+        'ip' => '192.168.1.95',
+        'puerto' => 4370,
+        'comm_key' => 0,
+        'sync_automatica' => '1',
+        'sync_horarios' => ['08:30'],
+        'sync_dias' => ['9'],
+    ])->assertSessionHasErrors('sync_dias.0');
+
+    $this->assertDatabaseMissing('equipos', ['ip' => '192.168.1.95']);
+});
+
+test('se pueden cambiar los días de un equipo ya registrado', function () {
+    $equipo = Equipo::factory()->create([
+        'sync_automatica' => true,
+        'sync_horarios' => ['08:30'],
+        'sync_dias' => [2, 3, 4, 5, 6],
+    ]);
+
+    $this->put(route('equipos.update', $equipo), [
+        'nombre' => $equipo->nombre,
+        'ip' => $equipo->ip,
+        'puerto' => $equipo->puerto,
+        'comm_key' => $equipo->comm_key,
+        'activo' => '1',
+        'sync_automatica' => '1',
+        'sync_horarios' => ['08:30'],
+        'sync_dias' => ['7'], // solo sábado
+    ])->assertRedirect(route('equipos.index'));
+
+    expect($equipo->fresh()->diasSync())->toBe([7]);
+});
+
+test('el formulario ofrece elegir los días de sincronización', function () {
+    $this->get(route('equipos.create'))
+        ->assertOk()
+        ->assertSee('Días de sincronización')
+        ->assertSee('name="sync_dias[]"', escape: false)
+        ->assertSee('Miércoles');
+});
+
+test('la ficha muestra los días y las horas configuradas', function () {
+    $equipo = Equipo::factory()->create([
+        'sync_automatica' => true,
+        'sync_horarios' => ['08:30', '19:00'],
+        'sync_dias' => [2, 6],
+    ]);
+
+    $this->get(route('equipos.show', $equipo))
+        ->assertOk()
+        ->assertSee('Lunes, Viernes')
+        ->assertSee('08:30 · 19:00');
+});
+
+test('la ficha dice «todos los días» cuando no hay días elegidos', function () {
+    $equipo = Equipo::factory()->create([
+        'sync_automatica' => true,
+        'sync_horarios' => ['08:30'],
+        'sync_dias' => null,
+    ]);
+
+    $this->get(route('equipos.show', $equipo))
+        ->assertOk()
+        ->assertSee('Todos los días');
 });

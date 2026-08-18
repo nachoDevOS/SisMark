@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Equipo;
+use App\Models\Turno;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -40,6 +41,13 @@ class UpdateEquipoRequest extends FormRequest
             'comm_key' => ['required', 'integer', 'min:0'],
             'ubicacion' => ['nullable', 'string', 'max:255'],
             'activo' => ['boolean'],
+            'sync_automatica' => ['boolean'],
+            'sync_horarios' => ['array', 'max:24', 'required_if:sync_automatica,true'],
+            'sync_horarios.*' => ['required', 'date_format:H:i'],
+            // Sin días marcados el equipo trabaja todos: ver el comentario en
+            // {@see StoreEquipoRequest}.
+            'sync_dias' => ['array', 'max:7'],
+            'sync_dias.*' => [Rule::in(array_keys(Turno::DIAS))],
         ];
     }
 
@@ -47,6 +55,15 @@ class UpdateEquipoRequest extends FormRequest
     {
         $this->merge([
             'activo' => $this->boolean('activo'),
+            'sync_automatica' => $this->boolean('sync_automatica'),
+            'sync_horarios' => array_values(array_filter(
+                (array) $this->input('sync_horarios', []),
+                fn ($hora): bool => filled($hora),
+            )),
+            'sync_dias' => array_values(array_map(
+                fn ($dia): int => (int) $dia,
+                array_filter((array) $this->input('sync_dias', []), fn ($dia): bool => filled($dia)),
+            )),
         ]);
     }
 
@@ -58,6 +75,9 @@ class UpdateEquipoRequest extends FormRequest
         return [
             'ip.unique' => 'Ya existe un equipo registrado con esa IP y puerto.',
             'ip.ip' => 'La dirección IP no es válida.',
+            'sync_horarios.required_if' => 'Indique al menos una hora de sincronización.',
+            'sync_horarios.*.date_format' => 'Cada hora va en formato HH:MM.',
+            'sync_dias.*.in' => 'Alguno de los días marcados no es un día de la semana válido.',
         ];
     }
 }

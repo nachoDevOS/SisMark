@@ -28,10 +28,27 @@ function datosDeHorario(array $sobrescribir = []): array
     ], $sobrescribir);
 }
 
+/*
+|--------------------------------------------------------------------------
+| Listado
+|--------------------------------------------------------------------------
+|
+| La pantalla `index` solo arma el marco: las filas las trae por AJAX la ruta
+| `horarios.list`, que devuelve la tabla como vista parcial y busca por `q`.
+| Por eso lo que se lista y se filtra se prueba contra `list` y no contra
+| `index`.
+*/
+
+test('la pantalla del listado abre', function () {
+    $this->get(route('horarios.index'))
+        ->assertOk()
+        ->assertSee('Buscar por nombre del turno');
+});
+
 test('el listado muestra los horarios registrados', function () {
     Turno::factory()->create(['nombreTurno' => 'Turno Mañana']);
 
-    $this->get(route('horarios.index'))
+    $this->get(route('horarios.list'))
         ->assertOk()
         ->assertSee('Turno Mañana');
 });
@@ -86,7 +103,7 @@ test('el listado filtra por nombre del horario', function () {
     Turno::factory()->create(['nombreTurno' => 'LUN: 08:00 - 16:00']);
     Turno::factory()->create(['nombreTurno' => 'MAR: 14:00 - 22:00']);
 
-    $this->get(route('horarios.index', ['buscar' => '08:00']))
+    $this->get(route('horarios.list', ['q' => '08:00']))
         ->assertOk()
         ->assertSee('LUN: 08:00 - 16:00')
         ->assertDontSee('MAR: 14:00 - 22:00');
@@ -96,7 +113,7 @@ test('el listado filtra por día', function () {
     Turno::factory()->create(['dia' => '2', 'nombreTurno' => 'Turno del lunes']);
     Turno::factory()->create(['dia' => '3', 'nombreTurno' => 'Turno del martes']);
 
-    $this->get(route('horarios.index', ['dia' => '2']))
+    $this->get(route('horarios.list', ['dia' => '2']))
         ->assertOk()
         ->assertSee('Turno del lunes')
         ->assertDontSee('Turno del martes');

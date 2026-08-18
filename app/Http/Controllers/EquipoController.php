@@ -8,7 +8,7 @@ use App\Http\Requests\UpdateEquipoRequest;
 use App\Models\Equipo;
 use App\Models\EquipoAuditoria;
 use App\Services\DeviceService;
-use App\Services\RegistroAsistencia;
+use App\Services\SincronizadorEquipos;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -208,14 +208,14 @@ class EquipoController extends Controller
      * del equipo vía el microservicio; nunca se muestra en pantalla (el
      * historial es grande y renderizarlo es lento), solo se baja el archivo.
      */
-    public function exportarMarcaciones(Request $request, Equipo $equipo, DeviceService $deviceService): Response|RedirectResponse
+    public function exportarMarcaciones(Request $request, Equipo $equipo, SincronizadorEquipos $sincronizador): Response|RedirectResponse
     {
         $this->authorize('view', $equipo);
 
         $desde = (string) $request->query('desde', '');
         $hasta = (string) $request->query('hasta', '');
 
-        [$todas, $error] = $this->marcacionesDelEquipo($equipo, $deviceService, $desde, $hasta);
+        [$todas, $error] = $sincronizador->marcaciones($equipo, $desde, $hasta);
 
         if ($error) {
             EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_EXPORTAR, [
@@ -227,8 +227,6 @@ class EquipoController extends Controller
 
             return back()->with('error', $error);
         }
-
-        $todas = $this->filtrarPorRango($todas, $desde, $hasta);
 
         EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_EXPORTAR, [
             'desde' => $desde ?: null,
@@ -264,44 +262,21 @@ class EquipoController extends Controller
      * descargar/reimportar el CSV. Aplica las mismas reglas que el import (cruce
      * por funcionario, sin duplicar, descartando fecha basura del reloj).
      */
-    public function sincronizarMarcaciones(Request $request, Equipo $equipo, DeviceService $deviceService, RegistroAsistencia $registro): RedirectResponse
+    public function sincronizarMarcaciones(Request $request, Equipo $equipo, SincronizadorEquipos $sincronizador): RedirectResponse
     {
         $this->authorize('sync', $equipo);
 
-        $desde = (string) $request->input('desde', '');
-        $hasta = (string) $request->input('hasta', '');
+        $resultado = $sincronizador->sincronizar(
+            $equipo,
+            (string) $request->input('desde', ''),
+            (string) $request->input('hasta', ''),
+        );
 
-        [$todas, $error] = $this->marcacionesDelEquipo($equipo, $deviceService, $desde, $hasta);
-
-        if ($error) {
-            EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_SINCRONIZAR, [
-                'desde' => $desde ?: null,
-                'hasta' => $hasta ?: null,
-                'detalle' => $error,
-                'exito' => false,
-            ]);
-
-            return back()->with('error', $error);
+        if (! $resultado['exito']) {
+            return back()->with('error', $resultado['mensaje']);
         }
 
-        $todas = $this->filtrarPorRango($todas, $desde, $hasta);
-
-        $filas = array_map(fn (array $marcacion): array => [
-            'ci' => $marcacion['user_id'] ?? null,
-            'momento' => filled($marcacion['timestamp'] ?? null) ? Carbon::parse($marcacion['timestamp']) : null,
-        ], $todas);
-
-        $conteo = $registro->registrar($filas);
-        $mensaje = $registro->mensaje($conteo, "Sincronización de «{$equipo->nombre}»");
-
-        EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_SINCRONIZAR, [
-            'desde' => $desde ?: null,
-            'hasta' => $hasta ?: null,
-            'total_marcaciones' => count($todas),
-            'detalle' => $mensaje,
-        ]);
-
-        return back()->with('estado', $mensaje);
+        return back()->with('estado', $resultado['mensaje']);
     }
 
     /**
@@ -339,55 +314,5 @@ class EquipoController extends Controller
         ]);
 
         return back()->with('estado', "Se borraron las marcaciones de «{$equipo->nombre}». El equipo quedó con el historial vacío y queda registrado en la bitácora.");
-    }
-
-    /**
-     * Trae las marcaciones del equipo para el rango pedido, leyéndolas en vivo
-     * del reloj vía el microservicio. El rango se pasa al microservicio, que lo
-     * aplica antes de responder: así, en equipos con historial largo, Laravel
-     * recibe y parsea mucho menos.
-     *
-     * Se lee siempre del reloj, sin caché: los dos usos —exportar y
-     * sincronizar— tienen que traer lo del momento. Antes había una caché de 15
-     * minutos, pero los dos llamadores pedían lectura fresca, que la borraba
-     * justo antes de consultarla: nunca llegó a servir una respuesta.
-     *
-     * @return array{0: array<int, array<string, mixed>>, 1: ?string}
-     */
-    private function marcacionesDelEquipo(Equipo $equipo, DeviceService $deviceService, string $desde = '', string $hasta = ''): array
-    {
-        try {
-            return [$deviceService->attendance($equipo, $desde ?: null, $hasta ?: null)['marcaciones'] ?? [], null];
-        } catch (DeviceServiceException $e) {
-            return [[], $e->getMessage()];
-        }
-    }
-
-    /**
-     * Filtra el array de marcaciones ya traídas del equipo por rango de
-     * fechas (inclusive). `$desde`/`$hasta` vacíos no filtran ese extremo.
-     *
-     * @param  array<int, array<string, mixed>>  $todas
-     * @return array<int, array<string, mixed>>
-     */
-    private function filtrarPorRango(array $todas, string $desde, string $hasta): array
-    {
-        if ($desde === '' && $hasta === '') {
-            return $todas;
-        }
-
-        $inicio = $desde !== '' ? Carbon::parse($desde)->startOfDay() : null;
-        $fin = $hasta !== '' ? Carbon::parse($hasta)->endOfDay() : null;
-
-        return array_values(array_filter($todas, function (array $marcacion) use ($inicio, $fin): bool {
-            if (blank($marcacion['timestamp'] ?? null)) {
-                return false;
-            }
-
-            $fecha = Carbon::parse($marcacion['timestamp']);
-
-            return (! $inicio || $fecha->greaterThanOrEqualTo($inicio))
-                && (! $fin || $fecha->lessThanOrEqualTo($fin));
-        }));
     }
 }

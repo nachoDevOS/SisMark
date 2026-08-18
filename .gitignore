@@ -26,3 +26,7 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 .env.docker
+
+# Bytecode de Python del microservicio: se regenera solo en cada arranque.
+__pycache__/
+*.py[cod]

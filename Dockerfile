@@ -146,6 +146,23 @@ ENV SISMARK_DEVICE_SERVICE=true \
     DEVICE_SERVICE_BIND=127.0.0.1 \
     DEVICE_SERVICE_PORT=9001
 
+# --- Planificador de tareas ---------------------------------------------------
+# El entrypoint levanta `php artisan schedule:work` dentro del contenedor: es lo
+# que dispara cada minuto lo declarado en routes/console.php, hoy la
+# sincronización automática de los relojes en los días y a las horas que tenga
+# configurados cada equipo en su ficha.
+#
+# Las horas se comparan contra `now()`, o sea contra APP_TIMEZONE: con la zona
+# mal puesta, «08:30» dispara a otra hora. Por eso el TZ del sistema y el
+# default de config/app.php son los dos America/La_Paz.
+#
+# Va acá adentro y no como cron del host porque en Coolify no hay crontab: el
+# recurso es la imagen. Sin esto, los horarios se guardan pero no corre nada.
+#
+# Apagarlo (SISMARK_SCHEDULER=false) solo si se levanta más de una réplica de
+# esta imagen: el planificador tiene que correr en una sola.
+ENV SISMARK_SCHEDULER=true
+
 
 # --- TLS antiguo para el SQL Server 2008 R2 ---------------------------------
 # Sin esto el handshake muere con «unsupported protocol» antes de llegar a

@@ -176,6 +176,43 @@ if [ "${devices}" = "true" ]; then
     fi
 fi
 
+# --- 8. Planificador de tareas ----------------------------------------------
+# `schedule:work` es el cron del sistema dentro del contenedor: despierta cada
+# minuto y corre lo que declara routes/console.php. Hoy eso es
+# `sismark:sincronizar-equipos`, que baja las marcaciones de cada reloj en los
+# días y a las horas configurados en su ficha (Biométricos > editar equipo >
+# «Sincronizar automáticamente en días y horas fijas»).
+#
+# Solo lee los relojes: las marcaciones se copian a `asistencias` y el equipo
+# conserva su historial. Vaciarlo es otra acción, a mano y con otro permiso.
+#
+# Sin este proceso los horarios quedan guardados pero no ocurre nada: en Coolify
+# no hay crontab del host que dispare `schedule:run`, así que el planificador
+# tiene que vivir acá adentro.
+#
+# Corre como `unit` —el mismo usuario que el PHP de Unit— para que los logs y
+# las cachés que escriba queden con el dueño correcto. Igual que el
+# microservicio, queda en segundo plano colgando del PID 1 y no se reinicia
+# solo: si se cae, se reinicia el contenedor.
+#
+# Se apaga con SISMARK_SCHEDULER=false. Corresponde cuando se levanta más de una
+# réplica de la imagen: el planificador tiene que correr en una sola, o cada
+# réplica sincronizaría los mismos relojes a la misma hora.
+if [ "${SISMARK_SCHEDULER:-true}" = "true" ]; then
+    scheduler_log=/var/www/html/storage/logs/scheduler.log
+
+    : > "${scheduler_log}"
+    chown unit:unit "${scheduler_log}"
+
+    echo "[sismark] Arrancando el planificador de tareas (sincronización automática de equipos)…"
+
+    su -p -s /bin/sh unit -c \
+        "exec php /var/www/html/artisan schedule:work" \
+        >> "${scheduler_log}" 2>&1 &
+else
+    echo "[sismark] Planificador apagado (SISMARK_SCHEDULER=false): la sincronización automática de equipos no va a correr."
+fi
+
 # Las cachés se escribieron como root: se devuelven al usuario de Unit.
 chown -R unit:unit storage bootstrap/cache
 

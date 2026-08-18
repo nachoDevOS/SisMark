@@ -25,13 +25,29 @@ function respaldoDelDia(string $nombre = 'decreto.pdf'): UploadedFile
     return UploadedFile::fake()->create($nombre, 40, 'application/pdf');
 }
 
+/*
+|--------------------------------------------------------------------------
+| Listado
+|--------------------------------------------------------------------------
+|
+| La pantalla `index` solo arma el marco: las filas las trae por AJAX la ruta
+| `dias-excepcionales.list`, que devuelve la tabla como vista parcial. Por eso
+| lo que se busca y se filtra se prueba contra `list` y no contra `index`.
+*/
+
+test('la pantalla del listado abre', function () {
+    $this->get(route('dias-excepcionales.index'))
+        ->assertOk()
+        ->assertSee('Días excepcionales');
+});
+
 test('el listado muestra los días excepcionales', function () {
     DiaExcepcional::factory()->create([
         'fecha' => '2025-01-01 00:00:00',
         'motivoInasistencia' => 'AÑO NUEVO',
     ]);
 
-    $this->get(route('dias-excepcionales.index'))
+    $this->get(route('dias-excepcionales.list'))
         ->assertOk()
         ->assertSee('AÑO NUEVO')
         ->assertSee('01/01/2025');
@@ -41,7 +57,7 @@ test('la búsqueda filtra por motivo', function () {
     DiaExcepcional::factory()->create(['fecha' => '2025-03-04 00:00:00', 'motivoInasistencia' => 'FERIADO POR CARNAVAL']);
     DiaExcepcional::factory()->create(['fecha' => '2025-12-25 00:00:00', 'motivoInasistencia' => 'NAVIDAD']);
 
-    $this->get(route('dias-excepcionales.index', ['q' => 'carnaval']))
+    $this->get(route('dias-excepcionales.list', ['q' => 'carnaval']))
         ->assertOk()
         ->assertSee('FERIADO POR CARNAVAL')
         ->assertDontSee('NAVIDAD');
@@ -51,12 +67,12 @@ test('la búsqueda filtra por fecha', function () {
     DiaExcepcional::factory()->create(['fecha' => '2025-05-01 00:00:00', 'motivoInasistencia' => 'DIA DEL TRABAJO']);
     DiaExcepcional::factory()->create(['fecha' => '2024-11-18 00:00:00', 'motivoInasistencia' => 'ANIVERSARIO DEL BENI']);
 
-    $this->get(route('dias-excepcionales.index', ['q' => '01/05/2025']))
+    $this->get(route('dias-excepcionales.list', ['q' => '01/05/2025']))
         ->assertOk()
         ->assertSee('DIA DEL TRABAJO')
         ->assertDontSee('ANIVERSARIO DEL BENI');
 
-    $this->get(route('dias-excepcionales.index', ['q' => '2024']))
+    $this->get(route('dias-excepcionales.list', ['q' => '2024']))
         ->assertOk()
         ->assertSee('ANIVERSARIO DEL BENI')
         ->assertDontSee('DIA DEL TRABAJO');
