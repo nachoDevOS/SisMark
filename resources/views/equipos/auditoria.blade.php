@@ -12,13 +12,16 @@
     </div>
 
     <p style="margin: -.4rem 0 1.1rem; color: var(--muted); font-size: .85rem;">
-        Quién exportó, envió a la base del SIA, limpió o dio de baja cada equipo biométrico.
+        Quién exportó, registró en el sistema, limpió o dio de baja cada equipo biométrico.
         Las acciones que borran información llevan el motivo escrito por quien las hizo.
-        En las sincronizaciones se detalla qué pasó con cada marcación que entregó el reloj:
-        <strong>repetidas</strong> es lo normal —el equipo devuelve todo su historial en cada
-        lectura y el sistema no lo duplica—, mientras que <strong>sin funcionario</strong>
-        señala a alguien que marca con un ID que no está en el padrón, y sus marcas no se
-        están registrando.
+        Cada sincronización se mide en dos tramos:
+        <strong>la transferencia</strong> compara lo que el reloj dice tener contra lo que
+        llegó —si no coinciden, la lectura se cortó por el medio y falta una marcación—, y
+        <strong>el destino</strong> reparte lo que llegó. <strong>Repetidas</strong> es lo
+        normal: el equipo devuelve todo su historial en cada lectura y el sistema no lo
+        duplica. <strong>Sin funcionario</strong> son marcaciones que <em>sí se guardaron</em>,
+        de alguien que marca con un ID que todavía no está en el padrón; aparecen solas en sus
+        reportes en cuanto se lo dé de alta.
     </p>
 
     <x-tabla-filtros :action="route('equipos.auditoria')" :busqueda="$busqueda"
@@ -35,19 +38,34 @@
 
     <div class="card">
         <table>
+            {{-- Dos grupos de columnas porque son dos cuentas distintas y encadenadas:
+                     en el reloj = llegaron + se perdieron
+                     llegaron    = nuevas + repetidas + sin funcionario + con error + fuera de rango
+                 Juntas en una sola fila de encabezados, los diez números se leían como
+                 una lista suelta y no se veía cuál tenía que cerrar contra cuál. --}}
             <thead>
                 <tr>
-                    <th>Fecha y hora</th>
-                    <th>Usuario</th>
-                    <th>Acción</th>
-                    <th>Equipo</th>
-                    <th>Motivo / detalle</th>
-                    <th style="text-align: right;" title="Marcaciones que entregó el reloj para el rango pedido">En el equipo</th>
-                    <th style="text-align: right;" title="Se guardaron en el sistema">Nuevas</th>
+                    <th rowspan="2">Fecha y hora</th>
+                    <th rowspan="2">Usuario</th>
+                    <th rowspan="2">Acción</th>
+                    <th rowspan="2">Equipo</th>
+                    <th rowspan="2">Motivo / detalle</th>
+                    <th colspan="3" style="text-align: center; border-left: 1px solid var(--borde);"
+                        title="Del reloj a SisMark: ¿llegó todo lo que el equipo tenía guardado?">Transferencia</th>
+                    <th colspan="5" style="text-align: center; border-left: 1px solid var(--borde);"
+                        title="De lo que llegó: qué pasó con cada marcación">Destino en la base</th>
+                </tr>
+                <tr>
+                    <th style="text-align: right; border-left: 1px solid var(--borde);"
+                        title="Cuántas dice el reloj que tiene guardadas, según su propio contador">En el reloj</th>
+                    <th style="text-align: right;" title="Cuántas llegaron a SisMark">Llegaron</th>
+                    <th style="text-align: center;" title="Si las dos cifras coinciden, no se perdió ninguna en el camino">¿Completa?</th>
+                    <th style="text-align: right; border-left: 1px solid var(--borde);"
+                        title="Se guardaron en el sistema y cruzan con un funcionario del padrón">Nuevas</th>
                     <th style="text-align: right;" title="Ya estaban registradas: el reloj las vuelve a entregar en cada lectura">Repetidas</th>
-                    <th style="text-align: right;" title="El ID del reloj no cruza con ningún funcionario del padrón">Sin funcionario</th>
-                    <th style="text-align: right;" title="Fecha inválida del reloj o error al guardar">Con error</th>
-                    <th style="text-align: right;" title="El reloj las mandó aunque quedaban fuera del rango pedido">Fuera de rango</th>
+                    <th style="text-align: right;" title="Se guardaron igual, pero el ID del reloj todavía no está en el padrón">Sin funcionario</th>
+                    <th style="text-align: right;" title="Fecha inválida del reloj o error al guardar: son las únicas que no se guardan">Con error</th>
+                    <th style="text-align: right;" title="Quedaban fuera del rango pedido. La sincronización no pide rango, así que acá siempre es 0">Fuera de rango</th>
                 </tr>
             </thead>
             <tbody>
@@ -65,7 +83,13 @@
                                 {{ $registro->etiquetaAccion() }}
                             </span>
                             @unless ($registro->exito)
-                                <div style="color: var(--danger); font-size: .75rem; margin-top: .2rem;">Falló</div>
+                                {{-- Dos fallos muy distintos: el reloj que no contestó no dejó
+                                     nada, y el que contestó a medias sí guardó lo que llegó.
+                                     Decir «Falló» en los dos casos hacía pensar que se había
+                                     perdido todo. --}}
+                                <div style="color: var(--danger); font-size: .75rem; margin-top: .2rem;">
+                                    {{ $registro->transferenciaCompleta() === false ? 'Incompleta' : 'Falló' }}
+                                </div>
                             @endunless
                         </td>
                         <td>
@@ -98,10 +122,30 @@
                                 —
                             @endif
                         </td>
-                        {{-- El desglose solo existe en las sincronizaciones: exportar,
-                             limpiar y eliminar no reparten las marcaciones en categorías. --}}
+                        {{-- Tramo 1: la transferencia. `en el reloj` es la única cifra que no
+                             sale de contar lo que llegó, y por eso es la que delata una
+                             lectura cortada por el medio. --}}
+                        <td style="text-align: right; border-left: 1px solid var(--borde);">{{ $registro->en_equipo ?? '—' }}</td>
                         <td style="text-align: right;">{{ $registro->total_marcaciones ?? '—' }}</td>
-                        <td style="text-align: right;">
+                        <td style="text-align: center;">
+                            @php($completa = $registro->transferenciaCompleta())
+                            @if ($completa === null)
+                                {{-- Sin contador del reloj no se afirma ni se desmiente: la
+                                     corrida no se marca incompleta por no haber podido
+                                     comprobarla. --}}
+                                <span style="color: var(--muted);" title="No se pudo comprobar: el reloj no informó su contador">—</span>
+                            @elseif ($completa)
+                                <span style="color: var(--verde);" title="Llegó todo lo que el reloj tenía">✓</span>
+                            @else
+                                <strong style="color: var(--danger);"
+                                        title="Faltan {{ $registro->marcacionesPerdidas() }} marcación(es): la lectura quedó incompleta y se reintenta en la próxima corrida">
+                                    faltan {{ $registro->marcacionesPerdidas() }}
+                                </strong>
+                            @endif
+                        </td>
+                        {{-- Tramo 2: el destino. Solo existe en las sincronizaciones:
+                             exportar, limpiar y eliminar no reparten nada. --}}
+                        <td style="text-align: right; border-left: 1px solid var(--borde);">
                             @if ($registro->nuevas === null)
                                 —
                             @elseif ($registro->nuevas > 0)
@@ -115,10 +159,12 @@
                             @if ($registro->sin_funcionario === null)
                                 —
                             @elseif ($registro->sin_funcionario > 0)
-                                {{-- No es un fallo del sistema: es un ID de reloj que no está
-                                     en el padrón. Se marca porque significa que alguien está
-                                     marcando y sus marcas no le llegan a nadie. --}}
-                                <strong style="color: var(--danger);">{{ $registro->sin_funcionario }}</strong>
+                                {{-- No es un fallo ni una pérdida: las marcaciones se
+                                     guardaron. Se resalta porque significa que alguien marca
+                                     con un ID que no está en el padrón, y hasta que se lo dé
+                                     de alta sus marcas no salen en ningún reporte. --}}
+                                <strong style="color: var(--ambar, #b45309);"
+                                        title="Guardadas, pero su ID no está en el padrón: aparecerán en los reportes en cuanto se dé de alta al funcionario">{{ $registro->sin_funcionario }}</strong>
                             @else
                                 0
                             @endif
@@ -136,7 +182,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="11" class="vacio">Todavía no hay movimientos registrados.</td>
+                        <td colspan="13" class="vacio">Todavía no hay movimientos registrados.</td>
                     </tr>
                 @endforelse
             </tbody>

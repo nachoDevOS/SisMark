@@ -223,18 +223,19 @@
                                                     </span>
                                                 </button>
 
+                                                {{-- Sin rango a propósito: el reloj entrega su historial completo
+                                                     igual, así que se registra todo lo que falte. El rango de arriba
+                                                     sigue valiendo para el CSV, que es lo que el usuario mira. --}}
                                                 <form method="POST" action="{{ route('equipos.marcaciones.sincronizar', $equipo) }}"
-                                                      x-on:submit="if (! confirm('¿Enviar las marcaciones del rango a la base del SIA?')) { $event.preventDefault(); return; } enviando = true">
+                                                      x-on:submit="if (! confirm('¿Registrar en el sistema todas las marcaciones del reloj que falten?')) { $event.preventDefault(); return; } enviando = true">
                                                     @csrf
-                                                    <input type="hidden" name="desde" :value="desde">
-                                                    <input type="hidden" name="hasta" :value="hasta">
                                                     <button type="submit" class="modal-opcion modal-opcion--principal"
                                                             :disabled="exportando || enviando">
                                                         <span class="modal-opcion__icono" x-show="! enviando"><x-heroicon-o-arrow-up-tray /></span>
                                                         <span class="modal-opcion__icono" x-show="enviando" x-cloak><span class="spinner-anillo"></span></span>
                                                         <span>
-                                                            <span class="modal-opcion__titulo" x-text="enviando ? 'Enviando…' : 'Enviar a la base del SIA'"></span>
-                                                            <span class="modal-opcion__ayuda">Registra las marcaciones en el sistema. No baja ningún archivo.</span>
+                                                            <span class="modal-opcion__titulo" x-text="enviando ? 'Registrando…' : 'Registrar en el sistema'"></span>
+                                                            <span class="modal-opcion__ayuda">Guarda todas las marcaciones del reloj que falten. Ignora el rango y no baja ningún archivo.</span>
                                                         </span>
                                                     </button>
                                                 </form>

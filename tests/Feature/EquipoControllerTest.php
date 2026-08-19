@@ -33,8 +33,10 @@ test('el listado tiene el modal para descargar el CSV por rango de fechas de cad
     $this->get(route('equipos.index'))
         ->assertOk()
         ->assertSee(route('equipos.marcaciones.exportar', $equipo), escape: false)
-        ->assertSee('name="desde"', escape: false)
-        ->assertSee('name="hasta"', escape: false);
+        // El rango es del CSV, que es lo que el usuario mira. La sincronización
+        // no lo usa: baja el historial completo del reloj.
+        ->assertSee('id="desde-'.$equipo->id.'"', escape: false)
+        ->assertSee('id="hasta-'.$equipo->id.'"', escape: false);
 });
 
 test('muestra el formulario de alta', function () {
@@ -343,7 +345,7 @@ test('sincroniza las marcaciones del equipo directo a la BD local', function () 
     expect(DB::table('asistencias')->where('ci', '7633685')->count())->toBe(1);
 });
 
-test('la sincronización a la BD respeta el rango de fechas', function () {
+test('la sincronización ignora el rango y baja todo el historial del reloj', function () {
     DB::table('personas')->insert([
         'ci' => '5', 'paterno' => 'Test', 'materno' => null, 'nombres' => 'Uno', 'pinReloj' => '5', 'marcaDirecta' => false,
     ]);
@@ -359,10 +361,16 @@ test('la sincronización a la BD respeta el rango de fechas', function () {
 
     $equipo = Equipo::factory()->create();
 
+    // Aunque manden un rango, la sincronización no lo usa: el reloj vuelca su
+    // buffer entero igual, así que acotarlo solo servía para descartar después.
     $this->post(route('equipos.marcaciones.sincronizar', $equipo), ['desde' => '2026-07-01', 'hasta' => '2026-07-15'])
         ->assertRedirect();
 
-    expect(DB::table('asistencias')->where('ci', '5')->count())->toBe(1);
+    expect(DB::table('asistencias')->where('ci', '5')->count())->toBe(2);
+
+    // Y no se le pide rango al microservicio.
+    Http::assertSent(fn ($request): bool => ! str_contains($request->url(), 'desde=')
+        && ! str_contains($request->url(), 'hasta='));
 });
 
 test('la sincronización redirige con error si el equipo no responde', function () {
@@ -385,16 +393,17 @@ test('un usuario sin permiso no puede sincronizar a la BD', function () {
     $this->post(route('equipos.marcaciones.sincronizar', $equipo))->assertForbidden();
 });
 
-test('el modal del listado ofrece descargar y enviar a la BD por rango', function () {
+test('el modal del listado ofrece descargar el CSV y registrar en el sistema', function () {
     $equipo = Equipo::factory()->create();
 
     $this->get(route('equipos.index'))
         ->assertOk()
         ->assertSee(route('equipos.marcaciones.sincronizar', $equipo), escape: false)
         // Cada acción del modal dice qué hace, para no confundir bajar un
-        // archivo con grabar las marcaciones en la base.
-        ->assertSee('Enviar a la base del SIA')
-        ->assertSee('Registra las marcaciones en el sistema. No baja ningún archivo.')
+        // archivo con grabar las marcaciones en la base. La de registrar avisa
+        // además que ignora el rango: es la única que no lo respeta.
+        ->assertSee('Registrar en el sistema')
+        ->assertSee('Guarda todas las marcaciones del reloj que falten. Ignora el rango y no baja ningún archivo.')
         ->assertSee('Baja un archivo a tu computadora. No modifica nada.');
 });
 

@@ -35,6 +35,9 @@ class EquipoAuditoriaFactory extends Factory
                 'activo' => true,
                 'ultima_sync' => null,
             ],
+            // El contador del reloj solo lo trae la sincronización: exportar no
+            // lo consulta.
+            'en_equipo' => null,
             'total_marcaciones' => fake()->numberBetween(0, 500),
             // El desglose solo lo escriben las sincronizaciones; el estado por
             // defecto es una exportación, que no reparte nada.
@@ -62,9 +65,14 @@ class EquipoAuditoriaFactory extends Factory
             $sinFuncionario = fake()->numberBetween(0, 5);
             $fallidas = fake()->numberBetween(0, 3);
 
+            $llegaron = $nuevas + $repetidas + $sinFuncionario + $fallidas;
+
             return [
                 'accion' => EquipoAuditoria::ACCION_SINCRONIZAR,
-                'total_marcaciones' => $nuevas + $repetidas + $sinFuncionario + $fallidas,
+                // Transferencia completa: el reloj declara lo mismo que llegó.
+                // Para el caso contrario está el estado `incompleta()`.
+                'en_equipo' => $llegaron,
+                'total_marcaciones' => $llegaron,
                 'nuevas' => $nuevas,
                 'repetidas' => $repetidas,
                 'sin_funcionario' => $sinFuncionario,
@@ -72,6 +80,18 @@ class EquipoAuditoriaFactory extends Factory
                 'fuera_de_rango' => 0,
             ];
         });
+    }
+
+    /**
+     * Estado: sincronización cuya lectura se cortó por el medio. El reloj
+     * declara más marcaciones de las que llegaron.
+     */
+    public function incompleta(int $perdidas = 1): static
+    {
+        return $this->sincronizacion()->state(fn (array $atributos): array => [
+            'en_equipo' => $atributos['total_marcaciones'] + $perdidas,
+            'exito' => false,
+        ]);
     }
 
     /**
@@ -93,6 +113,7 @@ class EquipoAuditoriaFactory extends Factory
         return $this->state(fn (): array => [
             'accion' => EquipoAuditoria::ACCION_ELIMINAR,
             'motivo' => 'Equipo dado de baja por falla de hardware.',
+            'en_equipo' => null,
             'total_marcaciones' => null,
             'nuevas' => null,
             'repetidas' => null,

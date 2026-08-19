@@ -22,31 +22,20 @@ use Illuminate\Support\Carbon;
  * Solo **lee** el reloj: las marcaciones se copian a `asistencias` y el equipo
  * conserva su historial. Vaciarlo es otra acción, a mano y con otro permiso.
  *
- * Rango que se baja: desde el día de la última corrida automática (o hoy, si
- * nunca corrió) hasta hoy. Así una corrida que falló ayer se recupera sola en
- * la siguiente, sin volver a leer el historial entero del reloj.
+ * **Se baja el buffer completo, sin rango.** El protocolo ZK vuelca todo el
+ * historial en cada lectura, así que pedir un rango no le ahorraba trabajo al
+ * reloj: solo descartaba después. Sin rango no queda nada afuera, lo que ya
+ * está en la base se descarta por la terna `(ci, fecha, hora)`, y la corrida es
+ * idempotente. Con eso desaparece también el tope de días hacia atrás que hacía
+ * falta cuando el rango arrancaba en la última corrida exitosa: un equipo que
+ * estuvo meses caído se pone al día en la primera lectura, sin cálculo previo.
  */
 #[Signature('sismark:sincronizar-equipos
     {--equipo= : ID de un equipo puntual, en vez de los que tocan por horario}
-    {--forzar : Corre aunque no sea la hora configurada}
-    {--desde= : Fecha inicial (Y-m-d); por defecto, la de la última corrida automática}
-    {--hasta= : Fecha final (Y-m-d); por defecto, hoy}')]
+    {--forzar : Corre aunque no sea la hora configurada}')]
 #[Description('Sincroniza las marcaciones de los equipos biométricos en los horarios configurados en cada uno.')]
 class SincronizarEquipos extends Command
 {
-    /**
-     * Hasta cuántos días hacia atrás se le pide al reloj cuando estuvo mucho
-     * tiempo sin dar señales.
-     *
-     * Sin tope, un equipo apagado seis meses volvería pidiendo medio año de
-     * historial: el reloj tarda minutos en responder por el protocolo ZK, la
-     * corrida se encima con la del minuto siguiente y el equipo queda inservible
-     * mientras dura. Un mes cubre cualquier caída real —un feriado largo, un
-     * equipo en reparación— y lo que quede afuera se baja a mano con
-     * `--desde`, que no tiene tope.
-     */
-    private const MAX_DIAS_ATRAS = 30;
-
     public function handle(SincronizadorEquipos $sincronizador): int
     {
         $ahora = now();
@@ -61,12 +50,9 @@ class SincronizarEquipos extends Command
         $fallados = 0;
 
         foreach ($equipos as $equipo) {
-            $desde = (string) ($this->option('desde') ?: $this->desdeDe($equipo, $ahora));
-            $hasta = (string) ($this->option('hasta') ?: $ahora->toDateString());
+            $this->info("→ {$equipo->nombre} ({$equipo->ip})");
 
-            $this->info("→ {$equipo->nombre} ({$equipo->ip}) · {$desde} a {$hasta}");
-
-            $resultado = $sincronizador->sincronizar($equipo, $desde, $hasta);
+            $resultado = $sincronizador->sincronizar($equipo);
 
             // «Cuándo corrió la tarea», no «cuándo anduvo el reloj»: se escribe
             // ande o no, y es lo que evita repetir la corrida dentro del mismo
@@ -80,10 +66,21 @@ class SincronizarEquipos extends Command
                 continue;
             }
 
-            // Hasta acá se trajo información. Va aparte de la marca de corrida
-            // y **solo en el éxito**: es de esta columna que sale el «desde»,
-            // así que mientras el equipo esté caído no se mueve y el hueco se
-            // recupera entero cuando vuelva.
+            // La lectura se cortó por el medio: el reloj declaró más
+            // marcaciones de las que llegaron. Lo que llegó ya se guardó —no se
+            // tira nada—, pero la corrida no cuenta como buena y el equipo
+            // queda marcado para que se note en la ficha y en la bitácora.
+            if ($resultado['completa'] === false) {
+                $fallados++;
+                $this->warn("   {$resultado['mensaje']}");
+
+                continue;
+            }
+
+            // Hasta acá se trajo todo lo que el reloj tenía. Va aparte de la
+            // marca de corrida y **solo cuando la transferencia cerró**: es la
+            // fecha que la ficha muestra como «última vez que trajo datos», y
+            // sirve para delatar al reloj que responde pero entrega a medias.
             $equipo->forceFill(['sync_ultimo_exito' => $ahora])->save();
 
             $this->line("   {$resultado['mensaje']}");
@@ -92,32 +89,6 @@ class SincronizarEquipos extends Command
         // Un equipo caído no tumba al resto —ya se sincronizaron—, pero el
         // comando termina en fallo para que quede visible en el log de la tarea.
         return $fallados > 0 ? self::FAILURE : self::SUCCESS;
-    }
-
-    /**
-     * Desde qué día se le piden las marcaciones al equipo.
-     *
-     * Es el día de la última corrida que **trajo datos**, no el de la última
-     * que se intentó: así una caída de varios días se recupera entera en el
-     * primer momento en que el reloj vuelve a contestar. Un equipo que nunca
-     * se sincronizó arranca por hoy —el historial viejo se baja a mano, con
-     * `--desde`, y no de sorpresa en la primera corrida automática—.
-     *
-     * El resultado se acota a {@see MAX_DIAS_ATRAS} por lo que explica esa
-     * constante.
-     */
-    private function desdeDe(Equipo $equipo, Carbon $ahora): string
-    {
-        $desde = $equipo->sync_ultimo_exito ?? $ahora;
-        $tope = $ahora->copy()->subDays(self::MAX_DIAS_ATRAS);
-
-        if ($desde->lessThan($tope)) {
-            $this->warn("   El equipo no sincroniza desde {$desde->toDateString()}; se piden los últimos ".self::MAX_DIAS_ATRAS.' días.');
-
-            $desde = $tope;
-        }
-
-        return $desde->toDateString();
     }
 
     /**

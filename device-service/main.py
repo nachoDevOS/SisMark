@@ -287,6 +287,23 @@ def device_attendance(
     antes de responder, así Laravel recibe (y parsea) mucho menos en equipos con
     historial largo. Las marcaciones se leen en vivo en cada llamada.
 
+    Devuelve tres cifras distintas, que es lo que le permite a SisMark saber si
+    la transferencia se completó:
+
+    - `en_equipo`: cuántas dice el propio reloj que tiene guardadas. Sale de su
+      contador interno, no de contar lo que llegó.
+    - `leidas`: cuántas se pudieron leer y parsear del buffer, antes de filtrar.
+    - `total`: cuántas quedaron después de aplicar el rango pedido.
+
+    `en_equipo` contra `leidas` es la prueba de integridad: si el reloj declara
+    1500 y se leyeron 1499, la lectura se cortó por el medio y falta una
+    marcación. Sin las dos cifras eso es invisible —se ven 1499 marcaciones y
+    nada indica que debían ser 1500—. La comparación va contra `leidas` y no
+    contra `total`, que con un rango chico es legítimamente menor.
+
+    El equipo queda deshabilitado durante toda la lectura, así que nadie puede
+    marcar en el medio y mover el contador: las dos cifras miden lo mismo.
+
     Mismo manejo de errores y cierre garantizado que el resto de endpoints.
     """
     conn = None
@@ -300,8 +317,17 @@ def device_attendance(
         inicio = parse_fecha(desde)
         fin = parse_fecha(hasta)
 
+        registros = conn.get_attendance()
+
+        # get_attendance() ya llamó a read_sizes() internamente para saber cómo
+        # partir el buffer, así que el contador del reloj está en memoria y
+        # leerlo no cuesta otro viaje al equipo. getattr por si una versión de
+        # pyzk no lo expone: sin el dato se informa None y SisMark omite la
+        # comprobación, en vez de inventar un número.
+        en_equipo = getattr(conn, "records", None)
+
         marcaciones = []
-        for m in conn.get_attendance():
+        for m in registros:
             dia = m.timestamp.date() if m.timestamp else None
 
             # Con rango pedido, se descartan las de fecha fuera del rango (y las
@@ -326,7 +352,13 @@ def device_attendance(
         # Más recientes primero.
         marcaciones.sort(key=lambda x: x["timestamp"] or "", reverse=True)
 
-        return {"en_linea": True, "total": len(marcaciones), "marcaciones": marcaciones}
+        return {
+            "en_linea": True,
+            "en_equipo": en_equipo,
+            "leidas": len(registros),
+            "total": len(marcaciones),
+            "marcaciones": marcaciones,
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

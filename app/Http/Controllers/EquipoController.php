@@ -257,22 +257,30 @@ class EquipoController extends Controller
     }
 
     /**
-     * Lee las marcaciones del equipo (opcionalmente acotadas por rango) y las
-     * registra directo en la tabla local `asistencias` (MySQL), sin pasar por
-     * descargar/reimportar el CSV. Aplica las mismas reglas que el import (cruce
-     * por funcionario, sin duplicar, descartando fecha basura del reloj).
+     * Lee **todo** el historial del equipo y registra en la tabla local
+     * `asistencias` (MySQL) lo que falte, sin pasar por descargar/reimportar el
+     * CSV.
+     *
+     * No toma rango: el reloj vuelca su buffer entero de todos modos, así que
+     * acotarlo solo servía para descartar después. Se guarda lo que no esté ya
+     * —la terna `(ci, fecha, hora)` evita duplicar— incluso si el carnet no
+     * está en el padrón, y se descarta únicamente la fecha basura del reloj.
      */
-    public function sincronizarMarcaciones(Request $request, Equipo $equipo, SincronizadorEquipos $sincronizador): RedirectResponse
+    public function sincronizarMarcaciones(Equipo $equipo, SincronizadorEquipos $sincronizador): RedirectResponse
     {
         $this->authorize('sync', $equipo);
 
-        $resultado = $sincronizador->sincronizar(
-            $equipo,
-            (string) $request->input('desde', ''),
-            (string) $request->input('hasta', ''),
-        );
+        // Sin rango: se baja el buffer completo del reloj y se guarda lo que
+        // falte. Ver App\Services\SincronizadorEquipos.
+        $resultado = $sincronizador->sincronizar($equipo);
 
         if (! $resultado['exito']) {
+            return back()->with('error', $resultado['mensaje']);
+        }
+
+        // La lectura se cortó: lo que llegó se guardó igual, pero el reloj tenía
+        // más. Se avisa como error para que nadie dé por cerrada la corrida.
+        if ($resultado['completa'] === false) {
             return back()->with('error', $resultado['mensaje']);
         }
 

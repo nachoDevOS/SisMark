@@ -182,15 +182,37 @@ test('no duplica una marcación que ya existe en asistencias', function () {
     expect(DB::table('asistencias')->where('ci', '555')->count())->toBe(1);
 });
 
-test('una fila sin funcionario vinculado no se inserta y queda contada', function () {
+test('una fila sin funcionario en el padrón se guarda igual y queda contada aparte', function () {
     $csv = "CI/ID,Nombre,Fecha,Hora\n999999,\"Sin Registro\",15/07/2026,08:05:00\n";
     $archivo = UploadedFile::fake()->createWithContent('marcaciones.csv', $csv);
 
     $this->post(route('marcaciones.importar'), ['archivo' => $archivo])
         ->assertRedirect()
-        ->assertSessionHas('estado', fn (string $mensaje) => str_contains($mensaje, '1 sin funcionario vinculado'));
+        ->assertSessionHas('estado', fn (string $mensaje) => str_contains($mensaje, '1 guardada(s) sin funcionario en el padrón'));
 
-    expect(DB::table('asistencias')->count())->toBe(0);
+    // La marcación es un hecho: alguien marcó. Que el padrón esté
+    // desactualizado no puede borrarla, porque se perdería para siempre en
+    // cuanto se limpie el reloj. Cuando ese carnet entre a `personas`, la
+    // marcación aparece sola: el vínculo se resuelve en la consulta.
+    expect(DB::table('asistencias')->where('ci', '999999')->count())->toBe(1);
+});
+
+test('la marcación huérfana aparece en la ficha del funcionario cuando se lo da de alta', function () {
+    $csv = "CI/ID,Nombre,Fecha,Hora\n888888,\"Sin Registro\",15/07/2026,08:05:00\n";
+    $archivo = UploadedFile::fake()->createWithContent('marcaciones.csv', $csv);
+
+    $this->post(route('marcaciones.importar'), ['archivo' => $archivo])->assertRedirect();
+
+    // Todavía no está en el padrón: la marcación existe pero no cruza con nadie.
+    expect(Asistencia::query()->where('ci', '888888')->whereHas('persona')->count())->toBe(0);
+
+    DB::table('personas')->insert([
+        'ci' => '888888', 'paterno' => 'Nuevo', 'materno' => null, 'nombres' => 'Ingreso',
+        'pinReloj' => '888888', 'marcaDirecta' => false,
+    ]);
+
+    // Sin correr ningún reproceso: el alta del funcionario alcanza.
+    expect(Asistencia::query()->where('ci', '888888')->whereHas('persona')->count())->toBe(1);
 });
 
 test('importa un csv reguardado desde Excel con separador punto y coma', function () {

@@ -62,7 +62,9 @@ class EquipoAuditoria extends Model
         'accion',
         'motivo',
         'datos_equipo',
-        // Cuántas entregó el reloj, y qué pasó con ellas.
+        // Cuántas dice el reloj que tiene guardadas (su propio contador).
+        'en_equipo',
+        // Cuántas llegaron a SisMark, y qué pasó con ellas.
         'total_marcaciones',
         'nuevas',
         'repetidas',
@@ -84,6 +86,7 @@ class EquipoAuditoria extends Model
         return [
             'datos_equipo' => 'array',
             'exito' => 'boolean',
+            'en_equipo' => 'integer',
             'total_marcaciones' => 'integer',
             'nuevas' => 'integer',
             'repetidas' => 'integer',
@@ -100,7 +103,7 @@ class EquipoAuditoria extends Model
      * trait RegistersUserEvents en `registerUser_id`. Quien llama solo pasa lo
      * propio de la acción.
      *
-     * @param  array{motivo?: ?string, total_marcaciones?: ?int, nuevas?: ?int, repetidas?: ?int, sin_funcionario?: ?int, fallidas?: ?int, fuera_de_rango?: ?int, desde?: ?string, hasta?: ?string, detalle?: ?string, exito?: bool}  $extra
+     * @param  array{motivo?: ?string, en_equipo?: ?int, total_marcaciones?: ?int, nuevas?: ?int, repetidas?: ?int, sin_funcionario?: ?int, fallidas?: ?int, fuera_de_rango?: ?int, desde?: ?string, hasta?: ?string, detalle?: ?string, exito?: bool}  $extra
      */
     public static function registrar(Equipo $equipo, string $accion, array $extra = []): self
     {
@@ -183,5 +186,42 @@ class EquipoAuditoria extends Model
     public function nombreUsuario(): string
     {
         return $this->usuario?->name ?? 'Sistema';
+    }
+
+    /**
+     * Cuántas marcaciones tenía el reloj que no llegaron a SisMark.
+     *
+     * `null` cuando no se puede comprobar: la acción no leyó el buffer
+     * (exportar, limpiar, eliminar), el reloj no contestó, o su firmware no
+     * expone el contador. Eso es distinto de cero, que afirma que no se perdió
+     * nada.
+     */
+    public function marcacionesPerdidas(): ?int
+    {
+        if ($this->en_equipo === null || $this->total_marcaciones === null) {
+            return null;
+        }
+
+        // Nunca negativo: si el reloj declara menos de lo que entregó, el raro
+        // es el contador, no la transferencia. Ver transferenciaCompleta().
+        return max(0, $this->en_equipo - $this->total_marcaciones);
+    }
+
+    /**
+     * ¿Llegó a SisMark todo lo que el reloj declaró tener?
+     *
+     * `null` cuando no hay con qué comparar, y en ese caso quien muestra el
+     * dato no afirma ni desmiente: la corrida no se marca incompleta por no
+     * haber podido comprobarla.
+     *
+     * Un contador **menor** que lo entregado cuenta como completa. Pasa con
+     * firmware viejo después de un corte de luz, y no es motivo para dudar de
+     * marcaciones que sí llegaron.
+     */
+    public function transferenciaCompleta(): ?bool
+    {
+        $perdidas = $this->marcacionesPerdidas();
+
+        return $perdidas === null ? null : $perdidas === 0;
     }
 }
