@@ -1,6 +1,24 @@
 # Documentación de SisMark
 
-Sistema de administración de equipos biométricos ZKTeco (Gobierno del Beni).
+Control de asistencia del Órgano Ejecutivo del Gobierno Autónomo Departamental
+del Beni, sobre equipos biométricos ZKTeco.
+
+## Por dónde empezar
+
+**Si es tu primera vez acá, leé [ESTRUCTURA.md](ESTRUCTURA.md).** Es el
+documento único de referencia: qué hace el sistema, cómo lo hace y dónde está
+cada cosa en el código.
+
+| Documento | Cuándo se lee |
+|---|---|
+| **[ESTRUCTURA.md](ESTRUCTURA.md)** | Panorama completo: módulos, motor de asistencia, reportes, API, sincronización, permisos y árbol del código |
+| [REPORTE-PROCESADO-ASISTENCIA.md](REPORTE-PROCESADO-ASISTENCIA.md) | Las reglas del motor en detalle: por qué un día salió «Falta», «Atraso» o «Abandono» |
+| [COMUNICACION-BIOMETRICOS.md](COMUNICACION-BIOMETRICOS.md) | Protocolo ZKTeco y el microservicio Python que lo habla |
+| [MIGRACION-SIA-MYSQL.md](MIGRACION-SIA-MYSQL.md) | Traer el histórico del SIA (SQL Server) a MySQL, tabla por tabla |
+| [CONEXION-BD.md](CONEXION-BD.md) | Conexiones y credenciales: MySQL local y SQL Server del SIA |
+| [../README.md](../README.md) | Requisitos, instalación y despliegue |
+
+---
 
 ## Bitácora de sesiones de trabajo
 

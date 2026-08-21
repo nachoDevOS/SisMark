@@ -41,9 +41,6 @@
                 <x-heroicon-o-document-chart-bar />Asistencia procesada
             </button>
         @endif
-        <button type="button" class="tabs__boton" role="tab" aria-selected="false" data-tab="rip">
-            <x-heroicon-o-scale />Régimen RIP
-        </button>
     </div>
 
     {{-- Solapa: marcaciones --}}
@@ -168,25 +165,6 @@
         </div>
     @endif
 
-    {{-- Solapa: régimen disciplinario del RIP.
-
-         El filtro es un mes y no un rango de fechas, a propósito: el Art. 51.II
-         manda computar los atrasos a la conclusión del mes y las escalas de los
-         Arts. 45 a 47 cuentan «en el mes» y «en la gestión». Un rango libre no
-         significa nada para el reglamento. --}}
-    <div class="tabs__panel" data-panel="rip" hidden>
-        <div class="tabla-filtros">
-            <label class="tabla-filtros__mostrar">
-                Mes
-                <input type="month" id="r-periodo" max="{{ now()->format('Y-m') }}"
-                       value="{{ now()->format('Y-m') }}" aria-label="Mes a calificar">
-            </label>
-        </div>
-
-        <div id="r-results" style="min-height: 8rem;">
-            <div class="vacio">Cargando…</div>
-        </div>
-    </div>
 </div>
 
 <script>
@@ -246,12 +224,6 @@
                 controles: ['p-desde', 'p-hasta'],
             },
             @endif
-            rip: {
-                url: @json(route('funcionarios.rip.list')),
-                contenedor: document.getElementById('r-results'),
-                filtros: () => ({ periodo: document.getElementById('r-periodo').value }),
-                controles: ['r-periodo'],
-            },
         };
 
         // El reporte imprimible se abre con los mismos filtros que la tabla.

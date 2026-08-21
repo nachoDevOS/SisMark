@@ -47,18 +47,6 @@ class DeviceService
     }
 
     /**
-     * Trae la lista de usuarios registrados en un equipo.
-     *
-     * @return array<string, mixed>
-     *
-     * @throws DeviceServiceException
-     */
-    public function users(Equipo $equipo): array
-    {
-        return $this->get('/device/users', $equipo);
-    }
-
-    /**
      * Trae las marcaciones (registros de asistencia) guardadas en el equipo,
      * de la más reciente a la más antigua.
      *

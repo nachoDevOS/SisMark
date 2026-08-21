@@ -25,33 +25,7 @@
 
 
 # -----------------------------------------------------------------------------
-# Etapa 1 — Assets de Vite (Tailwind 4)
-#
-# El layout del sistema trae su CSS embebido y no depende de Vite. Hoy ninguna
-# vista usa @vite —la única que lo hacía era welcome.blade.php, que se eliminó
-# por no tener ruta—, así que esta etapa compila un manifiesto que nadie lee.
-# Se conserva para no romper el despliegue si mañana alguna vista lo usa; el día
-# que se decida que no hace falta, se sacan esta etapa, su COPY de más abajo y
-# las dependencias de npm.
-#
-# Si el servidor de construcción no tiene salida a internet, esta etapa falla
-# al descargar las tipografías de bunny.net (plugin `fonts` de vite.config.js).
-# En ese caso, comentar esta etapa y el COPY que la usa más abajo.
-# -----------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS assets
-
-WORKDIR /build
-
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
-
-COPY vite.config.js ./
-COPY resources ./resources
-RUN npm run build
-
-
-# -----------------------------------------------------------------------------
-# Etapa 2 — Aplicación
+# Etapa 1 — Aplicación
 # -----------------------------------------------------------------------------
 FROM unit:1.34.2-php8.3
 
@@ -190,15 +164,16 @@ RUN composer install \
 
 # --- Código de la aplicación -------------------------------------------------
 COPY . .
-COPY --from=assets /build/public/build ./public/build
 
 # `--optimize` sin `--classmap-authoritative`: blade-ui-kit/blade-heroicons
 # resuelve componentes por nombre en tiempo de ejecución.
 RUN composer dump-autoload --no-dev --optimize
 
-# `public/hot` es del servidor de desarrollo de Vite: si viaja a la imagen,
-# Laravel cree que hay un dev-server escuchando y pide los assets a un puerto
-# que no existe. Se borra por si el .dockerignore no lo atrapó.
+# Restos de un servidor de desarrollo de Vite en el árbol de trabajo. El
+# sistema ya no usa Vite —el CSS va embebido en el layout—, pero si estos
+# archivos viajaran a la imagen, Laravel creería que hay un dev-server
+# escuchando y pediría los assets a un puerto que no existe. Se borran por si
+# el .dockerignore no los atrapó.
 RUN rm -f public/hot public/fonts-manifest.dev.json
 
 # --- Permisos ----------------------------------------------------------------

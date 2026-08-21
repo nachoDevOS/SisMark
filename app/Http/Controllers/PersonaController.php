@@ -7,7 +7,6 @@ use App\Models\AsignacionTurno;
 use App\Models\Asistencia;
 use App\Models\Licencia;
 use App\Models\Persona;
-use App\Services\CalificadorRip;
 use App\Services\DirectorioMamore;
 use App\Services\MamoreClient;
 use App\Services\ResolutorNombres;
@@ -15,7 +14,6 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator as Paginador;
-use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 /**
@@ -195,63 +193,6 @@ class PersonaController extends Controller
                 ->groupBy(fn (AsignacionTurno $asignacion): string => $asignacion->clave_periodo);
 
         return view('funcionarios.turnos-list', compact('periodos', 'asignaciones', 'origenFicha', 'conAcciones'));
-    }
-
-    /**
-     * Parcial del régimen disciplinario del RIP para un mes: qué acumuló el
-     * funcionario y qué sanción le correspondería según el reglamento.
-     *
-     * **Se calcula al vuelo y no se guarda nada.** Es la pantalla con la que
-     * Recursos Humanos compara contra los meses que ya resolvió a mano, antes
-     * de que estas cifras funden un memorándum. El cierre mensual —que congela
-     * el resultado con los parámetros del momento— es el paso siguiente.
-     *
-     * El mes es la unidad, no el rango: el Art. 51.II manda computar los
-     * atrasos a la conclusión del mes, y las escalas de los Arts. 45 a 47
-     * cuentan «en el mes» y «en la gestión». Un rango libre no significa nada
-     * para el reglamento.
-     */
-    public function ripList(Request $request, CalificadorRip $calificador): View
-    {
-        $this->authorize('viewAny', Persona::class);
-
-        $ci = trim((string) $request->query('ci', ''));
-        [$gestion, $mes] = $this->periodo($request);
-
-        $resultado = $ci === ''
-            ? null
-            : $calificador->mes($ci, $gestion, $mes);
-
-        $periodo = sprintf('%04d-%02d', $gestion, $mes);
-        $mesEtiqueta = Carbon::create($gestion, $mes, 1)->locale('es')->isoFormat('MMMM [de] YYYY');
-
-        return view('funcionarios.rip-list', compact('resultado', 'periodo', 'mesEtiqueta'));
-    }
-
-    /**
-     * Mes pedido por la solapa del RIP, en formato `AAAA-MM`. Un valor mal
-     * formado o futuro cae en el mes en curso: la pantalla no tiene por qué
-     * romperse porque alguien escribió cualquier cosa en la URL.
-     *
-     * @return array{0: int, 1: int}
-     */
-    private function periodo(Request $request): array
-    {
-        $hoy = now();
-        $pedido = (string) $request->query('periodo', '');
-
-        if (preg_match('/^(\d{4})-(\d{2})$/', $pedido, $partes) !== 1) {
-            return [(int) $hoy->year, (int) $hoy->month];
-        }
-
-        $gestion = (int) $partes[1];
-        $mes = (int) $partes[2];
-
-        if ($mes < 1 || $mes > 12 || $gestion < 2000 || Carbon::create($gestion, $mes, 1)->isFuture()) {
-            return [(int) $hoy->year, (int) $hoy->month];
-        }
-
-        return [$gestion, $mes];
     }
 
     /**

@@ -62,7 +62,6 @@ Route::middleware('auth')->group(function (): void {
     // Régimen disciplinario del RIP: qué acumuló el funcionario en un mes y qué
     // sanción le correspondería. Va por mes y no por rango porque las escalas
     // del reglamento cuentan «en el mes» y «en la gestión».
-    Route::get('funcionarios/ajax/rip', [PersonaController::class, 'ripList'])->name('funcionarios.rip.list');
     Route::resource('funcionarios', PersonaController::class)
         ->parameters(['funcionarios' => 'persona'])
         ->only(['index', 'show']);

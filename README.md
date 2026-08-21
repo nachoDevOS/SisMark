@@ -76,7 +76,8 @@ Puntos clave:
   caído, el sistema sigue funcionando (solo fallan las acciones de equipos).
 - Las consultas al SIA se cachean 5 minutos y toleran caída del servidor.
 - El tema visual vive en `resources/views/layouts/app.blade.php` (CSS
-  embebido); no requiere build de Vite para cambiar estilos.
+  embebido). El sistema no tiene paso de compilación de assets: un cambio de
+  estilos se ve al recargar.
 
 ---
 
@@ -88,7 +89,6 @@ Puntos clave:
 |---|---|
 | PHP | 8.3 con extensiones: `pdo_mysql`, `pdo_sqlsrv`, `intl`, `zip`, `gd` |
 | Composer | 2.x |
-| Node.js + npm | Solo para compilar assets (Vite / Tailwind 4) |
 | MySQL / MariaDB | Base local `sismark` (conexión por defecto) |
 | ODBC | «ODBC Driver 17 for SQL Server» x64 (18 en Linux con `msodbcsql18`) |
 | Python | 3.10+ para el microservicio `device-service` |
@@ -105,7 +105,6 @@ Puntos clave:
 ```bash
 git clone <repo> sismark && cd sismark
 composer install
-npm install && npm run build
 cp .env.example .env
 php artisan key:generate
 php artisan migrate
@@ -128,7 +127,7 @@ Levantar todo:
 1. MySQL corriendo (Laragon).
 2. `device-service` corriendo en `127.0.0.1:9001` (sección 5).
 3. Acceso de red al SQL Server (puerto 1433).
-4. `php artisan serve` (o el vhost de Laragon) + `npm run dev` si se tocan assets.
+4. `php artisan serve` (o el vhost de Laragon).
 
 Pruebas:
 

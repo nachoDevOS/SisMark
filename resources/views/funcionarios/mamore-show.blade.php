@@ -122,11 +122,10 @@
                 {{-- Vigencia del contrato: desde cuándo rige y hasta cuándo.
 
                      Es lo que decide si esta persona sigue siendo funcionario
-                     hoy, y también de dónde sale el haber con el que el régimen
-                     del RIP convierte un descuento en bolivianos: un contrato
-                     que arranca o termina en medio del mes no se divide entre
-                     30 sino entre los días que cubre. Ver
-                     {@see App\Services\HaberFuncionario}. --}}
+                     hoy, y también qué días de asistencia se le controlan: un
+                     día que ningún contrato cubre no se procesa, aunque tenga
+                     turno asignado y haya marcado. Ver
+                     {@see App\Services\ContratosFuncionario}. --}}
                 <div><dt>Vigencia desde</dt><dd>{{ $fechaContrato($contrato['start'] ?? null) ?? '—' }}</dd></div>
                 <div>
                     <dt>Vigencia hasta</dt>

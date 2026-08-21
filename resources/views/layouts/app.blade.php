@@ -89,7 +89,6 @@
         .sidebar__link:hover { background: var(--sidebar-hover); color: #fff; }
         .sidebar__link.activo { background: var(--sidebar-activo); color: var(--sidebar-fg-activo);
             font-weight: 600; box-shadow: inset .2rem 0 0 var(--verde); }
-        .sidebar__overlay { display: none; }
 
         /* Grupo colapsable del sidebar ("Parámetros" → submenú). */
         .sidebar__grouptoggle { display: flex; align-items: center; gap: .7rem; width: 100%;
@@ -121,8 +120,6 @@
             padding: .3rem; border-radius: .4rem; color: var(--muted); }
         .topbar__toggle:hover { background: var(--bg); color: var(--fg); }
         .topbar__toggle svg { width: 1.4rem; height: 1.4rem; }
-        .topbar__vol { font-size: .8125rem; color: var(--muted); }
-        .topbar__vol:hover { color: var(--fg); text-decoration: underline; }
 
         /* ===== Menú de la cuenta (topbar, a la derecha) ===== */
         .cuenta { position: relative; }
@@ -205,8 +202,6 @@
         .btn--gris:hover { background: #4b5563; }
         .btn--peligro { background: var(--danger); }
         .btn--peligro:hover { background: #dc2626; }
-        .btn--sm { padding: .3rem .6rem; font-size: .75rem; }
-        .btn--sm svg { width: 1rem; height: 1rem; }
         .btn:disabled { opacity: .7; cursor: default; }
         .btn__contenido { display: inline-flex; align-items: center; gap: .4rem; }
         .spinner-anillo { width: 1rem; height: 1rem; border: 2px solid rgba(255,255,255,.4);
@@ -583,11 +578,8 @@
 
         /* ===== Escritorio: tarjetas de estadística y mini gráfico ===== */
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-        /* Fila de tres tarjetas: sin esto la cuarta columna queda vacía y las
-           tres se ven angostas y descolgadas a la izquierda. */
-        .stats-grid--3 { grid-template-columns: repeat(3, 1fr); }
-        @media (max-width: 960px) { .stats-grid, .stats-grid--3 { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 560px) { .stats-grid, .stats-grid--3 { grid-template-columns: 1fr; } }
+        @media (max-width: 960px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 560px) { .stats-grid { grid-template-columns: 1fr; } }
         .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: .625rem;
             padding: 1rem 1.1rem; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
         .stat-card__valor { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
@@ -595,7 +587,6 @@
         .stat-card--success .stat-card__valor { color: #166534; }
         .stat-card--danger .stat-card__valor { color: #991b1b; }
         .stat-card--warning .stat-card__valor { color: #92400e; }
-        .stat-card--info .stat-card__valor { color: #1e40af; }
 
         .mini-chart { display: flex; align-items: flex-end; gap: .3rem; height: 8rem; padding-top: .5rem; }
         .mini-chart__barra { flex: 1; background: var(--verde); border-radius: .2rem .2rem 0 0; min-height: 2px; }

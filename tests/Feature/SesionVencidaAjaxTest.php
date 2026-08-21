@@ -21,7 +21,7 @@ uses(RefreshDatabase::class);
 */
 
 test('un AJAX sin sesión responde 401 y no la pantalla de login', function () {
-    $this->getJson(route('funcionarios.rip.list', ['ci' => '7633685']))
+    $this->getJson(route('funcionarios.marcaciones.list', ['ci' => '7633685']))
         ->assertUnauthorized()
         // Lo que nunca puede volver: el formulario de ingreso servido como si
         // fuera el contenido de la tabla.
@@ -37,7 +37,6 @@ test('todas las tablas por AJAX de la ficha responden 401 sin sesión', function
     'funcionarios.marcaciones.list',
     'funcionarios.licencias.list',
     'funcionarios.turnos.list',
-    'funcionarios.rip.list',
     'funcionarios.list',
 ]);
 
