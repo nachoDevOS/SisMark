@@ -16,6 +16,9 @@
 @php
     $verLicencias = auth()->user()?->can('viewAny', \App\Models\Licencia::class) ?? false;
     $verTurnos = auth()->user()?->can('viewAny', \App\Models\AsignacionTurno::class) ?? false;
+    // La solapa de asistencia procesada es el reporte de «Reportes → Procesado»
+    // servido acá dentro, así que pide el mismo permiso que esa pantalla.
+    $verReportes = auth()->user()?->can('ViewAny:Reporte') ?? false;
 @endphp
 
 <div class="tarjeta" style="margin-top: 1.5rem;">
@@ -33,6 +36,14 @@
                 <x-heroicon-o-clock />Turnos
             </button>
         @endif
+        @if ($verReportes)
+            <button type="button" class="tabs__boton" role="tab" aria-selected="false" data-tab="procesado">
+                <x-heroicon-o-document-chart-bar />Asistencia procesada
+            </button>
+        @endif
+        <button type="button" class="tabs__boton" role="tab" aria-selected="false" data-tab="rip">
+            <x-heroicon-o-scale />Régimen RIP
+        </button>
     </div>
 
     {{-- Solapa: marcaciones --}}
@@ -134,6 +145,48 @@
             </div>
         </div>
     @endif
+
+    {{-- Solapa: asistencia procesada.
+
+         Es el mismo reporte de «Reportes → Marcaciones → Procesado», servido
+         acá dentro con el funcionario ya elegido. No se duplica nada: la tabla
+         la arma `ReporteMarcacionController::procesadoList()` y el parcial que
+         devuelve —`reportes/marcaciones/procesado/lista`— ya viene sin layout,
+         con sus propios botones de Imprimir y Excel. --}}
+    @if ($verReportes)
+        <div class="tabs__panel" data-panel="procesado" hidden>
+            <div class="tabla-filtros">
+                <div class="tabla-filtros__extra">
+                    <input type="date" id="p-desde" value="{{ $desde }}" aria-label="Desde">
+                    <input type="date" id="p-hasta" value="{{ $hasta }}" aria-label="Hasta">
+                </div>
+            </div>
+
+            <div id="p-results" style="min-height: 8rem;">
+                <div class="vacio">Cargando…</div>
+            </div>
+        </div>
+    @endif
+
+    {{-- Solapa: régimen disciplinario del RIP.
+
+         El filtro es un mes y no un rango de fechas, a propósito: el Art. 51.II
+         manda computar los atrasos a la conclusión del mes y las escalas de los
+         Arts. 45 a 47 cuentan «en el mes» y «en la gestión». Un rango libre no
+         significa nada para el reglamento. --}}
+    <div class="tabs__panel" data-panel="rip" hidden>
+        <div class="tabla-filtros">
+            <label class="tabla-filtros__mostrar">
+                Mes
+                <input type="month" id="r-periodo" max="{{ now()->format('Y-m') }}"
+                       value="{{ now()->format('Y-m') }}" aria-label="Mes a calificar">
+            </label>
+        </div>
+
+        <div id="r-results" style="min-height: 8rem;">
+            <div class="vacio">Cargando…</div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -175,6 +228,30 @@
                 controles: ['t-situacion', 't-paginate'],
             },
             @endif
+            @if ($verReportes)
+            procesado: {
+                url: @json(route('reportes.marcaciones.procesado.generar')),
+                contenedor: document.getElementById('p-results'),
+                // `persona` y no `ci`: es el nombre del parámetro que espera el
+                // reporte, que resuelve la ficha por cédula contra Mamoré con la
+                // base local como respaldo.
+                filtros: () => ({
+                    persona: ci,
+                    desde: document.getElementById('p-desde').value,
+                    hasta: document.getElementById('p-hasta').value,
+                    // Sin la línea de nombre, CI, PIN y cargo: la cabecera de la
+                    // ficha ya la muestra completa, unos centímetros más arriba.
+                    encabezado: 0,
+                }),
+                controles: ['p-desde', 'p-hasta'],
+            },
+            @endif
+            rip: {
+                url: @json(route('funcionarios.rip.list')),
+                contenedor: document.getElementById('r-results'),
+                filtros: () => ({ periodo: document.getElementById('r-periodo').value }),
+                controles: ['r-periodo'],
+            },
         };
 
         // El reporte imprimible se abre con los mismos filtros que la tabla.

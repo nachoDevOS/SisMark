@@ -476,8 +476,8 @@ test('la bitácora desglosa qué pasó con cada marcación del reloj', function 
     // figura en el padrón y una con la fecha basura que arrastra el RTC.
     Asistencia::query()->create([
         'ci' => '7633685',
-        'fecha' => '2026-07-09 00:00:00',
-        'hora' => '1899-12-30 07:00:00',
+        'fecha' => '2026-07-09',
+        'hora' => '07:00:00',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
 
@@ -610,8 +610,8 @@ test('la baja de un equipo no se lleva sus marcaciones', function () {
 test('la marcación cargada a mano no queda atada a ningún equipo', function () {
     $marcacion = Asistencia::query()->create([
         'ci' => '7633685',
-        'fecha' => '2026-07-09 00:00:00',
-        'hora' => '1899-12-30 08:05:00',
+        'fecha' => '2026-07-09',
+        'hora' => '08:05:00',
         'tipo' => Asistencia::TIPO_MANUAL,
     ]);
 

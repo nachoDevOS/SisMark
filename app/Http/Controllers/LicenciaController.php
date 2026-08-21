@@ -69,7 +69,7 @@ class LicenciaController extends Controller
 
         // Hasta qué día llega cada una y cuántos días abarca. Solo de las
         // solicitudes de esta página, así que es una consulta chica por índice.
-        $resumen = Licencia::resumenDe($licencias->pluck('solicitud'));
+        $resumen = Licencia::resumenDe($licencias->getCollection()->map->clave_agrupadora);
 
         // La columna «Funcionario» (nombre y cargo) sale de Mamoré y, si el CI no
         // está ahí, de la base local (App\Services\ResolutorNombres).

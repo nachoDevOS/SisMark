@@ -433,7 +433,7 @@ test('limpiar marcaciones no toca la asistencia ya guardada en la BD local', fun
         'ci' => '7633685', 'paterno' => 'Molina', 'materno' => null, 'nombres' => 'Ignacio', 'pinReloj' => '7633685', 'marcaDirecta' => false,
     ]);
     DB::table('asistencias')->insert([
-        'ci' => '7633685', 'fecha' => '2026-07-10 00:00:00', 'hora' => '2026-07-10 08:00:00', 'tipo' => 'E',
+        'ci' => '7633685', 'fecha' => '2026-07-10', 'hora' => '2026-07-10 08:00:00', 'tipo' => 'E',
     ]);
 
     $this->post(route('equipos.marcaciones.limpiar', Equipo::factory()->create()), ['motivo' => 'Memoria del equipo llena.'])

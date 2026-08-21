@@ -17,12 +17,18 @@
 <div class="card card--padded">
     <div class="cabecera" style="margin-bottom: 1rem;">
         <div>
-            <strong>{{ $nombreEmpleado ?: 'Funcionario' }}</strong> · CI {{ $persona['ci'] }} ·
-            PIN reloj {{ $persona['pinReloj'] ?: '—' }}<br>
-            @if (!empty($persona['cargo']))
-                <span style="color: var(--muted);">
-                    {{ $persona['cargo'] }}{{ empty($persona['direccion']) ? '' : ' · '.$persona['direccion'] }}
-                </span><br>
+            {{-- Quién es solo hace falta en la pantalla general del reporte, donde
+                 se elige al funcionario de un combo y la tabla es lo único que hay.
+                 Servido dentro de la ficha, la cabecera de arriba ya lo dice con
+                 más detalle y repetirlo acá le roba lugar a la tabla. --}}
+            @if ($conEncabezado ?? true)
+                <strong>{{ $nombreEmpleado ?: 'Funcionario' }}</strong> · CI {{ $persona['ci'] }} ·
+                PIN reloj {{ $persona['pinReloj'] ?: '—' }}<br>
+                @if (!empty($persona['cargo']))
+                    <span style="color: var(--muted);">
+                        {{ $persona['cargo'] }}{{ empty($persona['direccion']) ? '' : ' · '.$persona['direccion'] }}
+                    </span><br>
+                @endif
             @endif
             <span style="color: var(--muted);">
                 Rango: {{ $desde ?: '—' }} a {{ $hasta ?: '—' }} · {{ $totales['dias'] }} día(s)
@@ -36,39 +42,13 @@
         </div>
     </div>
 
-    {{-- Resumen del rango: las horas del período viven acá, no en cada fila. --}}
-    <div class="toolbar" style="gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
-        <div>
-            <small style="color: var(--muted); display: block;">Horas computadas</small>
-            <strong style="font-size: 1.1rem;">{{ P::duracion($totales['computado']) }}</strong>
-            <span style="color: var(--muted);">de {{ P::duracion($totales['esperado']) }}</span>
-        </div>
-        <div>
-            <small style="color: var(--muted); display: block;">Saldo</small>
-            <strong style="font-size: 1.1rem; color: {{ $totales['saldo'] < 0 ? '#991b1b' : '#166534' }};">
-                {{ $totales['saldo'] > 0 ? '+' : '' }}{{ P::duracion($totales['saldo']) }}
-            </strong>
-        </div>
-        <div>
-            <small style="color: var(--muted); display: block;">Atraso acumulado</small>
-            <strong style="font-size: 1.1rem;">{{ P::desvio($totales['atraso']) }}</strong>
-        </div>
-        <div>
-            <small style="color: var(--muted); display: block;">Salida anticipada</small>
-            <strong style="font-size: 1.1rem;">{{ P::desvio($totales['anticipo']) }}</strong>
-        </div>
-        <div style="flex: 1; min-width: 14rem;">
-            <small style="color: var(--muted); display: block; margin-bottom: .25rem;">Días por estado</small>
-            @foreach ($totales['porEstado'] as $estado => $cantidad)
-                <span class="pill {{ P::COLORES[$estado] ?? 'pill--info' }}" style="margin-right: .25rem;">
-                    {{ P::ETIQUETAS[$estado] ?? $estado }}: {{ $cantidad }}
-                </span>
-            @endforeach
-        </div>
-    </div>
-
     {{-- Columnas del reporte del sistema de escritorio viejo, con «Día» sumado
-         adelante. Las horas del turno no van por fila: están en el resumen. --}}
+         adelante.
+
+         La pantalla no lleva barra de resumen: el total de horas, el saldo, los
+         desvíos acumulados y el conteo por estado son de lectura mensual y acá
+         estorbaban arriba de lo que se viene a mirar, que es día por día. El
+         imprimible y el Excel sí los conservan, que es donde ese cierre sirve. --}}
     <div style="overflow-x: auto;">
         <table>
             <thead>

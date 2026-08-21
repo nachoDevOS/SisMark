@@ -86,6 +86,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('licencias', function (Blueprint $table): void {
+            // **Solo lo que de verdad se solicitó.** Queda en null en todo lo
+            // migrado del SIA: aquello no fue una solicitud sino una licencia ya
+            // otorgada. La llenan únicamente los dos circuitos que abren un
+            // pedido: el alta de Recursos Humanos en SisMark y la solicitud del
+            // funcionario desde Mamoré.
             $table->char('solicitud', 26)->nullable()->after('fechaPedido');
             // De dónde salió la licencia: «propio» si la cargó Recursos Humanos
             // en este sistema, «mamore» si la pidió el funcionario desde su
@@ -116,7 +121,6 @@ return new class extends Migration
             // `RegistroLicencia::anotar()`, que consulta lo ocupado antes de
             // insertar.
             $table->dropUnique(['ci', 'fecha', 'turno_id']);
-            $table->unique(['ci', 'fecha', 'turno_id', 'solicitud']);
 
             // El agrupamiento del listado: `GROUP BY solicitud` con su
             // `MAX(fecha)`, y la búsqueda de la fila que abre cada solicitud.
@@ -125,6 +129,25 @@ return new class extends Migration
             // encuentra lo que tiene pendiente.
             $table->index(['estado', 'fecha']);
         });
+
+        // Índice único **funcional**, fuera del Blueprint porque Laravel no sabe
+        // expresar una expresión como parte de la clave.
+        //
+        // `COALESCE(solicitud, '')` es lo que deja convivir los dos mundos:
+        //
+        //   · Lo del SIA va con `solicitud` en null —no fue un pedido—, así que
+        //     todas esas filas caen en '' y quedan únicas por su clave natural
+        //     (ci, fecha, turno_id). Es lo que hace idempotente la copia: sin
+        //     esto, en MySQL cada null cuenta como distinto y reejecutarla
+        //     duplicaría el millón de filas.
+        //
+        //   · Un pedido de SisMark o Mamoré sí trae `solicitud`, así que dos
+        //     pedidos del mismo día conviven —uno rechazado y otro nuevo—, que
+        //     es para lo que se agregó la columna a la clave.
+        DB::statement(
+            'CREATE UNIQUE INDEX licencias_clave_natural_unique'
+            ." ON licencias (ci, fecha, turno_id, (COALESCE(solicitud, '')))"
+        );
     }
 
     /**
@@ -140,8 +163,11 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('licencias', function (Blueprint $table): void {
-            if (Schema::hasIndex('licencias', 'licencias_ci_fecha_turno_id_solicitud_unique')) {
-                $table->dropUnique(['ci', 'fecha', 'turno_id', 'solicitud']);
+            if (Schema::hasIndex('licencias', 'licencias_clave_natural_unique')) {
+                // MySQL exige el `ON tabla`; SQLite no lo acepta.
+                DB::statement(DB::connection()->getDriverName() === 'sqlite'
+                    ? 'DROP INDEX licencias_clave_natural_unique'
+                    : 'DROP INDEX licencias_clave_natural_unique ON licencias');
             }
 
             if (Schema::hasIndex('licencias', 'licencias_solicitud_fecha_index')) {
@@ -185,6 +211,8 @@ return new class extends Migration
         $relleno = DB::raw($this->expresionDeRelleno());
 
         for ($desde = 0; $desde <= $maximo; $desde += self::LOTE) {
+            // No toca `solicitud`: lo que ya estaba vino del SIA y nunca fue un
+            // pedido. Se deja en null a propósito.
             DB::table('licencias')
                 ->whereNull('solicitud')
                 ->where('id', '>', $desde)

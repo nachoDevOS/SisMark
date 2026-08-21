@@ -13,8 +13,14 @@ use Illuminate\Support\Facades\Schema;
  * y eliminación lógica propios. El carnet va en `ci` (en el SIA es IdPersona).
  * La clave natural (una licencia por funcionario, día y turno) pasa a un índice
  * único (ci + fecha + turno_id) para el upsert idempotente; `ci` se indexa aparte
- * para los joins con personas. `lEntra`/`lSale` guardan la hora sobre la fecha
- * base 1899-12-30, como el resto de horas del SIA.
+ * para los joins con personas.
+ *
+ * `lEntra`/`lSale` son columnas `time`: guardan **solo la hora**. El SIA las
+ * traía como datetime sobre la fecha base 1899-12-30 —herencia de Delphi, donde
+ * una hora suelta es un datetime con el día en el origen del calendario—, pero
+ * ese día no significa nada: la licencia ya tiene su `fecha` propia en la
+ * columna de al lado. Guardarlo confundía a quien miraba la tabla y no aportaba
+ * un dato. `MigrarLicenciasSia` recorta la fecha al copiar.
  *
  * El horario se referencia por la FK real `turno_id` → `turnos.id`, que el
  * comando de copia resuelve cruzando el IdTurno del SIA contra `turnos` (por eso
@@ -35,8 +41,9 @@ return new class extends Migration
             // Solo histórico (lo que trajo el SIA); el sistema no lo escribe.
             $table->char('idTurno', 3)->nullable();
             $table->foreignId('turno_id')->constrained('turnos');
-            $table->dateTime('lEntra')->nullable();
-            $table->dateTime('lSale')->nullable();
+            // Solo la hora: el día lo pone `fecha`.
+            $table->time('lEntra')->nullable();
+            $table->time('lSale')->nullable();
             $table->boolean('tCompleto');
             $table->string('motivo', 255)->nullable();
             $table->boolean('goceHaberes');

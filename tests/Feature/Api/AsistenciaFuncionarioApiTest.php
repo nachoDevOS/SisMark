@@ -62,15 +62,15 @@ function funcionarioConAsistencia(string $ci = '7633685'): void
     // 08:12:04 contra una tolerancia de 08:10 → atraso medido sobre las 08:00.
     Asistencia::factory()->create([
         'ci' => $ci,
-        'fecha' => '2026-08-03 00:00:00',
-        'hora' => '1899-12-30 08:12:04',
+        'fecha' => '2026-08-03',
+        'hora' => '08:12:04',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
 
     Asistencia::factory()->create([
         'ci' => $ci,
-        'fecha' => '2026-08-03 00:00:00',
-        'hora' => '1899-12-30 16:03:00',
+        'fecha' => '2026-08-03',
+        'hora' => '16:03:00',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
 }
@@ -119,8 +119,8 @@ test('las marcaciones de otro funcionario no se filtran en la respuesta', functi
     Persona::factory()->create(['ci' => '1111111']);
     Asistencia::factory()->create([
         'ci' => '1111111',
-        'fecha' => '2026-08-03 00:00:00',
-        'hora' => '1899-12-30 09:00:00',
+        'fecha' => '2026-08-03',
+        'hora' => '09:00:00',
     ]);
 
     comoMamore('/api/v1/funcionarios/7633685/marcaciones?desde=2026-08-01&hasta=2026-08-31')
@@ -213,7 +213,7 @@ test('devuelve las licencias del funcionario en el rango', function () {
     Licencia::factory()->create([
         'ci' => '7633685',
         'turno_id' => $turno->id,
-        'fecha' => '2026-08-03 00:00:00',
+        'fecha' => '2026-08-03',
         'tCompleto' => true,
         'goceHaberes' => true,
         'motivo' => 'FERIADO DEPARTAMENTAL',

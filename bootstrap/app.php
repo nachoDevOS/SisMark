@@ -1,10 +1,35 @@
 <?php
 
 use App\Http\Middleware\VerifyApiKey;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+
+/**
+ * ¿La petición la hizo un script y no la barra de direcciones?
+ *
+ * Importa cuando vence la sesión. A una visita normal hay que redirigirla al
+ * login, pero a un `fetch` no: `fetch` sigue la redirección sin avisar, y la
+ * pantalla de ingreso termina dibujada **adentro** de la tabla que se estaba
+ * cargando —el formulario donde iban los datos, con el sidebar y el nombre del
+ * usuario todavía arriba—. Parece un error del listado y no lo es.
+ *
+ * Las diecisiete llamadas del sistema no se anuncian todas igual: nueve mandan
+ * `X-Requested-With`, tres piden `Accept: application/json` y las que traen una
+ * tabla ya armada piden `Accept: text/html`, que es indistinguible de una
+ * visita. Por eso el tercer criterio es `Sec-Fetch-Dest`, que el propio
+ * navegador pone en cada pedido: `document` cuando navega y `empty` cuando el
+ * pedido sale de un script. Si el navegador es viejo y no manda la cabecera,
+ * se cae en la redirección de siempre, que es el comportamiento seguro.
+ *
+ * Va como closure y no como función con nombre porque este archivo se evalúa
+ * una vez por aplicación levantada, y la suite levanta cientos.
+ */
+$esSegundoPlano = static fn (Request $request): bool => $request->ajax()
+    || $request->expectsJson()
+    || $request->header('Sec-Fetch-Dest') === 'empty';
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -33,8 +58,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // mixto.
         $middleware->trustProxies(at: ['127.0.0.1', '::1']);
     })
-    ->withExceptions(function (Exceptions $exceptions): void {
+    ->withExceptions(function (Exceptions $exceptions) use ($esSegundoPlano): void {
+        // Ojo: este callback **reemplaza** al `expectsJson()` que Laravel usa
+        // por defecto. Todo lo que tenga que contestar JSON va acá adentro.
+        //
+        // De los errores, solo cambia el de autenticación: los demás siguen
+        // devolviendo su página HTML como hasta ahora.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*'),
+            fn (Request $request, Throwable $e) => $request->is('api/*')
+                || ($e instanceof AuthenticationException && $esSegundoPlano($request)),
         );
     })->create();

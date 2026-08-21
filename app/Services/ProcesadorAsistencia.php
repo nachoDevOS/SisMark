@@ -39,6 +39,8 @@ use Illuminate\Support\Collection;
  */
 class ProcesadorAsistencia
 {
+    public function __construct(private ContratosFuncionario $contratos) {}
+
     public const CUMPLE = 'cumple';
 
     public const ATRASO = 'atraso';
@@ -60,6 +62,16 @@ class ProcesadorAsistencia
     public const TURNO_INVALIDO = 'turno_invalido';
 
     /**
+     * El día no lo cubre ningún contrato de Mamoré.
+     *
+     * No es una falta ni un día libre: es que la persona no era funcionaria
+     * ese día, así que no había jornada que cumplir. Se calcula igual para
+     * que quien consuma el procesador sepa que el día existió y por qué no
+     * se controló, pero no aporta horas, ni atraso, ni falta.
+     */
+    public const SIN_CONTRATO = 'sin_contrato';
+
+    /**
      * Etiqueta legible de cada estado, para las vistas y el CSV.
      *
      * @var array<string, string>
@@ -74,6 +86,7 @@ class ProcesadorAsistencia
         self::LICENCIA => 'Licencia',
         self::EXCEPCIONAL => 'Día excepcional',
         self::NO_LABORABLE => 'No laborable',
+        self::SIN_CONTRATO => 'Sin contrato',
         self::TURNO_INVALIDO => 'Turno mal configurado',
     ];
 
@@ -105,6 +118,7 @@ class ProcesadorAsistencia
         self::LICENCIA => 'pill--info',
         self::EXCEPCIONAL => 'pill--info',
         self::NO_LABORABLE => 'pill--info',
+        self::SIN_CONTRATO => 'pill--advertencia',
         self::TURNO_INVALIDO => 'pill--advertencia',
     ];
 
@@ -122,6 +136,8 @@ class ProcesadorAsistencia
      */
     private const GRAVEDAD = [
         self::NO_LABORABLE => 0,
+        // No pesa: no es una falta, es que no había jornada que cumplir.
+        self::SIN_CONTRATO => 0,
         self::EXCEPCIONAL => 1,
         self::LICENCIA => 2,
         self::CUMPLE => 3,
@@ -144,6 +160,17 @@ class ProcesadorAsistencia
         $desde = $desde->copy()->startOfDay();
         $hasta = $hasta->copy()->startOfDay();
 
+        // **La primera puerta es el contrato**, antes que el turno: un día que
+        // ningún contrato cubre no se controla, aunque haya turno asignado y
+        // aunque la persona haya marcado. Va acá adentro y no en cada pantalla
+        // para que lo hereden todos los consumidores —el reporte procesado, su
+        // imprimible, el Excel, la API de asistencia y el régimen del RIP— sin
+        // tener que acordarse en cada uno.
+        //
+        // `null` es «no se conocen los contratos» —Mamoré sin configurar— y se
+        // procesa todo, como antes. Vacío es «no tuvo contrato», que sí excluye.
+        $tramos = $this->contratos->tramos($ci, $desde, $hasta);
+
         $asignaciones = $this->asignacionesDelRango($ci, $desde, $hasta);
         $excepcionales = $this->excepcionalesDelRango($desde, $hasta);
         $licencias = $this->licenciasDelRango($ci, $desde, $hasta);
@@ -153,7 +180,7 @@ class ProcesadorAsistencia
         $dias = collect();
 
         for ($fecha = $desde->copy(); $fecha->lessThanOrEqualTo($hasta); $fecha->addDay()) {
-            $dias->push($this->procesarDia($fecha->copy(), $asignaciones, $excepcionales, $licencias, $marcas));
+            $dias->push($this->procesarDia($fecha->copy(), $asignaciones, $excepcionales, $licencias, $marcas, $tramos));
         }
 
         return $dias;
@@ -245,9 +272,29 @@ class ProcesadorAsistencia
         Collection $excepcionales,
         Collection $licencias,
         Collection $marcas,
+        ?array $tramos,
     ): array {
         $clave = $fecha->toDateString();
         $delDia = $marcas->get($clave, []);
+
+        // 0. Sin contrato no hay deber de asistencia que incumplir. Se corta
+        //    antes que nada, incluso antes del feriado: si la persona no era
+        //    funcionaria ese día, que además fuera feriado no significa nada.
+        //
+        //    El estado distingue dos cosas que no son lo mismo: un día que la
+        //    persona **habría tenido que trabajar** y no estaba contratada es
+        //    «sin contrato» y hay que verlo; un sábado sigue siendo un sábado,
+        //    haya contrato o no, y va como «no laborable». Ninguno de los dos se
+        //    procesa, pero solo el primero señala algo que revisar.
+        if (! $this->contratos->cubierto($tramos, $fecha)) {
+            return $this->dia(
+                $fecha,
+                $this->turnosDelDia($fecha, $asignaciones) === [] ? self::NO_LABORABLE : self::SIN_CONTRATO,
+                null,
+                [],
+                $delDia,
+            );
+        }
 
         // 1. El día excepcional manda sobre todo: no se procesan marcaciones ni
         //    turnos, aunque el funcionario tenga varios asignados.

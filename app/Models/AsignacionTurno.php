@@ -91,8 +91,43 @@ class AsignacionTurno extends Model
     }
 
     /**
+     * Los períodos de vigencia distintos que tiene asignado un funcionario, en
+     * el mismo orden que `delFuncionario`.
+     *
+     * El SIA reasigna el turno día por día: un mismo período trae una fila por
+     * cada día de la semana que se trabaja, con las mismas fechas y el mismo
+     * horario repetidos cinco veces. Paginar esas filas parte la tanda al
+     * medio y multiplica por cinco las páginas; paginar los períodos deja cada
+     * tanda entera en una sola página y el listado se lee por vigencia, que es
+     * como Recursos Humanos lo consulta.
+     *
+     * Va con `groupBy` y no con `distinct` porque el orden usa una expresión
+     * `CASE`: con `DISTINCT`, MySQL exige que toda expresión del `ORDER BY`
+     * esté también en el `SELECT`, y agrupando alcanza con que la columna sea
+     * una de las agrupadas.
+     */
+    public function scopePeriodosDelFuncionario(Builder $query, string $ci, bool $incluirVencidas = false): Builder
+    {
+        $hoy = today();
+
+        return $query
+            ->select('asignacion_turnos.desde', 'asignacion_turnos.hasta')
+            ->join('turnos', 'turnos.id', '=', 'asignacion_turnos.turno_id')
+            ->whereNull('turnos.deleted_at')
+            ->where('asignacion_turnos.ci', $ci)
+            ->unless($incluirVencidas, fn (Builder $sub) => $sub->where('asignacion_turnos.hasta', '>=', $hoy))
+            ->groupBy('asignacion_turnos.desde', 'asignacion_turnos.hasta')
+            ->orderByRaw('CASE WHEN asignacion_turnos.hasta >= ? THEN 0 ELSE 1 END', [$hoy])
+            ->orderByDesc('asignacion_turnos.desde')
+            ->orderByDesc('asignacion_turnos.hasta');
+    }
+
+    /**
      * Turnos asignados a un funcionario: los que siguen en pie primero y,
-     * dentro de cada grupo, por día de la semana y hora de entrada. Con
+     * dentro de cada grupo, por vigencia de la más reciente a la más vieja.
+     * El día de la semana y la hora de entrada solo desempatan, porque un
+     * mismo período suele traer una asignación por cada día que se trabaja y
+     * es esa tanda —no el día suelto— la que el usuario lee junta. Con
      * `$incluirVencidas` se suman al final las que ya terminaron.
      *
      * El orden se resuelve en SQL con un join a `turnos` a propósito: ordenar
@@ -112,15 +147,26 @@ class AsignacionTurno extends Model
             ->where('asignacion_turnos.ci', $ci)
             ->unless($incluirVencidas, fn (Builder $sub) => $sub->where('asignacion_turnos.hasta', '>=', $hoy))
             ->orderByRaw('CASE WHEN asignacion_turnos.hasta >= ? THEN 0 ELSE 1 END', [$hoy])
+            ->orderByDesc('asignacion_turnos.desde')
+            ->orderByDesc('asignacion_turnos.hasta')
             ->orderBy('turnos.dia')
-            ->orderBy('turnos.hEntrada')
-            ->orderByDesc('asignacion_turnos.hasta');
+            ->orderBy('turnos.hEntrada');
     }
 
     /**
      * Situación de la asignación respecto de hoy: `vigente`, `vencida` (ya
      * terminó) o `futura` (todavía no empieza).
      */
+    /**
+     * Clave del período de vigencia, para juntar en un bloque las asignaciones
+     * que comparten fechas. Sirve igual sobre las filas de
+     * `periodosDelFuncionario`, que traen solo esas dos columnas.
+     */
+    public function getClavePeriodoAttribute(): string
+    {
+        return ($this->desde?->format('Y-m-d') ?? '').'|'.($this->hasta?->format('Y-m-d') ?? '');
+    }
+
     public function getSituacionAttribute(): string
     {
         if ($this->hasta?->isBefore(today())) {

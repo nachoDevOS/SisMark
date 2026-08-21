@@ -41,14 +41,23 @@ class LicenciaFactory extends Factory
     }
 
     /**
-     * Licencia por horas: entrada y salida sobre la fecha base 1899-12-30.
+     * Licencia migrada del SIA: no trae `solicitud`, así que se agrupa por su
+     * `id`. Es la mitad del padrón y la que no cubría ninguna prueba.
+     */
+    public function delSia(): self
+    {
+        return $this->state(fn (): array => ['solicitud' => null]);
+    }
+
+    /**
+     * Licencia por horas: solo la hora, que es lo que guardan las columnas.
      */
     public function porHoras(string $entrada = '08:00', string $salida = '12:00'): self
     {
         return $this->state(fn (): array => [
             'tCompleto' => false,
-            'lEntra' => "1899-12-30 {$entrada}:00",
-            'lSale' => "1899-12-30 {$salida}:00",
+            'lEntra' => "{$entrada}:00",
+            'lSale' => "{$salida}:00",
         ]);
     }
 }

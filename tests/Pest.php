@@ -90,9 +90,32 @@ function fakeMamore(array $padron = []): void
             $datos = is_array($datos) ? $datos : ['nombre' => $datos];
             $cargo = $datos['cargo'] ?? null;
 
+            // Haber y vigencia del contrato firmado.
+            $sueldo = array_key_exists('sueldo', $datos) ? $datos['sueldo'] : null;
+            $bono = $datos['bono'] ?? null;
+            $desde = $datos['start'] ?? '2026-01-01';
+            $hasta = array_key_exists('finish', $datos) ? $datos['finish'] : '2026-12-31';
+
+            // Todos los contratos firmados. Por defecto es el único de arriba;
+            // `contratos` permite armar el caso de dos contratos en el mismo
+            // mes con sueldos distintos, que es el que obliga a cobrar cada día
+            // de sanción al contrato que regía ese día.
+            $contratos = $datos['contratos'] ?? ($cargo === null ? [] : [[
+                'salary' => $sueldo,
+                'bonus' => $bono,
+                'start' => $desde,
+                'finish' => $hasta,
+            ]]);
+
             return [
                 'id' => crc32($ci),
                 'ci' => (string) $ci,
+                // Extensión del carnet (el departamento que lo emitió) y la
+                // cédula completa que Mamoré arma con las dos.
+                'extension' => $datos['extension'] ?? null,
+                'full_ci' => isset($datos['extension'])
+                    ? $ci.' '.$datos['extension']
+                    : (string) $ci,
                 'full_name' => $datos['nombre'],
                 // La foto de la persona; la miniatura la deriva DirectorioMamore.
                 'image' => $datos['image'] ?? null,
@@ -104,14 +127,33 @@ function fakeMamore(array $padron = []): void
                     'cargo_completo' => $cargo,
                     'direccion_administrativa' => ['nombre' => $datos['direccion'] ?? 'Dirección', 'sigla' => $datos['direccion'] ?? null],
                     'unidad_administrativa' => null,
-                    'start' => '2026-01-01',
-                    'finish' => '2026-12-31',
+                    // Haber y vigencia: los usa el régimen disciplinario para
+                    // pasar los días de descuento a bolivianos. `sueldo` acepta
+                    // `null` explícito, que es el contrato sin haber cargado.
+                    'salary' => $sueldo,
+                    'bonus' => $bono,
+                    'start' => $desde,
+                    'finish' => $hasta,
                 ],
+                'contratos' => $contratos,
             ];
         })
         ->values();
 
     Http::fake([
+        // Los contratos van primero: su ruta cuelga de la del detalle, así que
+        // el patrón de abajo también la alcanzaría y devolvería la ficha entera.
+        //
+        // De estos contratos depende qué días procesa el sistema, así que el
+        // fake tiene que responder la misma forma que la API real: una lista
+        // bajo `data`, con `start` y `finish`.
+        'mamore.test/api/personal/people/ci/*/contracts*' => function (ClientRequest $peticion) use ($filas) {
+            $partes = explode('/', trim((string) parse_url($peticion->url(), PHP_URL_PATH), '/'));
+            $ci = urldecode($partes[count($partes) - 2] ?? '');
+            $fila = $filas->firstWhere('ci', $ci);
+
+            return Http::response(['data' => $fila['contratos'] ?? []]);
+        },
         // El patrón del detalle va primero: el del listado también lo alcanzaría.
         'mamore.test/api/personal/people/ci/*' => function (ClientRequest $peticion) use ($filas) {
             $ci = urldecode(basename((string) parse_url($peticion->url(), PHP_URL_PATH)));

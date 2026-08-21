@@ -22,8 +22,8 @@ test('el listado muestra las marcaciones del rango por defecto', function () {
     ]);
     DB::table('asistencias')->insert([
         'ci' => '777',
-        'fecha' => now()->startOfDay()->toDateTimeString(),
-        'hora' => now()->toDateTimeString(),
+        'fecha' => now()->startOfDay()->toDateString(),
+        'hora' => now()->format('H:i:s'),
         'tipo' => 'R',
     ]);
 
@@ -39,8 +39,8 @@ test('el rango de fechas excluye lo que queda fuera', function () {
     ]);
     DB::table('asistencias')->insert([
         'ci' => '888',
-        'fecha' => now()->subYears(2)->toDateTimeString(),
-        'hora' => now()->toDateTimeString(),
+        'fecha' => now()->subYears(2)->toDateString(),
+        'hora' => now()->format('H:i:s'),
         'tipo' => 'R',
     ]);
 
@@ -48,6 +48,24 @@ test('el rango de fechas excluye lo que queda fuera', function () {
     $this->get(route('marcaciones.list'))
         ->assertOk()
         ->assertSee('Sin marcaciones en el rango seleccionado');
+});
+
+test('el listado se ordena por el id de la tabla, del más alto al más bajo', function () {
+    DB::table('personas')->insert([
+        ['ci' => '111', 'paterno' => 'Alfa', 'materno' => null, 'nombres' => 'Ana', 'pinReloj' => null, 'marcaDirecta' => false],
+        ['ci' => '222', 'paterno' => 'Beta', 'materno' => null, 'nombres' => 'Bruno', 'pinReloj' => null, 'marcaDirecta' => false],
+    ]);
+
+    // «Beta» tiene el id más alto pero marcó más temprano: va primera igual.
+    // Si el listado ordenara por fecha y hora, arrancaría por «Alfa».
+    DB::table('asistencias')->insert([
+        ['id' => 10, 'ci' => '111', 'fecha' => now()->startOfDay()->toDateString(), 'hora' => '09:00:00', 'tipo' => 'R'],
+        ['id' => 20, 'ci' => '222', 'fecha' => now()->startOfDay()->toDateString(), 'hora' => '08:00:00', 'tipo' => 'R'],
+    ]);
+
+    $this->get(route('marcaciones.list'))
+        ->assertOk()
+        ->assertSeeInOrder(['Beta', 'Alfa']);
 });
 
 test('un invitado no puede ver marcaciones', function () {
@@ -68,8 +86,8 @@ test('busca marcaciones por apellido del funcionario', function () {
         ['ci' => '2', 'paterno' => 'Quiroga', 'materno' => null, 'nombres' => 'Beto', 'pinReloj' => null, 'marcaDirecta' => false],
     ]);
     DB::table('asistencias')->insert([
-        ['ci' => '1', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'R'],
-        ['ci' => '2', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'R'],
+        ['ci' => '1', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'R'],
+        ['ci' => '2', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'R'],
     ]);
 
     $this->get(route('marcaciones.list', ['q' => 'Zabaleta']))
@@ -84,8 +102,8 @@ test('busca marcaciones por nombre y apellido combinados', function () {
         ['ci' => '2', 'paterno' => 'Perez', 'materno' => 'Rojas', 'nombres' => 'Ignacio', 'pinReloj' => null, 'marcaDirecta' => false],
     ]);
     DB::table('asistencias')->insert([
-        ['ci' => '1', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'R'],
-        ['ci' => '2', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'R'],
+        ['ci' => '1', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'R'],
+        ['ci' => '2', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'R'],
     ]);
 
     // "ignacio m" cruza nombres + paterno: encuentra a Ignacio Molina y deja
@@ -102,8 +120,8 @@ test('busca marcaciones por CI del funcionario', function () {
         ['ci' => '222', 'paterno' => 'Salvatierra', 'materno' => null, 'nombres' => 'Beto', 'pinReloj' => null, 'marcaDirecta' => false],
     ]);
     DB::table('asistencias')->insert([
-        ['ci' => '111', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'R'],
-        ['ci' => '222', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'R'],
+        ['ci' => '111', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'R'],
+        ['ci' => '222', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'R'],
     ]);
 
     $this->get(route('marcaciones.list', ['q' => '111']))
@@ -118,8 +136,8 @@ test('filtra por tipo de marcación', function () {
         ['ci' => '2', 'paterno' => 'Manualino', 'materno' => null, 'nombres' => 'Beto', 'pinReloj' => null, 'marcaDirecta' => false],
     ]);
     DB::table('asistencias')->insert([
-        ['ci' => '1', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'R'],
-        ['ci' => '2', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'M'],
+        ['ci' => '1', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'R'],
+        ['ci' => '2', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'M'],
     ]);
 
     $this->get(route('marcaciones.list', ['tipo' => 'R']))
@@ -135,7 +153,7 @@ test('una marcación manual no se pinta con el color de reloj', function () {
     DB::table('asistencias')->insert([
         'ci' => '333',
         'fecha' => now()->toDateString(),
-        'hora' => now()->toDateTimeString(),
+        'hora' => now()->format('H:i:s'),
         'tipo' => 'M',
     ]);
 
@@ -167,8 +185,8 @@ test('no duplica una marcación que ya existe en asistencias', function () {
     ]);
     DB::table('asistencias')->insert([
         'ci' => '555',
-        'fecha' => '2026-07-15 00:00:00',
-        'hora' => '1899-12-30 08:05:00',
+        'fecha' => '2026-07-15',
+        'hora' => '08:05:00',
         'tipo' => 'R',
     ]);
 
@@ -275,7 +293,7 @@ test('la columna funcionario usa el nombre de Mamoré cuando existe', function (
         'ci' => '777', 'paterno' => 'Diaz', 'materno' => null, 'nombres' => 'Eva', 'pinReloj' => null, 'marcaDirecta' => false,
     ]);
     DB::table('asistencias')->insert([
-        'ci' => '777', 'fecha' => today(), 'hora' => '1899-12-30 08:00:00', 'tipo' => 'R',
+        'ci' => '777', 'fecha' => today(), 'hora' => '08:00:00', 'tipo' => 'R',
     ]);
 
     $this->get(route('marcaciones.list'))
@@ -288,7 +306,7 @@ test('la columna funcionario muestra el cargo que informa Mamoré', function () 
     fakeMamore(['777' => ['nombre' => 'MARIELA CRUZ PORCO', 'cargo' => 'Analista II', 'direccion' => 'SDAF']]);
 
     DB::table('asistencias')->insert([
-        'ci' => '777', 'fecha' => today(), 'hora' => '1899-12-30 08:00:00', 'tipo' => 'R',
+        'ci' => '777', 'fecha' => today(), 'hora' => '08:00:00', 'tipo' => 'R',
     ]);
 
     $this->get(route('marcaciones.list'))
@@ -307,7 +325,7 @@ test('la columna funcionario cae a la BD local si no está en Mamoré', function
         'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
     ]);
     DB::table('asistencias')->insert([
-        'ci' => '888', 'fecha' => today(), 'hora' => '1899-12-30 08:00:00', 'tipo' => 'R',
+        'ci' => '888', 'fecha' => today(), 'hora' => '08:00:00', 'tipo' => 'R',
     ]);
 
     $this->get(route('marcaciones.list'))
@@ -323,7 +341,7 @@ test('la columna funcionario muestra «Sin persona» si el CI no está en ningú
 
     // Marcación de un CI que no existe ni en Mamoré ni en personas local.
     DB::table('asistencias')->insert([
-        'ci' => '999999', 'fecha' => today(), 'hora' => '1899-12-30 08:00:00', 'tipo' => 'R',
+        'ci' => '999999', 'fecha' => today(), 'hora' => '08:00:00', 'tipo' => 'R',
     ]);
 
     $this->get(route('marcaciones.list'))
@@ -459,7 +477,7 @@ test('la marcación manual no duplica la misma ci, fecha y hora', function () {
         'ci' => '888', 'paterno' => 'Roca', 'materno' => null, 'nombres' => 'Luis', 'pinReloj' => null, 'marcaDirecta' => false,
     ]);
     DB::table('asistencias')->insert([
-        'ci' => '888', 'fecha' => '2026-07-20 00:00:00', 'hora' => '1899-12-30 08:30:00', 'tipo' => 'M',
+        'ci' => '888', 'fecha' => '2026-07-20', 'hora' => '08:30:00', 'tipo' => 'M',
     ]);
 
     $this->post(route('marcaciones.store'), [
@@ -537,8 +555,8 @@ test('el origen de cada marcación se explica con palabras, no solo con la letra
         ['ci' => '2', 'paterno' => 'Legado', 'materno' => null, 'nombres' => 'Beto', 'pinReloj' => null, 'marcaDirecta' => false],
     ]);
     DB::table('asistencias')->insert([
-        ['ci' => '1', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'R'],
-        ['ci' => '2', 'fecha' => now()->toDateString(), 'hora' => now()->toDateTimeString(), 'tipo' => 'A'],
+        ['ci' => '1', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'R'],
+        ['ci' => '2', 'fecha' => now()->toDateString(), 'hora' => now()->format('H:i:s'), 'tipo' => 'A'],
     ]);
 
     // En la tabla: la letra que guarda la base, más su significado al lado.
@@ -582,7 +600,7 @@ test('el rango incluye los dos días extremos y deja fuera los vecinos', functio
 
     foreach (['2026-07-31' => '07:00:00', '2026-08-01' => '08:00:00', '2026-08-04' => '09:00:00', '2026-08-05' => '10:00:00'] as $dia => $hora) {
         DB::table('asistencias')->insert([
-            'ci' => '888', 'fecha' => $dia.' 00:00:00', 'hora' => '1899-12-30 '.$hora, 'tipo' => 'R',
+            'ci' => '888', 'fecha' => $dia, 'hora' => $hora, 'tipo' => 'R',
         ]);
     }
 
@@ -603,15 +621,17 @@ test('el rango filtra sin envolver la columna en una función', function () {
         ->and($sql)->toContain('"fecha" >=')
         ->and($sql)->toContain('"fecha" <');
 
-    // El corte de arriba va por el día siguiente, para que entre todo el día `hasta`.
+    // Los cortes se enlazan como `Y-m-d`, no como datetime: la columna es
+    // `date`, y «2026-08-01 00:00:00» contra «2026-08-01» no cruza.
+    // El de arriba va por el día siguiente, para que entre todo el día `hasta`.
     expect(cortesDelRango('2026-08-01', '2026-08-04'))
-        ->toBe(['2026-08-01 00:00:00', '2026-08-05 00:00:00']);
+        ->toBe(['2026-08-01', '2026-08-05']);
 });
 
 test('el rango deja pasar los extremos vacíos', function () {
     expect(cortesDelRango('', ''))->toBe([])
         ->and(cortesDelRango(null, null))->toBe([])
-        ->and(cortesDelRango('2026-08-01', ''))->toBe(['2026-08-01 00:00:00']);
+        ->and(cortesDelRango('2026-08-01', ''))->toBe(['2026-08-01']);
 });
 
 test('el listado no envuelve la fecha en una función al paginar', function () {
@@ -619,8 +639,8 @@ test('el listado no envuelve la fecha en una función al paginar', function () {
         'ci' => '888', 'paterno' => 'Perez', 'materno' => null, 'nombres' => 'Ana', 'pinReloj' => null, 'marcaDirecta' => false,
     ]);
     DB::table('asistencias')->insert([
-        'ci' => '888', 'fecha' => now()->startOfDay()->toDateTimeString(),
-        'hora' => '1899-12-30 08:00:00', 'tipo' => 'R',
+        'ci' => '888', 'fecha' => now()->startOfDay()->toDateString(),
+        'hora' => '08:00:00', 'tipo' => 'R',
     ]);
 
     // La consulta del listado y el count(*) de la paginación son dos consultas
@@ -653,3 +673,103 @@ function cortesDelRango(?string $desde, ?string $hasta): array
         Asistencia::query()->enRango($desde, $hasta)->getBindings()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Foto del funcionario en el listado
+// ---------------------------------------------------------------------------
+
+test('el listado de marcaciones muestra la foto que trae Mamoré', function () {
+    // La foto viaja en la misma ficha cacheada que ya trae el nombre y el cargo,
+    // así que no cuesta una consulta más por fila.
+    DB::table('personas')->insert([
+        'ci' => '7633685', 'paterno' => 'Molina', 'materno' => 'Guzman',
+        'nombres' => 'Ignacio', 'pinReloj' => null, 'marcaDirecta' => false,
+    ]);
+    DB::table('asistencias')->insert([
+        'ci' => '7633685',
+        'fecha' => now()->startOfDay()->toDateString(),
+        'hora' => now()->format('H:i:s'),
+        'tipo' => 'R',
+    ]);
+
+    fakeMamore(['7633685' => [
+        'nombre' => 'IGNACIO MOLINA GUZMAN',
+        'cargo' => 'TECNICO II',
+        'image' => 'https://cdn.test/people/ignacio.png',
+    ]]);
+
+    $this->get(route('marcaciones.list'))
+        ->assertOk()
+        ->assertSee('persona-celda', escape: false)
+        // Se pinta la miniatura, igual que en el listado de funcionarios.
+        ->assertSee('src="https://cdn.test/people/ignacio-cropped.png"', escape: false)
+        ->assertSee('alt="Foto de IGNACIO MOLINA GUZMAN"', escape: false)
+        // Y el zoom al pasar el mouse, que reusa la imagen ya descargada.
+        ->assertSee('persona-zoom', escape: false);
+});
+
+test('el listado de marcaciones cae en el ícono cuando no hay foto', function () {
+    DB::table('personas')->insert([
+        'ci' => '4191164', 'paterno' => 'Rojas', 'materno' => null,
+        'nombres' => 'Ana', 'pinReloj' => null, 'marcaDirecta' => false,
+    ]);
+    DB::table('asistencias')->insert([
+        'ci' => '4191164',
+        'fecha' => now()->startOfDay()->toDateString(),
+        'hora' => now()->format('H:i:s'),
+        'tipo' => 'R',
+    ]);
+
+    // Sin Mamoré configurado no hay foto: la fila igual se muestra entera.
+    $this->get(route('marcaciones.list'))
+        ->assertOk()
+        ->assertSee('Rojas')
+        ->assertSee('persona-celda', escape: false)
+        ->assertDontSee('alt="Foto de', escape: false);
+});
+
+test('el CI va en la misma celda que la foto y el nombre', function () {
+    DB::table('personas')->insert([
+        'ci' => '7633685', 'paterno' => 'Molina', 'materno' => 'Guzman',
+        'nombres' => 'Ignacio', 'pinReloj' => null, 'marcaDirecta' => false,
+    ]);
+    DB::table('asistencias')->insert([
+        'ci' => '7633685',
+        'fecha' => now()->startOfDay()->toDateString(),
+        'hora' => now()->format('H:i:s'),
+        'tipo' => 'R',
+    ]);
+
+    fakeMamore(['7633685' => [
+        'nombre' => 'IGNACIO MOLINA GUZMAN',
+        'cargo' => 'TECNICO II',
+        'image' => 'https://cdn.test/people/ignacio.png',
+    ]]);
+
+    $this->get(route('marcaciones.list'))
+        ->assertOk()
+        // Una sola columna «Funcionario»; la de CI dejó de existir.
+        ->assertDontSee('<th>CI</th>', escape: false)
+        ->assertSee('<th>Funcionario</th>', escape: false)
+        // Foto, nombre y carnet en la misma celda.
+        ->assertSee('persona-celda', escape: false)
+        ->assertSee('IGNACIO MOLINA GUZMAN')
+        ->assertSee('7633685')
+        ->assertSee('TECNICO II');
+});
+
+test('una marcación sin ficha igual muestra su carnet', function () {
+    // Un carnet que no está ni en la base local ni en Mamoré: la fila tiene que
+    // poder identificarse igual, que para eso está.
+    DB::table('asistencias')->insert([
+        'ci' => '9999999',
+        'fecha' => now()->startOfDay()->toDateString(),
+        'hora' => now()->format('H:i:s'),
+        'tipo' => 'A',
+    ]);
+
+    $this->get(route('marcaciones.list'))
+        ->assertOk()
+        ->assertSee('Sin persona')
+        ->assertSee('9999999');
+});

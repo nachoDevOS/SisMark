@@ -57,7 +57,7 @@ function funcionarioProcesado(): Persona
     foreach (['08:25:00', '16:50:00'] as $marca) {
         Asistencia::factory()->create([
             'ci' => $persona->ci,
-            'fecha' => '2026-07-27 00:00:00',
+            'fecha' => '2026-07-27',
             'hora' => "1899-12-30 {$marca}",
         ]);
     }
@@ -98,8 +98,11 @@ test('generar muestra el día procesado con el atraso y las horas computadas', f
         ->assertSee('08:25:00')
         ->assertSee('16:50:00')
         ->assertSee('25 min')
-        // 16:00 − 08:25, acotado al turno: va en el resumen, no en la fila.
-        ->assertSee('7h 35m');
+        // Las horas del período no se muestran en pantalla: el cierre del
+        // rango vive en el imprimible y en el Excel.
+        ->assertDontSee('Horas computadas')
+        ->assertDontSee('Saldo')
+        ->assertDontSee('Salida anticipada');
 });
 
 test('la licencia por horas llena las columnas de licencia', function () {
@@ -107,7 +110,7 @@ test('la licencia por horas llena las columnas de licencia', function () {
 
     Licencia::factory()->porHoras('08:00', '11:00')->create([
         'ci' => $persona->ci,
-        'fecha' => '2026-07-27 00:00:00',
+        'fecha' => '2026-07-27',
         'turno_id' => Turno::query()->value('id'),
         'goceHaberes' => false,
         'motivo' => 'BAJA MEDICA',
@@ -127,7 +130,7 @@ test('la licencia de turno completo muestra el turno con T.C. en sí', function 
 
     Licencia::factory()->create([
         'ci' => $persona->ci,
-        'fecha' => '2026-07-27 00:00:00',
+        'fecha' => '2026-07-27',
         'turno_id' => Turno::query()->value('id'),
         'tCompleto' => true,
         'goceHaberes' => true,
@@ -155,7 +158,7 @@ test('el rango invertido se da vuelta en vez de salir vacío', function () {
         ->assertSee('LUN: 08:00 - 16:00');
 });
 
-test('el día sin turno asignado no ocupa una fila, pero se cuenta en el resumen', function () {
+test('el día sin turno asignado no aparece por ningún lado en pantalla', function () {
     funcionarioProcesado();
 
     // Domingo: el turno es de los lunes.
@@ -164,8 +167,9 @@ test('el día sin turno asignado no ocupa una fila, pero se cuenta en el resumen
     ])))
         ->assertOk()
         ->assertSee('Sin días con turno asignado en el rango seleccionado.')
-        // Sale del listado, pero el resumen sigue diciendo que el día existió.
-        ->assertSee('No laborable: 1');
+        // Ni fila ni conteo: el día que no se controla no aporta nada a la
+        // pantalla. El imprimible sí lo conserva.
+        ->assertDontSee('No laborable');
 });
 
 test('la tabla en pantalla lista solo los días con turno asignado', function () {
@@ -179,7 +183,7 @@ test('la tabla en pantalla lista solo los días con turno asignado', function ()
         ->assertSee('27/07/2026')
         ->assertDontSee('25/07/2026')
         ->assertDontSee('26/07/2026')
-        ->assertSee('No laborable: 2');
+        ->assertDontSee('No laborable');
 });
 
 test('el imprimible conserva los días no laborables', function () {
@@ -327,14 +331,36 @@ test('el xlsx combina fecha y día cuando el día no tiene turno', function () {
         ->and($hoja->getMergeCells())->toHaveKey('C9:L9');
 });
 
-test('generar sin funcionario vuelve al formulario con error', function () {
+test('generar sin funcionario avisa dentro de la tabla', function () {
+    // La tabla se pide por AJAX: el aviso vuelve como parcial. Redirigir haría
+    // que `fetch` siguiera la redirección y dibujara la pantalla de selección
+    // entera adentro del recuadro de la tabla.
     $this->get(route('reportes.marcaciones.procesado.generar'))
-        ->assertRedirect(route('reportes.marcaciones.procesado'))
-        ->assertSessionHas('error');
+        ->assertOk()
+        ->assertSee('Elegí un funcionario para generar el reporte.')
+        ->assertDontSee('<!DOCTYPE html>', escape: false);
 });
 
 test('un usuario sin permiso no puede entrar', function () {
     $this->actingAs(User::factory()->create());
 
     $this->get(route('reportes.marcaciones.procesado'))->assertForbidden();
+});
+
+test('el reporte procesado oculta el encabezado del funcionario si se lo piden', function () {
+    funcionarioProcesado();
+
+    // Pantalla general: la tabla es lo único que hay, así que se identifica.
+    $this->get(route('reportes.marcaciones.procesado.generar', rangoProcesado()))
+        ->assertOk()
+        ->assertSee('PIN reloj')
+        ->assertSee('Rango:');
+
+    // Dentro de la ficha del funcionario, quién es ya está arriba con foto y
+    // datos completos: solo queda el rango y los botones.
+    $this->get(route('reportes.marcaciones.procesado.generar', rangoProcesado(['encabezado' => 0])))
+        ->assertOk()
+        ->assertDontSee('PIN reloj')
+        ->assertSee('Rango:')
+        ->assertSee('Imprimir');
 });

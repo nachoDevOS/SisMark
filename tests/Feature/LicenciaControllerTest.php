@@ -63,7 +63,7 @@ test('el listado muestra las licencias registradas', function () {
     Persona::factory()->create(['ci' => '7633685', 'nombres' => 'IGNACIO', 'paterno' => 'MOLINA']);
     Licencia::factory()->create([
         'ci' => '7633685',
-        'fecha' => '2026-07-28 00:00:00',
+        'fecha' => '2026-07-28',
         'motivo' => 'PRUEBA DIAS',
     ]);
 
@@ -638,9 +638,10 @@ test('la licencia por horas guarda las horas sobre la fecha base 1899-12-30', fu
 
     $licencia = Licencia::query()->firstOrFail();
 
+    // Las columnas son `time`: guardan la hora y nada más.
     expect($licencia->tCompleto)->toBeFalse()
-        ->and($licencia->lEntra->format('Y-m-d H:i'))->toBe('1899-12-30 09:30')
-        ->and($licencia->lSale->format('Y-m-d H:i'))->toBe('1899-12-30 12:00');
+        ->and($licencia->lEntra->format('H:i'))->toBe('09:30')
+        ->and($licencia->lSale->format('H:i'))->toBe('12:00');
 });
 
 test('no duplica una licencia ya registrada para el mismo día y turno', function () {
@@ -1737,4 +1738,81 @@ test('el escritorio avisa las solicitudes que esperan decisión', function () {
 
 test('sin pendientes el escritorio no muestra el aviso', function () {
     $this->get(route('dashboard'))->assertOk()->assertDontSee('espera tu decisión');
+});
+
+// ---------------------------------------------------------------------------
+// Días alcanzados: turno y alcance de cada día
+// ---------------------------------------------------------------------------
+
+test('no repite el horario cuando el turno del SIA ya se llama con su hora', function () {
+    // Los turnos que vienen del SIA se llaman «MIE: 08:00 - 16:00». Pegarles el
+    // horario otra vez daba «MIE: 08:00 - 16:00: 08:00 – 16:00».
+    $turno = Turno::factory()->create([
+        'nombreTurno' => 'MIE: 08:00 - 16:00',
+        'hEntrada' => '1899-12-30 08:00:00',
+        'hSalida' => '1899-12-30 16:00:00',
+    ]);
+
+    $licencia = Licencia::factory()->create(['turno_id' => $turno->id]);
+
+    expect($licencia->resumen_turno)->toBe('MIE: 08:00 - 16:00');
+});
+
+test('agrega el horario cuando el turno tiene nombre propio', function () {
+    $turno = Turno::factory()->create([
+        'nombreTurno' => 'GUARDIA NOCHE',
+        'hEntrada' => '1899-12-30 22:00:00',
+        'hSalida' => '1899-12-30 06:00:00',
+    ]);
+
+    $licencia = Licencia::factory()->create(['turno_id' => $turno->id]);
+
+    expect($licencia->resumen_turno)->toBe('GUARDIA NOCHE: 22:00 – 06:00');
+});
+
+test('el alcance del día distingue el turno completo del parcial', function () {
+    $completa = Licencia::factory()->create(['tCompleto' => true]);
+    $parcial = Licencia::factory()->porHoras('09:30', '12:00')->create();
+
+    // `null` es «turno completo»: quien la muestre decide cómo decirlo.
+    expect($completa->alcance_del_dia)->toBeNull()
+        ->and($parcial->alcance_del_dia)->toBe('09:30 – 12:00');
+});
+
+test('avisa cuando la licencia es parcial pero no trae horario cargado', function () {
+    // Es el caso de lo migrado del SIA: `TCompleto = 0` con `LEntra` en null.
+    // Antes se mostraba «— – —», que no dice nada.
+    $licencia = Licencia::factory()->create([
+        'tCompleto' => false,
+        'lEntra' => null,
+        'lSale' => null,
+    ]);
+
+    expect($licencia->alcance_del_dia)->toBe('Sin horario cargado');
+});
+
+test('la ficha de la solicitud muestra el alcance de cada día alcanzado', function () {
+    $this->actingAs(asSuperAdmin());
+
+    $turno = Turno::factory()->create([
+        'nombreTurno' => 'MIE: 08:00 - 16:00',
+        'hEntrada' => '1899-12-30 08:00:00',
+        'hSalida' => '1899-12-30 16:00:00',
+    ]);
+
+    $licencia = Licencia::factory()->create([
+        'turno_id' => $turno->id,
+        'tCompleto' => true,
+        'solicitud' => 'sol-de-prueba-0000000001',
+    ]);
+
+    $this->get(route('licencias.show', $licencia))
+        ->assertOk()
+        ->assertSee('Alcance')
+        ->assertSee('Turno completo')
+        // El turno no sale con el horario repetido.
+        ->assertSee('MIE: 08:00 - 16:00')
+        ->assertDontSee('16:00: 08:00')
+        // Las dos tarjetas ocupan la fila entera.
+        ->assertSee('form-grid form-grid--apilado', escape: false);
 });

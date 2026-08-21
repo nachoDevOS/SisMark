@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Traits\ManejaHorasDelDia;
 use App\Traits\RegistersUserEvents;
 use Database\Factories\AsistenciaFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,12 +19,12 @@ use Illuminate\Support\Carbon;
  * del resto de los modelos NO usa SoftDeletes: las marcaciones no se dan de baja
  * desde el sistema y el `deleted_at IS NULL` costaba caro sobre 4,4 millones de
  * filas. El carnet vive en la columna `ci` (en el SIA era IdPersona). `hora`
- * guarda solo la hora sobre la fecha base 1899-12-30, como el SIA real.
+ * guarda solo la hora y `fecha` solo el día.
  */
 class Asistencia extends Model
 {
     /** @use HasFactory<AsistenciaFactory> */
-    use HasFactory, RegistersUserEvents;
+    use HasFactory, ManejaHorasDelDia, RegistersUserEvents;
 
     public const TIPO_RELOJ = 'R';
 
@@ -69,9 +71,27 @@ class Asistencia extends Model
     protected function casts(): array
     {
         return [
-            'fecha' => 'datetime',
-            'hora' => 'datetime',
+            // `fecha` tampoco: la maneja {@see ManejaHorasDelDia}.
+            // `hora` no va acá: la maneja {@see ManejaHorasDelDia}, porque el
+            // cast `datetime` de Eloquent escribiría un datetime entero en una
+            // columna `time`.
         ];
+    }
+
+    /**
+     * Hora de la marcación: columna `time`, se lee como Carbon y se escribe H:i:s.
+     */
+    /**
+     * Día de la marcación: columna `date`, sin hora.
+     */
+    protected function fecha(): Attribute
+    {
+        return self::soloFecha();
+    }
+
+    protected function hora(): Attribute
+    {
+        return self::horaDelDia();
     }
 
     public function persona(): BelongsTo
@@ -112,11 +132,14 @@ class Asistencia extends Model
         return $query
             ->when(
                 $desde !== null && $desde !== '',
-                fn (Builder $sub) => $sub->where('fecha', '>=', Carbon::parse($desde)->startOfDay())
+                // Se comparan cadenas `Y-m-d` y no objetos Carbon: la columna es
+                // `date`, y un Carbon se enlaza como «2026-07-06 00:00:00», que
+                // contra «2026-07-06» no cruza.
+                fn (Builder $sub) => $sub->where('fecha', '>=', Carbon::parse($desde)->toDateString())
             )
             ->when(
                 $hasta !== null && $hasta !== '',
-                fn (Builder $sub) => $sub->where('fecha', '<', Carbon::parse($hasta)->startOfDay()->addDay())
+                fn (Builder $sub) => $sub->where('fecha', '<', Carbon::parse($hasta)->startOfDay()->addDay()->toDateString())
             );
     }
 

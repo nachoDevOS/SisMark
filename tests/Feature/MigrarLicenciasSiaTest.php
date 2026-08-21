@@ -70,7 +70,8 @@ test('mapea IdPersona→ci y preserva los campos, recortando el relleno', functi
         ->and($local->usuario)->toBe('mvillavicencio')
         ->and($local->idTurno)->toBe('8DW')
         ->and($local->motivo)->toBe('INGRESO AL BIOMETRICO')
-        ->and($local->lEntra)->toContain('08:00:00');
+        // El SIA la manda como «1899-12-30 08:00:00»; acá queda solo la hora.
+        ->and($local->lEntra)->toBe('08:00:00');
 });
 
 test('resuelve turno_id cruzando idTurno con turnos local y conserva el código como histórico', function () {
@@ -124,7 +125,7 @@ test('no escribe sobre la base del SIA (origen intacto)', function () {
     expect(DB::connection('sia')->table('Licencias')->count())->toBe(1);
 });
 
-test('los días de un mismo pedido del SIA quedan en una sola solicitud', function () {
+test('los días de un mismo pedido del SIA quedan sin solicitud', function () {
     // Mismo funcionario, mismo momento del pedido y mismo motivo: en el SIA eso
     // es UNA licencia partida en un día por fila.
     foreach (['2026-06-22', '2026-06-23', '2026-06-24'] as $dia) {
@@ -138,17 +139,12 @@ test('los días de un mismo pedido del SIA quedan en una sola solicitud', functi
 
     $this->artisan('sia:migrar-licencias')->assertSuccessful();
 
+    // Lo del SIA no fue una solicitud: las cinco filas quedan sin ella.
     expect(Licencia::count())->toBe(5)
-        ->and(Licencia::distinct()->count('solicitud'))->toBe(3);
-
-    // Los tres días del primer pedido comparten solicitud.
-    $comision = Licencia::where('motivo', 'COMISION')->whereBetween('fecha', ['2026-06-22', '2026-06-24'])->get();
-
-    expect($comision)->toHaveCount(3)
-        ->and($comision->pluck('solicitud')->unique())->toHaveCount(1);
+        ->and(Licencia::whereNotNull('solicitud')->count())->toBe(0);
 });
 
-test('reejecutar la copia no le cambia la solicitud a lo ya migrado', function () {
+test('reejecutar la copia no le inventa una solicitud a lo ya migrado', function () {
     insertarLicenciaSia();
     insertarLicenciaSia(['Fecha' => '2026-06-23 00:00:00']);
 
@@ -163,7 +159,7 @@ test('reejecutar la copia no le cambia la solicitud a lo ya migrado', function (
         ->and(Licencia::orderBy('fecha')->pluck('solicitud')->all())->toBe($antes->all());
 });
 
-test('licencias de funcionarios distintos no comparten solicitud', function () {
+test('licencias de funcionarios distintos quedan como filas separadas', function () {
     // Un feriado se anota para todos con el mismo momento y motivo: cada
     // funcionario tiene que quedar con su propia licencia.
     insertarLicenciaSia(['IdPersona' => '10790063']);
@@ -171,5 +167,37 @@ test('licencias de funcionarios distintos no comparten solicitud', function () {
 
     $this->artisan('sia:migrar-licencias')->assertSuccessful();
 
-    expect(Licencia::distinct()->count('solicitud'))->toBe(2);
+    expect(Licencia::count())->toBe(2)
+        ->and(Licencia::whereNotNull('solicitud')->count())->toBe(0);
+});
+
+// ---------------------------------------------------------------------------
+// La columna `solicitud` solo la llenan los pedidos de verdad
+// ---------------------------------------------------------------------------
+
+test('lo migrado del SIA deja la columna solicitud vacía', function () {
+    // Lo que viene del sistema viejo no fue una solicitud: es una licencia ya
+    // otorgada. Esa columna la llenan solo SisMark y Mamoré.
+    insertarLicenciaSia();
+    insertarLicenciaSia(['Fecha' => '2026-06-23 00:00:00']);
+
+    $this->artisan('sia:migrar-licencias')->assertSuccessful();
+
+    expect(Licencia::count())->toBe(2)
+        ->and(Licencia::whereNotNull('solicitud')->count())->toBe(0)
+        ->and(Licencia::pluck('origen')->unique()->all())->toBe(['sia']);
+});
+
+test('sigue sin duplicar aunque la solicitud quede vacía', function () {
+    // El upsert deduplica por (ci, fecha, turno_id), la clave natural del
+    // sistema viejo. `solicitud` quedó fuera justamente porque va en null.
+    insertarLicenciaSia();
+    insertarLicenciaSia(['Fecha' => '2026-06-23 00:00:00']);
+
+    $this->artisan('sia:migrar-licencias')->assertSuccessful();
+    $this->artisan('sia:migrar-licencias')->assertSuccessful();
+    $this->artisan('sia:migrar-licencias')->assertSuccessful();
+
+    expect(Licencia::count())->toBe(2)
+        ->and(Licencia::whereNotNull('solicitud')->count())->toBe(0);
 });

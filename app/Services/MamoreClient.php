@@ -75,6 +75,50 @@ class MamoreClient
     }
 
     /**
+     * Contratos de una persona: los firmados y los ya concluidos, en orden
+     * cronológico.
+     *
+     * **No se cachea, a propósito.** De estos contratos depende que un día de
+     * asistencia se procese o no, y procesar sobre una copia vieja significaría
+     * marcar faltas en días que ya estaban cubiertos, o al revés. La ficha de
+     * identidad sí se cachea un día —nombre, cargo y foto no cambian—, pero esto
+     * se pregunta siempre.
+     *
+     * `$desde` y `$hasta` recortan del lado del servidor a los contratos que
+     * tocan el rango, para no traer un historial de años cuando se reporta un mes.
+     *
+     * Devuelve lista vacía si la persona no está en Mamoré: es distinto de que
+     * la API falle, que levanta {@see MamoreException}.
+     *
+     * @return list<array<string, mixed>>
+     *
+     * @throws MamoreException
+     */
+    public function contractsByCi(string $ci, ?string $desde = null, ?string $hasta = null): array
+    {
+        $parametros = array_filter([
+            'desde' => $desde,
+            'hasta' => $hasta,
+        ], fn (?string $valor): bool => $valor !== null);
+
+        try {
+            $respuesta = $this->http()->get('/people/ci/'.rawurlencode($ci).'/contracts', $parametros);
+        } catch (ConnectionException) {
+            throw new MamoreException('No se pudo conectar con la API de Mamoré.');
+        }
+
+        if ($respuesta->status() === 404) {
+            return [];
+        }
+
+        if ($respuesta->failed()) {
+            throw new MamoreException($this->motivo($respuesta->status()));
+        }
+
+        return $respuesta->json('data') ?? [];
+    }
+
+    /**
      * Pedidos en vuelo al mismo tiempo dentro de un pool.
      *
      * La API limita a 60 pedidos por minuto (cabecera `X-RateLimit-Limit`) y

@@ -151,7 +151,7 @@ class ResolutorNombres
      */
     private function claveCache(string $ci): string
     {
-        return 'mamore.ficha.v2.'.$ci;
+        return 'mamore.ficha.v5.'.$ci;
     }
 
     /**
@@ -172,6 +172,15 @@ class ResolutorNombres
             'direccion' => $fila['direccion'] ?: null,
             'pinReloj' => $fila['pinReloj'],
             'conContrato' => $fila['conContrato'],
+            // Extensión del carnet: solo la tiene Mamoré.
+            'extension' => $fila['extension'] ?? null,
+            'ciCompleto' => $fila['ciCompleto'] ?? null,
+            // Haber y vigencia del contrato: el régimen disciplinario los usa
+            // para pasar los días de descuento a bolivianos.
+            'sueldo' => $fila['sueldo'] ?? null,
+            'bono' => $fila['bono'] ?? null,
+            'contratoDesde' => $fila['contratoDesde'] ?? null,
+            'contratoHasta' => $fila['contratoHasta'] ?? null,
             // La miniatura es la que se pinta en las tablas; la original queda
             // como respaldo si Mamoré todavía no la generó.
             'image' => $fila['image'] ?? null,
@@ -199,6 +208,18 @@ class ResolutorNombres
             'direccion' => null,
             'pinReloj' => trim((string) $persona->pinReloj),
             'conContrato' => null,
+            // SIAT no guarda la extensión del carnet; `origenId` es lo más
+            // parecido que tiene, pero es otro dato y no se lo hace pasar por
+            // este.
+            'extension' => null,
+            'ciCompleto' => null,
+            // SIAT tampoco conoce los haberes: sin Mamoré no hay con qué pasar
+            // los días de descuento a bolivianos, y la pantalla lo dice en vez
+            // de inventar un monto.
+            'sueldo' => null,
+            'bono' => null,
+            'contratoDesde' => null,
+            'contratoHasta' => null,
             // SIAT no guarda fotos: solo las tiene Mamoré.
             'image' => null,
             'imageThumb' => null,

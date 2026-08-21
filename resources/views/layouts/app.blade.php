@@ -8,6 +8,54 @@
     {{-- Alpine.js autohospedado (sin CDN externo, sin build): para el dropdown
          "Mas" de las acciones de fila y el toggle del sidebar en móvil. --}}
     <script defer src="{{ asset('vendor/alpine/alpine.min.js') }}"></script>
+
+    {{--
+        Sesión vencida durante un AJAX.
+
+        Todas las tablas del sistema se cargan con `fetch` y meten la respuesta
+        en el contenedor con `innerHTML`. Si la sesión venció, esa respuesta ya
+        no son los datos: dejada pasar, el formulario de ingreso queda dibujado
+        adentro de la tabla, con el sidebar y el nombre del usuario todavía en
+        pantalla. Parece un error del listado y no lo es.
+
+        Se envuelve `fetch` una sola vez acá, en el `<head>` y sin `defer`, para
+        que quede instalado antes de que corra el script de cualquier pantalla.
+        Son diecisiete llamadas repartidas en catorce vistas: atajarlas en el
+        origen las cubre a todas, y también a las que se escriban después.
+
+        Se recarga la pantalla actual en vez de saltar directo al login: la
+        recarga pega contra el middleware `auth`, que guarda a dónde se quería
+        ir y devuelve al usuario justo acá apenas vuelve a entrar.
+    --}}
+    <script>
+        (function () {
+            const original = window.fetch;
+            let redirigiendo = false;
+
+            window.fetch = async function (...args) {
+                const resp = await original.apply(this, args);
+
+                // 401: la sesión venció (el servidor responde JSON a los AJAX).
+                // 419: la página quedó vieja y su token de CSRF ya no sirve.
+                if (resp.status !== 401 && resp.status !== 419) {
+                    return resp;
+                }
+
+                if (!redirigiendo) {
+                    redirigiendo = true;
+                    window.location.reload();
+                }
+
+                // La recarga tarda un instante y quien llamó va a pintar esto
+                // igual. Se le devuelve un aviso en vez del JSON del error,
+                // que no significa nada para quien lo lee.
+                return new Response(
+                    '<div class="vacio">La sesión expiró. Redirigiendo al ingreso…</div>',
+                    { status: resp.status, headers: { 'Content-Type': 'text/html' } },
+                );
+            };
+        })();
+    </script>
     <style>
         [x-cloak] { display: none !important; }
         :root {
@@ -194,12 +242,25 @@
         tbody tr:hover { background: #f9fafb; }
         /* Fila de solo lectura (p. ej. asignación de turno vencida). */
         tbody tr.fila--inactiva td { color: var(--muted); background: var(--bg); }
+        /* Cabecera de bloque dentro del cuerpo: agrupa las filas que comparten
+           un período de vigencia (los días de un mismo turno asignado). */
+        tbody tr.fila--periodo th { text-align: left; background: var(--bg); padding: .45rem .75rem;
+            border-bottom: 1px solid var(--border); border-top: 2px solid var(--border); font-weight: 600; }
+        tbody tr.fila--periodo:first-child th { border-top: 0; }
+        tbody tr.fila--periodo:hover th { background: var(--bg); }
+        .periodo { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+        .periodo__fechas { font-size: .8125rem; color: var(--thead); letter-spacing: .01em; }
+        .periodo__flecha { color: var(--muted); margin: 0 .15rem; }
+        .periodo__conteo { font-size: .7rem; color: var(--muted); font-weight: 500; }
 
         .pill { display: inline-block; padding: .2rem .6rem; border-radius: 9999px; font-size: .7rem; font-weight: 700; }
         .pill--ok { background: #dcfce7; color: #166534; }
         .pill--no { background: #fee2e2; color: #991b1b; }
         .pill--advertencia { background: #fef3c7; color: #92400e; }
         .pill--info { background: #dbeafe; color: #1e40af; }
+        /* Origen del dato, no un estado: va apagado para que no le compita al
+           verde de «Con contrato», que es lo que de verdad hay que leer. */
+        .pill--neutro { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
 
         .acciones { display: flex; gap: .35rem; align-items: center; }
 
@@ -228,6 +289,27 @@
             overflow: hidden; border: 1px solid var(--border); }
         .ficha-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .ficha-foto svg { width: 3.5rem; height: 3.5rem; }
+
+        /* Ficha del funcionario: la foto **al lado** de los datos y no encima.
+           Centrada arriba dejaba una franja vacía a los dos lados del retrato y
+           empujaba los campos hacia abajo. */
+        .ficha-persona { display: flex; gap: 1.25rem; align-items: flex-start; }
+        .ficha-persona .ficha-foto { margin: 0; flex-shrink: 0; }
+        /* `min-width: 0` para que un correo largo se acomode en vez de estirar
+           la columna y desbordar la tarjeta. */
+        .ficha-persona__datos { flex: 1; min-width: 0; }
+
+        /* Segundo bloque dentro de la misma tarjeta (identidad y contacto son
+           el mismo dato: quién es la persona). La línea los separa sin abrir
+           otra tarjeta. */
+        .ficha-bloque { margin-top: .25rem; padding-top: 1.1rem; border-top: 1px solid var(--border); }
+        .ficha-bloque h3 { font-size: .75rem; margin: 0 0 .9rem; color: var(--muted);
+            text-transform: uppercase; letter-spacing: .04em; }
+
+        @media (max-width: 640px) {
+            .ficha-persona { flex-direction: column; }
+            .ficha-persona .ficha-foto { margin: 0 auto; }
+        }
         .persona-nombre { font-weight: 600; }
         .persona-meta { color: var(--muted); font-size: .75rem; line-height: 1.35; }
 
@@ -454,7 +536,14 @@
         .tarjeta fieldset { border: 0; padding: 0; margin: 0; }
         .tarjeta fieldset[disabled] .campo { opacity: .55; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 1rem; }
+        @media (max-width: 900px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 640px) { .grid-3 { grid-template-columns: 1fr; } }
         @media (max-width: 900px) { .form-grid { grid-template-columns: 1fr; } }
+        /* Una sola columna a cualquier ancho: para las pantallas donde las dos
+           tarjetas necesitan la fila entera —una tabla larga al lado de una
+           ficha corta se lee peor apretada que apilada. */
+        .form-grid--apilado { grid-template-columns: 1fr; }
         @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
         /* Texto secundario (aclaraciones, cargo bajo el nombre, referencias de
            una tabla). Vale suelto y no solo dentro de un `.campo`, que es como

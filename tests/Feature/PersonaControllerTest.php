@@ -573,7 +573,7 @@ test('el listado AJAX muestra las marcaciones de la cédula dentro del rango por
     Asistencia::factory()->create([
         'ci' => '7778888',
         'fecha' => today(),
-        'hora' => '1899-12-30 08:15:00',
+        'hora' => '08:15:00',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
 
@@ -583,8 +583,8 @@ test('el listado AJAX muestra las marcaciones de la cédula dentro del rango por
 });
 
 test('el listado AJAX no mezcla marcaciones de otra cédula', function () {
-    Asistencia::factory()->create(['ci' => '7778888', 'fecha' => today(), 'hora' => '1899-12-30 08:00:00']);
-    Asistencia::factory()->create(['ci' => '1112222', 'fecha' => today(), 'hora' => '1899-12-30 09:00:00']);
+    Asistencia::factory()->create(['ci' => '7778888', 'fecha' => today(), 'hora' => '08:00:00']);
+    Asistencia::factory()->create(['ci' => '1112222', 'fecha' => today(), 'hora' => '09:00:00']);
 
     $this->get(route('funcionarios.marcaciones.list', ['ci' => '7778888']))
         ->assertOk()
@@ -596,13 +596,13 @@ test('el listado AJAX de marcaciones filtra por rango de fechas y tipo', functio
     Asistencia::factory()->create([
         'ci' => '7778888',
         'fecha' => today()->subMonths(3),
-        'hora' => '1899-12-30 07:00:00',
+        'hora' => '07:00:00',
         'tipo' => Asistencia::TIPO_MANUAL,
     ]);
     Asistencia::factory()->create([
         'ci' => '7778888',
         'fecha' => today(),
-        'hora' => '1899-12-30 08:00:00',
+        'hora' => '08:00:00',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
 
@@ -653,13 +653,13 @@ test('el reporte imprimible lista las marcaciones crudas del rango', function ()
     Asistencia::factory()->create([
         'ci' => $persona->ci,
         'fecha' => today(),
-        'hora' => '1899-12-30 08:15:00',
+        'hora' => '08:15:00',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
     Asistencia::factory()->create([
         'ci' => $persona->ci,
         'fecha' => today()->subYear(),
-        'hora' => '1899-12-30 07:00:00',
+        'hora' => '07:00:00',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
 
@@ -748,6 +748,130 @@ test('el listado AJAX de turnos filtra por situación', function () {
         ->assertSee('TURNO VIEJO')
         ->assertSee('Vencida')
         ->assertDontSee('TURNO VIGENTE');
+});
+
+test('la solapa de licencias muestra las migradas del SIA, que se agrupan por id y no por solicitud', function () {
+    Licencia::factory()->delSia()->count(3)->create([
+        'ci' => '7633685',
+        'motivo' => 'BAJA MEDICA DEL SIA',
+    ]);
+
+    $respuesta = $this->get(route('funcionarios.licencias.list', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertDontSee('El funcionario no tiene licencias registradas.');
+
+    // Las tres, no el total contándolas y la tabla vacía.
+    expect(substr_count($respuesta->getContent(), 'BAJA MEDICA DEL SIA'))->toBe(3);
+});
+
+test('la solapa de licencias junta en una página las del SIA y las que son un pedido', function () {
+    $solicitud = (string) Str::ulid();
+
+    foreach (['2026-03-02', '2026-03-03'] as $fecha) {
+        Licencia::factory()->create([
+            'ci' => '7633685',
+            'solicitud' => $solicitud,
+            'fecha' => $fecha,
+            'motivo' => 'PEDIDO DE VACACION',
+        ]);
+    }
+
+    Licencia::factory()->delSia()->create([
+        'ci' => '7633685',
+        'fecha' => '2026-02-10',
+        'motivo' => 'DIA SUELTO DEL SIA',
+    ]);
+
+    $this->get(route('funcionarios.licencias.list', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertSee('PEDIDO DE VACACION')
+        ->assertSee('DIA SUELTO DEL SIA');
+});
+
+test('el resumen de licencias indexa por su clave también las del SIA', function () {
+    $delSia = Licencia::factory()->delSia()->create(['ci' => '7633685']);
+
+    $resumen = Licencia::resumenDe([$delSia->clave_agrupadora]);
+
+    // La clave es el id, y un id es numérico: es justo el caso que `merge()`
+    // renumeraba y dejaba el período y los días en blanco.
+    expect($resumen->has((string) $delSia->getKey()))->toBeTrue()
+        ->and((int) $resumen->get((string) $delSia->getKey())->dias)->toBe(1);
+});
+
+test('el listado AJAX de turnos ordena por vigencia, de la más reciente a la más vieja', function () {
+    $reciente = Turno::factory()->create(['nombreTurno' => 'TURNO RECIENTE', 'dia' => '6']);
+    $viejo = Turno::factory()->create(['nombreTurno' => 'TURNO VIEJO', 'dia' => '2']);
+
+    // El viejo cae antes pese a ser lunes: manda el período, no el día.
+    AsignacionTurno::factory()->vencida()->create([
+        'ci' => '7633685',
+        'turno_id' => $reciente->id,
+        'desde' => now()->subYear()->startOfDay(),
+        'hasta' => now()->subMonths(6)->startOfDay(),
+    ]);
+    AsignacionTurno::factory()->vencida()->create([
+        'ci' => '7633685',
+        'turno_id' => $viejo->id,
+        'desde' => now()->subYears(5)->startOfDay(),
+        'hasta' => now()->subYears(4)->startOfDay(),
+    ]);
+
+    $this->get(route('funcionarios.turnos.list', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertSeeInOrder(['TURNO RECIENTE', 'TURNO VIEJO']);
+});
+
+test('el listado AJAX de turnos junta en un bloque los días que comparten vigencia', function () {
+    $desde = now()->subMonth()->startOfDay();
+    $hasta = now()->addMonth()->startOfDay();
+
+    foreach (['2', '3', '4'] as $dia) {
+        AsignacionTurno::factory()->create([
+            'ci' => '7633685',
+            'turno_id' => Turno::factory()->create(['dia' => $dia])->id,
+            'desde' => $desde,
+            'hasta' => $hasta,
+        ]);
+    }
+
+    $respuesta = $this->get(route('funcionarios.turnos.list', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertSee('3 días')
+        ->assertSee($desde->format('d/m/Y'));
+
+    // Un solo bloque, y las fechas escritas una sola vez y no una por día.
+    expect(substr_count($respuesta->getContent(), 'fila--periodo'))->toBe(1)
+        ->and(substr_count($respuesta->getContent(), $desde->format('d/m/Y')))->toBe(1);
+});
+
+test('el listado AJAX de turnos pagina por período de vigencia y no por día asignado', function () {
+    $lunes = Turno::factory()->create(['dia' => '2']);
+    $martes = Turno::factory()->create(['dia' => '3']);
+
+    // Doce períodos de dos días: 24 asignaciones que son 12 filas de listado.
+    foreach (range(1, 12) as $mes) {
+        foreach ([$lunes, $martes] as $turno) {
+            AsignacionTurno::factory()->create([
+                'ci' => '7633685',
+                'turno_id' => $turno->id,
+                'desde' => now()->subMonths($mes + 1)->startOfDay(),
+                'hasta' => now()->subMonths($mes)->startOfDay(),
+            ]);
+        }
+    }
+
+    $masViejo = now()->subMonths(13)->startOfDay()->format('d/m/Y');
+
+    $primera = $this->get(route('funcionarios.turnos.list', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertDontSee($masViejo);
+
+    expect(substr_count($primera->getContent(), 'fila--periodo'))->toBe(10);
+
+    $this->get(route('funcionarios.turnos.list', ['ci' => '7633685', 'page' => 2]))
+        ->assertOk()
+        ->assertSee($masViejo);
 });
 
 test('el listado AJAX de turnos oculta concluir y eliminar cuando se pide sin acciones', function () {
@@ -845,4 +969,514 @@ test('la solapa de licencias de la ficha agrupa los días de un mismo pedido', f
     // Y el aviso de baja dice cuántos días se van: `destroy` elimina la
     // solicitud entera, así que prometer «la licencia del 03/08» sería mentir.
     expect($contenido)->toContain('Se eliminan los 3 d');
+});
+
+// ---------------------------------------------------------------------------
+// Solapa del régimen disciplinario (RIP)
+// ---------------------------------------------------------------------------
+
+test('la solapa del RIP muestra el acumulado y la sanción del mes', function () {
+    $hora = fn (string $hm): string => "1899-12-30 {$hm}:00";
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    $turno = Turno::factory()->create([
+        'dia' => '2',
+        'nombreTurno' => 'LUN: 08:00 - 16:00',
+        'hEntrada' => $hora('08:00'),
+        'hTolerancia' => $hora('08:10'),
+        'eMinima' => $hora('07:00'),
+        'eMaxima' => $hora('09:00'),
+        'hSalida' => $hora('16:00'),
+        'sTolerancia' => $hora('16:00'),
+        'sMinima' => $hora('16:00'),
+        'sMaxima' => $hora('20:00'),
+        'hTrabajadas' => 8,
+        'siguienteDia' => false,
+    ]);
+
+    AsignacionTurno::factory()->create([
+        'ci' => $persona->ci,
+        'turno_id' => $turno->id,
+        'desde' => '2026-01-01 00:00:00',
+        'hasta' => '2026-12-31 00:00:00',
+    ]);
+
+    // Los cuatro lunes de julio de 2026, con 25 y 20 minutos de atraso: 45 en
+    // el mes, que es medio día de descuento (Art. 45.I).
+    $jornadas = [
+        '2026-07-06' => ['08:25', '16:05'],
+        '2026-07-13' => ['08:20', '16:05'],
+        '2026-07-20' => ['08:00', '16:05'],
+        '2026-07-27' => ['08:00', '16:05'],
+    ];
+
+    foreach ($jornadas as $fecha => $horas) {
+        foreach ($horas as $marca) {
+            Asistencia::factory()->create([
+                'ci' => $persona->ci,
+                'fecha' => $fecha.' 00:00:00',
+                'hora' => $hora($marca),
+            ]);
+        }
+    }
+
+    $this->get(route('funcionarios.rip.list', ['ci' => $persona->ci, 'periodo' => '2026-07']))
+        ->assertOk()
+        ->assertSee('45 min')
+        ->assertSee('Medio día de la remuneración mensual')
+        ->assertSee('Art. 45.I');
+});
+
+test('la solapa del RIP dice «sin observaciones» cuando el mes está limpio', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    $this->get(route('funcionarios.rip.list', ['ci' => $persona->ci, 'periodo' => '2026-07']))
+        ->assertOk()
+        ->assertSee('Sin observaciones');
+});
+
+test('la solapa del RIP cae en el mes en curso si el periodo viene mal', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    foreach (['', 'cualquier-cosa', '2026-13', '1999-01', now()->addYear()->format('Y-m')] as $periodo) {
+        $this->get(route('funcionarios.rip.list', ['ci' => $persona->ci, 'periodo' => $periodo]))
+            ->assertOk()
+            ->assertSee(now()->locale('es')->isoFormat('MMMM [de] YYYY'));
+    }
+});
+
+test('la ficha del funcionario ofrece la solapa del RIP', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    $this->get(route('funcionarios.show', $persona))
+        ->assertOk()
+        ->assertSee('Régimen RIP');
+});
+
+test('la ficha del funcionario ofrece la solapa de asistencia procesada', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    $this->get(route('funcionarios.show', $persona))
+        ->assertOk()
+        ->assertSee('Asistencia procesada')
+        // La solapa apunta al reporte que ya existe: no se duplicó la tabla.
+        // La URL va dentro de un `@json`, que escapa las barras, así que se
+        // busca el panel y no la ruta cruda.
+        ->assertSee('data-panel="procesado"', false);
+});
+
+test('la solapa de asistencia procesada no aparece sin permiso de reportes', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    $rol = Role::create(['name' => 'solo-funcionarios']);
+    $rol->givePermissionTo(
+        Permission::firstOrCreate(['name' => 'ViewAny:Persona', 'guard_name' => 'web']),
+        Permission::firstOrCreate(['name' => 'View:Persona', 'guard_name' => 'web']),
+    );
+
+    $this->actingAs(User::factory()->create()->assignRole($rol));
+
+    $this->get(route('funcionarios.show', $persona))
+        ->assertOk()
+        ->assertDontSee('Asistencia procesada');
+});
+
+test('el reporte procesado se sirve como parcial para la solapa de la ficha', function () {
+    $hora = fn (string $hm): string => "1899-12-30 {$hm}:00";
+    $persona = Persona::factory()->create(['ci' => '7633685', 'nombres' => 'IGNACIO']);
+
+    $turno = Turno::factory()->create([
+        'dia' => '2',
+        'nombreTurno' => 'LUN: 08:00 - 16:00',
+        'hEntrada' => $hora('08:00'),
+        'hTolerancia' => $hora('08:10'),
+        'eMinima' => $hora('07:00'),
+        'eMaxima' => $hora('09:00'),
+        'hSalida' => $hora('16:00'),
+        'sTolerancia' => $hora('16:00'),
+        'sMinima' => $hora('16:00'),
+        'sMaxima' => $hora('20:00'),
+        'hTrabajadas' => 8,
+        'siguienteDia' => false,
+    ]);
+
+    AsignacionTurno::factory()->create([
+        'ci' => $persona->ci,
+        'turno_id' => $turno->id,
+        'desde' => '2026-01-01 00:00:00',
+        'hasta' => '2026-12-31 00:00:00',
+    ]);
+
+    foreach (['08:25', '16:05'] as $marca) {
+        Asistencia::factory()->create([
+            'ci' => $persona->ci,
+            'fecha' => '2026-07-06',
+            'hora' => $hora($marca),
+        ]);
+    }
+
+    $this->get(route('reportes.marcaciones.procesado.generar', [
+        'persona' => $persona->ci,
+        'desde' => '2026-07-06',
+        'hasta' => '2026-07-06',
+    ]))
+        ->assertOk()
+        // Parcial, no página entera: la solapa lo inyecta en un div.
+        ->assertDontSee('<!DOCTYPE html>', false)
+        ->assertSee('LUN: 08:00 - 16:00')
+        ->assertSee('25 min');
+});
+
+test('la solapa del RIP expresa el descuento en bolivianos', function () {
+    $hora = fn (string $hm): string => "1899-12-30 {$hm}:00";
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    // Haber de 6.000 Bs: un día vale 200 y medio día, 100.
+    fakeMamore(['7633685' => [
+        'nombre' => 'IGNACIO MOLINA GUZMAN',
+        'cargo' => 'TECNICO II',
+        'sueldo' => 6000,
+        'start' => '2020-01-01',
+        'finish' => null,
+    ]]);
+
+    $turno = Turno::factory()->create([
+        'dia' => '2',
+        'nombreTurno' => 'LUN: 08:00 - 16:00',
+        'hEntrada' => $hora('08:00'),
+        'hTolerancia' => $hora('08:10'),
+        'eMinima' => $hora('07:00'),
+        'eMaxima' => $hora('09:00'),
+        'hSalida' => $hora('16:00'),
+        'sTolerancia' => $hora('16:00'),
+        'sMinima' => $hora('16:00'),
+        'sMaxima' => $hora('20:00'),
+        'hTrabajadas' => 8,
+        'siguienteDia' => false,
+    ]);
+
+    AsignacionTurno::factory()->create([
+        'ci' => $persona->ci,
+        'turno_id' => $turno->id,
+        'desde' => '2026-01-01 00:00:00',
+        'hasta' => '2026-12-31 00:00:00',
+    ]);
+
+    // 45 minutos de atraso en el mes = medio día (Art. 45.I) = 100 Bs.
+    $jornadas = [
+        '2026-07-06' => ['08:25', '16:05'],
+        '2026-07-13' => ['08:20', '16:05'],
+        '2026-07-20' => ['08:00', '16:05'],
+        '2026-07-27' => ['08:00', '16:05'],
+    ];
+
+    foreach ($jornadas as $fecha => $horas) {
+        foreach ($horas as $marca) {
+            Asistencia::factory()->create([
+                'ci' => $persona->ci,
+                'fecha' => $fecha.' 00:00:00',
+                'hora' => $hora($marca),
+            ]);
+        }
+    }
+
+    $this->get(route('funcionarios.rip.list', ['ci' => $persona->ci, 'periodo' => '2026-07']))
+        ->assertOk()
+        ->assertSee('Medio día de la remuneración mensual')
+        ->assertSee('100,00 Bs')
+        // El cálculo tiene que poder explicarse hasta el último boliviano.
+        ->assertSee('6.000,00 Bs')
+        ->assertSee('÷ 30', false);
+});
+
+test('la solapa del RIP muestra los días aunque Mamoré no traiga el haber', function () {
+    $hora = fn (string $hm): string => "1899-12-30 {$hm}:00";
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    // Contrato sin sueldo cargado: no se inventa un monto.
+    fakeMamore(['7633685' => ['nombre' => 'IGNACIO MOLINA', 'cargo' => 'TECNICO II', 'sueldo' => null]]);
+
+    $turno = Turno::factory()->create([
+        'dia' => '2',
+        'nombreTurno' => 'LUN: 08:00 - 16:00',
+        'hEntrada' => $hora('08:00'),
+        'hTolerancia' => $hora('08:10'),
+        'eMinima' => $hora('07:00'),
+        'eMaxima' => $hora('09:00'),
+        'hSalida' => $hora('16:00'),
+        'sTolerancia' => $hora('16:00'),
+        'sMinima' => $hora('16:00'),
+        'sMaxima' => $hora('20:00'),
+        'hTrabajadas' => 8,
+        'siguienteDia' => false,
+    ]);
+
+    AsignacionTurno::factory()->create([
+        'ci' => $persona->ci,
+        'turno_id' => $turno->id,
+        'desde' => '2026-01-01 00:00:00',
+        'hasta' => '2026-12-31 00:00:00',
+    ]);
+
+    // Los cuatro lunes marcados: 45 minutos de atraso en el mes, medio día de
+    // descuento. Sin haber, ese medio día no se puede pasar a bolivianos.
+    $jornadas = [
+        '2026-07-06' => ['08:25', '16:05'],
+        '2026-07-13' => ['08:20', '16:05'],
+        '2026-07-20' => ['08:00', '16:05'],
+        '2026-07-27' => ['08:00', '16:05'],
+    ];
+
+    foreach ($jornadas as $fecha => $horas) {
+        foreach ($horas as $marca) {
+            Asistencia::factory()->create([
+                'ci' => $persona->ci,
+                'fecha' => $fecha.' 00:00:00',
+                'hora' => $hora($marca),
+            ]);
+        }
+    }
+
+    $this->get(route('funcionarios.rip.list', ['ci' => $persona->ci, 'periodo' => '2026-07']))
+        ->assertOk()
+        ->assertSee('Medio día de la remuneración mensual')
+        ->assertSee('no se puede expresar en bolivianos')
+        // Sin el pie del haber: no hay de dónde sacar el valor del día.
+        ->assertDontSee('Haber del contrato en Mamoré');
+});
+
+// ---------------------------------------------------------------------------
+// Extensión del carnet (columna `extension` de Mamoré)
+// ---------------------------------------------------------------------------
+
+test('la ficha local muestra la extensión del carnet que trae Mamoré', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685', 'nombres' => 'IGNACIO']);
+
+    fakeMamore(['7633685' => [
+        'nombre' => 'IGNACIO MOLINA GUZMAN',
+        'cargo' => 'TECNICO II',
+        'extension' => 'BE',
+    ]]);
+
+    $this->get(route('funcionarios.show', $persona))
+        ->assertOk()
+        ->assertSee('Extensión')
+        ->assertSee('BE');
+});
+
+test('la ficha local se muestra igual si Mamoré no responde', function () {
+    $persona = Persona::factory()->create(['ci' => '7633685', 'nombres' => 'IGNACIO']);
+
+    // Sin Mamoré configurado no hay de dónde sacar la extensión: la ficha sale
+    // entera y ese dato queda en «—».
+    config()->set('services.mamore.url', null);
+    config()->set('services.mamore.key', null);
+
+    $this->get(route('funcionarios.show', $persona))
+        ->assertOk()
+        ->assertSee('Extensión')
+        ->assertSee('IGNACIO');
+});
+
+test('la ficha de Mamoré muestra la extensión dentro de la cédula y no como campo aparte', function () {
+    // Mamoré ya manda la cédula con su extensión en `full_ci`. Repetirla en un
+    // campo suelto gastaba una fila entera para decir lo mismo dos veces.
+    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
+    config()->set('services.mamore.key', 'secreta');
+
+    Http::fake([
+        'mamore.test/api/personal/people/ci/*' => Http::response([
+            'data' => [
+                'ci' => '7633685',
+                'extension' => 'BE',
+                'full_ci' => '7633685 BE',
+                'full_name' => 'IGNACIO MOLINA GUZMAN',
+            ],
+        ], 200),
+    ]);
+
+    $this->get(route('funcionarios.mamore', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertSee('7633685 BE')
+        ->assertDontSee('Extensión')
+        // «Emisión» salió por lo mismo: Mamoré casi nunca la trae cargada y la
+        // fila quedaba ocupada por un guión.
+        ->assertDontSee('Emisión');
+});
+
+test('el directorio conserva la extensión al normalizar una persona de Mamoré', function () {
+    $fila = app(DirectorioMamore::class)->normalizarPersona([
+        'ci' => '7633685',
+        'extension' => 'BE',
+        'full_ci' => '7633685 BE',
+        'first_name' => 'IGNACIO',
+    ]);
+
+    expect($fila['extension'])->toBe('BE')
+        ->and($fila['ciCompleto'])->toBe('7633685 BE');
+
+    // Sin extensión en la respuesta no se inventa una cadena vacía.
+    $sinExtension = app(DirectorioMamore::class)->normalizarPersona(['ci' => '1', 'first_name' => 'Ana']);
+
+    expect($sinExtension['extension'])->toBeNull();
+});
+
+/*
+|--------------------------------------------------------------------------
+| Vigencia del contrato en la ficha de Mamoré
+|--------------------------------------------------------------------------
+|
+| Recursos Humanos necesita ver hasta cuándo rige el contrato sin salir de la
+| ficha: es lo que decide si la persona sigue siendo funcionario hoy, y de ahí
+| sale el haber con el que el RIP convierte un descuento en bolivianos.
+|
+| El dato ya viajaba en la respuesta de Mamoré (`contrato.start` y
+| `contrato.finish`, columnas `date` de la tabla `contracts`): lo único que
+| faltaba era mostrarlo.
+|
+*/
+
+/**
+ * Respuesta de Mamoré con un contrato firmado, para las pruebas de vigencia.
+ *
+ * @param  array<string, mixed>  $contrato
+ */
+function fakeFichaMamoreConContrato(array $contrato): void
+{
+    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
+    config()->set('services.mamore.key', 'secreta');
+
+    Http::fake([
+        'mamore.test/api/personal/people/ci/*' => Http::response([
+            'data' => [
+                'ci' => '7654321',
+                'full_name' => 'Juan Perez',
+                'has_contract' => true,
+                'contrato' => $contrato,
+            ],
+        ], 200),
+    ]);
+}
+
+test('la ficha de Mamoré muestra desde y hasta cuándo rige el contrato', function () {
+    fakeFichaMamoreConContrato([
+        'cargo' => 'DESARROLLADOR DE SISTEMAS',
+        'start' => '2024-01-15',
+        'finish' => '2026-12-31',
+    ]);
+
+    $this->get(route('funcionarios.mamore', ['ci' => '7654321']))
+        ->assertOk()
+        ->assertSee('Vigencia desde')
+        ->assertSee('Vigencia hasta')
+        // En el formato del sistema, no en el ISO en que lo manda la API.
+        ->assertSee('15/01/2024')
+        ->assertSee('31/12/2026');
+});
+
+test('un contrato sin fecha de término se muestra como abierto y no como dato faltante', function () {
+    // `finish` en null es un contrato vigente sin vencimiento, que es como lo
+    // trata el resto del sistema. Un «—» lo haría parecer un dato sin cargar.
+    fakeFichaMamoreConContrato([
+        'cargo' => 'DESARROLLADOR DE SISTEMAS',
+        'start' => '2024-01-15',
+        'finish' => null,
+    ]);
+
+    $this->get(route('funcionarios.mamore', ['ci' => '7654321']))
+        ->assertOk()
+        ->assertSee('15/01/2024')
+        ->assertSee('Sin fecha de término');
+});
+
+test('una fecha de contrato con forma inesperada se muestra cruda y no rompe la ficha', function () {
+    // Antes que ocultarla: es una fecha de vigencia, y que se vea rara invita a
+    // corregirla en Mamoré, que es donde se carga.
+    fakeFichaMamoreConContrato([
+        'cargo' => 'DESARROLLADOR DE SISTEMAS',
+        'start' => 'sin fecha',
+        'finish' => '2026-12-31',
+    ]);
+
+    $this->get(route('funcionarios.mamore', ['ci' => '7654321']))
+        ->assertOk()
+        ->assertSee('sin fecha')
+        ->assertSee('31/12/2026');
+});
+
+test('la ficha de Mamoré no muestra la vigencia si la persona no tiene contrato', function () {
+    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
+    config()->set('services.mamore.key', 'secreta');
+
+    Http::fake([
+        'mamore.test/api/personal/people/ci/*' => Http::response([
+            'data' => ['ci' => '7654321', 'full_name' => 'Juan Perez', 'has_contract' => false, 'contrato' => null],
+        ], 200),
+    ]);
+
+    $this->get(route('funcionarios.mamore', ['ci' => '7654321']))
+        ->assertOk()
+        ->assertDontSee('Vigencia desde')
+        ->assertSee('no tiene un contrato firmado en Mamoré');
+});
+
+test('la ficha de Mamoré junta los datos personales y el contacto en una sola tarjeta', function () {
+    // Son la misma cosa —quién es la persona— y separarlos en dos tarjetas
+    // dejaba a la de contacto, con cinco campos contra siete, al lado de un
+    // hueco. La foto va al costado de los datos y no encima.
+    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
+    config()->set('services.mamore.key', 'secreta');
+
+    Http::fake([
+        'mamore.test/api/personal/people/ci/*' => Http::response([
+            'data' => [
+                'ci' => '7654321',
+                'full_name' => 'Juan Perez',
+                'phone' => '67285914',
+                'email' => 'juan@test.bo',
+            ],
+        ], 200),
+    ]);
+
+    $respuesta = $this->get(route('funcionarios.mamore', ['ci' => '7654321']))
+        ->assertOk()
+        ->assertSee('Datos personales')
+        ->assertSee('Contacto')
+        ->assertSee('67285914')
+        ->assertSee('juan@test.bo')
+        ->assertSee('class="ficha-persona"', escape: false)
+        ->assertSee('class="ficha-bloque"', escape: false);
+
+    // El contacto ya no abre su propia tarjeta: queda adentro de la de datos
+    // personales, detrás de un separador.
+    $html = $respuesta->getContent();
+    $personales = strpos($html, 'Datos personales');
+    $contacto = strpos($html, 'ficha-bloque');
+    $contrato = strpos($html, 'Contrato vigente');
+
+    // Una sola apertura de tarjeta entre el título de datos personales y el
+    // bloque de contacto: si hubiera dos, habría un `class="tarjeta"` en medio.
+    expect(substr_count(substr($html, $personales, $contacto - $personales), 'class="tarjeta"'))->toBe(0)
+        ->and($contacto)->toBeLessThan($contrato ?: PHP_INT_MAX);
+});
+
+test('la ficha de Mamoré marca el origen del dato en la cabecera y no en una franja aparte', function () {
+    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
+    config()->set('services.mamore.key', 'secreta');
+
+    Http::fake([
+        'mamore.test/api/personal/people/ci/*' => Http::response([
+            'data' => ['ci' => '7654321', 'full_name' => 'Juan Perez', 'has_contract' => true],
+        ], 200),
+    ]);
+
+    $this->get(route('funcionarios.mamore', ['ci' => '7654321']))
+        ->assertOk()
+        // Al lado del estado del contrato, no en un renglón propio.
+        ->assertSee('pill pill--neutro', escape: false)
+        ->assertSee('>Mamoré</span>', escape: false)
+        ->assertSee('Con contrato')
+        // El «solo lectura» sigue estando, pero como title y no como franja.
+        ->assertSee('title="Datos de solo lectura desde el sistema Mamoré"', escape: false)
+        ->assertDontSee('<div class="aviso">Datos de solo lectura', escape: false);
 });

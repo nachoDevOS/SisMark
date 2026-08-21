@@ -59,6 +59,10 @@ Route::middleware('auth')->group(function (): void {
     Route::get('funcionarios/ajax/marcaciones', [PersonaController::class, 'marcacionesList'])->name('funcionarios.marcaciones.list');
     Route::get('funcionarios/ajax/licencias', [PersonaController::class, 'licenciasList'])->name('funcionarios.licencias.list');
     Route::get('funcionarios/ajax/turnos', [PersonaController::class, 'turnosList'])->name('funcionarios.turnos.list');
+    // Régimen disciplinario del RIP: qué acumuló el funcionario en un mes y qué
+    // sanción le correspondería. Va por mes y no por rango porque las escalas
+    // del reglamento cuentan «en el mes» y «en la gestión».
+    Route::get('funcionarios/ajax/rip', [PersonaController::class, 'ripList'])->name('funcionarios.rip.list');
     Route::resource('funcionarios', PersonaController::class)
         ->parameters(['funcionarios' => 'persona'])
         ->only(['index', 'show']);

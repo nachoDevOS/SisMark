@@ -83,7 +83,7 @@ function marcarProc(string $fecha, string ...$horas): void
         Asistencia::factory()->create([
             'ci' => CI_PROC,
             'fecha' => $fecha.' 00:00:00',
-            'hora' => '1899-12-30 '.(strlen($hora) === 5 ? $hora.':00' : $hora),
+            'hora' => (strlen($hora) === 5 ? $hora.':00' : $hora),
         ]);
     }
 }

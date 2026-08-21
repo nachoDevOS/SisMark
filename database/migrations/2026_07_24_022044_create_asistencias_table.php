@@ -19,7 +19,8 @@ use Illuminate\Support\Facades\Schema;
  * (IdPersona + Fecha + Hora); aquí eso pasa a un índice único (ci + fecha + hora)
  * que sirve de clave natural para el upsert idempotente. `ci` también se indexa
  * aparte para los joins con personas (sin FK: el legado tiene marcaciones
- * huérfanas). `hora` guarda solo la hora sobre la fecha base 1899-12-30.
+ * huérfanas). `fecha` guarda solo el día y `hora` solo la hora: el SIA las
+ * traía como datetime, y los comandos de copia recortan al traerlas.
  *
  * `equipo_id` dice de qué reloj salió la marcación, cuando salió de uno. Es lo
  * que permite auditar una corrida —«qué trajo este equipo el martes»— y separar
@@ -32,8 +33,14 @@ return new class extends Migration
         Schema::create('asistencias', function (Blueprint $table): void {
             $table->id();
             $table->char('ci', 12);
-            $table->dateTime('fecha');
-            $table->dateTime('hora');
+            // El día de la marcación, sin hora: la hora vive en su propia
+            // columna, acá abajo.
+            $table->date('fecha');
+            // Solo la hora. El SIA la traía como datetime sobre la fecha base
+            // 1899-12-30 —herencia de Delphi, donde una hora suelta es un
+            // datetime con el día en el origen del calendario—, pero ese día no
+            // significa nada y confundía a quien miraba la tabla.
+            $table->time('hora');
             $table->char('tipo', 1);
 
             // De qué reloj salió la marcación.

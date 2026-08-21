@@ -25,13 +25,13 @@ function funcionarioConMarcaciones(): Persona
     Asistencia::factory()->create([
         'ci' => $persona->ci,
         'fecha' => today(),
-        'hora' => '1899-12-30 08:15:00',
+        'hora' => '08:15:00',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
     Asistencia::factory()->create([
         'ci' => $persona->ci,
         'fecha' => today()->subYear(),
-        'hora' => '1899-12-30 07:00:00',
+        'hora' => '07:00:00',
         'tipo' => Asistencia::TIPO_RELOJ,
     ]);
 

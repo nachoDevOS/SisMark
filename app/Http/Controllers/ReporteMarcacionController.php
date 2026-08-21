@@ -123,12 +123,12 @@ class ReporteMarcacionController extends Controller
             $this->autorizarPermiso('Export:Reporte');
         }
 
+        $impresion = (int) $request->query('print', 0);
+
         $persona = $resolutor->fichaPorCi((string) $request->query('persona', ''));
 
         if ($persona === null) {
-            return redirect()
-                ->route('reportes.marcaciones.procesado')
-                ->with('error', 'Elegí un funcionario para generar el reporte.');
+            return $this->reporteNoGenerado($impresion, 'Elegí un funcionario para generar el reporte.');
         }
 
         $desde = Carbon::parse((string) $request->query('desde', now()->startOfMonth()->toDateString()));
@@ -139,7 +139,20 @@ class ReporteMarcacionController extends Controller
             [$desde, $hasta] = [$hasta, $desde];
         }
 
-        $dias = $procesador->procesar($persona['ci'], $desde, $hasta);
+        // Sin contratos verificados no se procesa nada. Es deliberado: los
+        // contratos deciden qué días se controlan, así que generar el reporte
+        // sin poder consultarlos daría faltas en días que quizá estaban
+        // cubiertos. Se prefiere no dar reporte antes que dar uno que no se
+        // puede sostener.
+        try {
+            $dias = $procesador->procesar($persona['ci'], $desde, $hasta);
+        } catch (MamoreException $e) {
+            return $this->reporteNoGenerado(
+                $impresion,
+                'No se pudieron verificar los contratos en Mamoré, así que el reporte no se generó: '.$e->getMessage(),
+            );
+        }
+
         $totales = $procesador->totales($dias);
 
         $datos = [
@@ -148,9 +161,14 @@ class ReporteMarcacionController extends Controller
             'totales' => $totales,
             'desde' => $desde->toDateString(),
             'hasta' => $hasta->toDateString(),
+            // La solapa de la ficha del funcionario pide `encabezado=0`: quién es
+            // ya está arriba, con foto y datos completos, y repetirlo sobre la
+            // tabla solo le roba lugar. El imprimible y el Excel lo conservan
+            // siempre: ahí la hoja sale sola y tiene que identificarse.
+            'conEncabezado' => $request->boolean('encabezado', true),
         ];
 
-        return match ((int) $request->query('print', 0)) {
+        return match ($impresion) {
             1 => view('reportes.marcaciones.procesado.print', $datos),
             2 => response()
                 ->download(
@@ -160,6 +178,25 @@ class ReporteMarcacionController extends Controller
                 ->deleteFileAfterSend(),
             default => view('reportes.marcaciones.procesado.lista', $datos),
         };
+    }
+
+    /**
+     * Qué devolver cuando el reporte procesado no se puede generar.
+     *
+     * La tabla en pantalla **siempre se pide por AJAX** —desde la pantalla de
+     * reportes y desde la solapa de la ficha—, así que ahí va un parcial con el
+     * aviso. Una redirección la seguiría `fetch` sin avisarle a quien la pidió, y
+     * la pantalla de selección entera terminaría dibujada adentro del recuadro
+     * de la tabla, con su sidebar y su barra superior.
+     *
+     * El imprimible y el Excel sí se abren como navegación normal (un enlace),
+     * así que ahí la redirección de siempre es lo correcto.
+     */
+    private function reporteNoGenerado(int $impresion, string $mensaje): View|RedirectResponse
+    {
+        return $impresion === 0
+            ? view('reportes.marcaciones.procesado.error', ['mensaje' => $mensaje])
+            : redirect()->route('reportes.marcaciones.procesado')->with('error', $mensaje);
     }
 
     /**

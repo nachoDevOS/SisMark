@@ -60,8 +60,18 @@ class MarcacionController extends Controller
             ->enRango($desde, $hasta)
             ->when($buscar !== '', fn (Builder $query) => $query->buscar($buscar))
             ->when($tipo !== '', fn (Builder $query) => $query->where('tipo', $tipo))
-            ->orderByDesc('fecha')
-            ->orderByDesc('hora')
+            // Ordena por el `id` de la tabla, del más alto al más bajo.
+            //
+            // El id no es cronológico: las filas entraron con el orden en que
+            // el cursor de la migración las trajo del SIA, que es el de la
+            // clave del origen (IdPersona, Fecha, Hora). Como el `ci` es texto,
+            // cada funcionario ocupa un bloque de ids contiguos con su
+            // historial adentro, así que el listado agrupa por persona y las
+            // fechas no bajan en orden.
+            //
+            // Alcanza solo: el id es único, así que el orden es total y estable
+            // entre páginas sin necesidad de desempatar por fecha ni hora.
+            ->orderByDesc('id')
             ->paginate($porPagina)
             ->withQueryString();
 
@@ -74,26 +84,27 @@ class MarcacionController extends Controller
 
     /**
      * Registra una marcación manual (tipo M) sobre la base local. La hora se
-     * guarda sobre la fecha base 1899-12-30, como el resto de las marcaciones.
+     * guarda como hora pura, igual que el resto de las marcaciones.
      */
     public function store(StoreMarcacionRequest $request): RedirectResponse
     {
         $this->authorize('create', Asistencia::class);
 
         $ci = $request->validated('ci');
-        $fecha = Carbon::parse($request->validated('fecha'))->startOfDay();
+        $fecha = Carbon::parse($request->validated('fecha'))->toDateString();
         $hora = Carbon::parse($request->validated('hora'))->format('H:i:s');
 
-        // `fecha` se compara entera y no con `whereDate()`: siempre está guardada
-        // a medianoche, y así la búsqueda cae sobre el índice único (ci, fecha,
-        // hora) en vez de recorrer todas las marcaciones de esa cédula. `hora` sí
-        // va por `whereTime()`: hay filas viejas del SIA con una fecha base
-        // distinta de 1899-12-30, y compararla entera las dejaría pasar como si
-        // no existieran.
+        // Las dos columnas se comparan enteras: `fecha` guarda solo el día y
+        // `hora` solo la hora, así que la búsqueda cae sobre el índice único
+        // (ci, fecha, hora) en vez de recorrer las marcaciones de esa cédula.
+        //
+        // Antes `hora` iba por `whereTime()` porque las filas migradas del SIA
+        // colgaban de fechas base distintas; con la columna `time` eso ya no
+        // existe y la función solo impedía usar el índice.
         $yaExiste = Asistencia::query()
             ->where('ci', $ci)
             ->where('fecha', $fecha)
-            ->whereTime('hora', $hora)
+            ->where('hora', $hora)
             ->exists();
 
         if ($yaExiste) {
@@ -103,7 +114,7 @@ class MarcacionController extends Controller
         Asistencia::create([
             'ci' => $ci,
             'fecha' => $fecha,
-            'hora' => '1899-12-30 '.$hora,
+            'hora' => $hora,
             'tipo' => Asistencia::TIPO_MANUAL,
             'observacion' => $request->validated('observacion'),
         ]);

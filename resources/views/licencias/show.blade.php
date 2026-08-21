@@ -55,7 +55,7 @@
         </div>
     @endif
 
-    <div class="form-grid">
+    <div class="form-grid form-grid--apilado">
         <div class="tarjeta">
             <h2>Solicitud</h2>
             <dl class="datos grid-2">
@@ -66,10 +66,13 @@
                 <div>
                     <dt>Alcance</dt>
                     <dd>
-                        @if ($licencia->tCompleto)
-                            Turno completo
+                        {{-- Mismo criterio que la columna «Alcance» de la tabla,
+                             para que la ficha y el detalle no digan cosas
+                             distintas de la misma licencia. --}}
+                        @if ($licencia->alcance_del_dia === null)
+                            <span class="pill pill--ok">Turno completo</span>
                         @else
-                            {{ $licencia->lEntra?->format('H:i') ?? '—' }} – {{ $licencia->lSale?->format('H:i') ?? '—' }}
+                            <span class="pill pill--info">{{ $licencia->alcance_del_dia }}</span>
                         @endif
                     </dd>
                 </div>
@@ -158,6 +161,7 @@
                     <tr>
                         <th>Fecha</th>
                         <th>Turno</th>
+                        <th>Alcance</th>
                         <th>Estado</th>
                     </tr>
                 </thead>
@@ -166,12 +170,22 @@
                         <tr>
                             <td><strong>{{ $dia->fecha?->format('d/m/Y') }}</strong></td>
                             <td>{{ $dia->resumen_turno }}</td>
+                            {{-- El alcance se lee de cada día y no de la solicitud:
+                                 el alta expande el rango, pero nada obliga a que
+                                 todos los días se hayan pedido iguales. --}}
+                            <td>
+                                @if ($dia->alcance_del_dia === null)
+                                    <span class="pill pill--ok">Turno completo</span>
+                                @else
+                                    <span class="pill pill--info">{{ $dia->alcance_del_dia }}</span>
+                                @endif
+                            </td>
                             <td>
                                 <span class="pill {{ $colorEstado[$dia->estado] ?? 'pill--info' }}">{{ $dia->estado }}</span>
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="3" class="vacio">Sin días anotados.</td></tr>
+                        <tr><td colspan="4" class="vacio">Sin días anotados.</td></tr>
                     @endforelse
                 </tbody>
             </table>

@@ -140,18 +140,26 @@ class AsistenciaFuncionarioController extends Controller
     {
         [$ci, $desde, $hasta] = $this->parametros($request, $ci);
 
-        $solicitudes = Licencia::query()
+        // Qué licencias tocan el rango. La clave sale de la fila y no de la
+        // columna: lo migrado del SIA va con `solicitud` en null y ahí cada
+        // fila es su propia licencia.
+        $delRango = Licencia::query()
             ->where('ci', $ci)
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)
-            ->distinct()
-            ->pluck('solicitud');
+            ->get(['id', 'solicitud']);
+
+        $solicitudes = $delRango->map->clave_agrupadora->unique()->values();
+        $conSolicitud = $delRango->pluck('solicitud')->filter()->unique()->values();
+        $delSia = $delRango->whereNull('solicitud')->pluck('id')->all();
 
         $licencias = Licencia::query()
             ->with('turno')
-            ->whereIn('solicitud', $solicitudes)
-            // La fila que abre cada pedido: la que lleva la fecha de inicio.
-            ->iniciosDeSolicitud()
+            ->where(fn ($q) => $q
+                // Los pedidos salen por su fila de inicio; los del SIA son
+                // una fila cada uno y entran por su id.
+                ->where(fn ($p) => $p->whereIn('solicitud', $conSolicitud)->iniciosDeSolicitud())
+                ->orWhereIn('id', $delSia))
             // Lo más reciente primero, igual que el listado de Recursos
             // Humanos: lo que el funcionario acaba de pedir es lo que viene a
             // mirar, y en un rango largo quedaba al fondo de la tabla.
@@ -163,7 +171,7 @@ class AsistenciaFuncionarioController extends Controller
         $resumen = Licencia::resumenDe($solicitudes);
 
         $licencias->each(function (Licencia $licencia) use ($resumen): void {
-            $datos = $resumen[$licencia->solicitud] ?? null;
+            $datos = $resumen[$licencia->clave_agrupadora] ?? null;
 
             $licencia->hastaSolicitud = $datos->hasta ?? $licencia->fecha?->toDateString();
             $licencia->diasSolicitud = (int) ($datos->dias ?? 1);

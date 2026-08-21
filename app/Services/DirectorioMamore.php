@@ -132,6 +132,12 @@ class DirectorioMamore
                 trim((string) ($persona['first_name'] ?? '')),
                 trim((string) ($persona['middle_name'] ?? '')),
             ]))) ?? ''),
+            // Extensión del carnet: el departamento que lo emitió («SC», «BE»).
+            // Es dato de Mamoré y de nadie más — la tabla local `personas` no
+            // tiene la columna—, así que en la ficha local se resuelve por API.
+            'extension' => trim((string) ($persona['extension'] ?? '')) ?: null,
+            // Cédula con su extensión, tal como Mamoré la arma («7633685 SC»).
+            'ciCompleto' => trim((string) ($persona['full_ci'] ?? '')) ?: null,
             'profesion' => trim((string) ($persona['profession'] ?? '')),
             // En Mamoré el PIN del reloj es la misma cédula.
             'pinReloj' => $ci,
@@ -149,9 +155,50 @@ class DirectorioMamore
             )),
             // `has_contract` lo informa la API; null si no vino en la respuesta.
             'conContrato' => isset($persona['has_contract']) ? (bool) $persona['has_contract'] : null,
+            // Haber y vigencia del contrato firmado. Los usa el régimen
+            // disciplinario para expresar el descuento en bolivianos: las
+            // escalas del RIP hablan de «días de la remuneración mensual», y sin
+            // el sueldo eso queda en una cantidad de días que nadie puede pagar.
+            //
+            // Se leen tal cual los manda Mamoré y no se completan con cero: un
+            // contrato sin sueldo cargado tiene que verse como «sin dato», no
+            // como un sueldo de 0 Bs que daría un descuento de 0 y parecería
+            // correcto.
+            'sueldo' => $this->decimal($contrato['salary'] ?? null),
+            'bono' => $this->decimal($contrato['bonus'] ?? null),
+            'contratoDesde' => $this->fecha($contrato['start'] ?? null),
+            'contratoHasta' => $this->fecha($contrato['finish'] ?? null),
             'image' => $persona['image'] ?? null,
             'imageThumb' => $this->miniatura($persona['image'] ?? null),
         ];
+    }
+
+    /**
+     * Un importe de la API como número, o `null` si no vino o no es numérico.
+     *
+     * No se cae a cero a propósito: un contrato sin sueldo cargado tiene que
+     * distinguirse de uno que gana 0 Bs, porque el primero es un dato faltante
+     * y el segundo sería un descuento legítimo de cero.
+     */
+    private function decimal(mixed $valor): ?float
+    {
+        return is_numeric($valor) ? (float) $valor : null;
+    }
+
+    /**
+     * Una fecha de la API en `Y-m-d`, o `null` si no vino o no se puede leer.
+     */
+    private function fecha(mixed $valor): ?string
+    {
+        if (blank($valor)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $valor)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

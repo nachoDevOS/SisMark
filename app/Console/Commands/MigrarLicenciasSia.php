@@ -37,17 +37,19 @@ class MigrarLicenciasSia extends Command
      * lo que deduplica el upsert. Solo columnas NOT NULL: en un índice único de
      * MySQL, varios NULL cuentan como distintos y romperían la idempotencia.
      *
-     * `solicitud` entra en la clave porque un día puede tener más de un pedido
+     * `solicitud` **no** entra en la clave porque un día puede tener más de un pedido
      * —uno rechazado y otro nuevo—, y los dos se conservan. Acá no rompe la
      * idempotencia porque el identificador del SIA se **deriva** de la fila
-     * (`ci|fechaPedido|motivo`): reejecutar la copia llega siempre al mismo valor.
+     * queda en null: lo que viene del SIA no fue una solicitud sino una licencia
+     * ya otorgada. Sin ella la clave vuelve a ser la natural del sistema viejo
+     * —una licencia por funcionario, día y turno—, que es idempotente.
      *
      * El turno va por la FK `turno_id`, no por el código del SIA: `idTurno` se
      * copia pero solo como dato histórico, ya no identifica la fila.
      *
      * @var list<string>
      */
-    private const CLAVE = ['ci', 'fecha', 'turno_id', 'solicitud'];
+    private const CLAVE = ['ci', 'fecha', 'turno_id'];
 
     /**
      * Copia las licencias del SIA a la tabla local `licencias`. Idempotente:
@@ -78,7 +80,6 @@ class MigrarLicenciasSia extends Command
             return self::FAILURE;
         }
 
-        $actualizables = [...array_values(array_diff(self::MAPA, self::CLAVE)), 'updated_at'];
         $copiadas = 0;
         $salteadas = 0;
         $lote = [];
@@ -108,16 +109,14 @@ class MigrarLicenciasSia extends Command
                 $lote[] = $local + ['created_at' => $ahora, 'updated_at' => $ahora];
 
                 if (count($lote) >= $tamanoLote) {
-                    DB::connection($destino)->table('licencias')->upsert($lote, self::CLAVE, $actualizables);
-                    $copiadas += count($lote);
+                    $copiadas += $this->guardar($destino, $lote);
                     $lote = [];
                     $this->info("Copiadas {$copiadas} licencia(s)…");
                 }
             }
 
             if ($lote !== []) {
-                DB::connection($destino)->table('licencias')->upsert($lote, self::CLAVE, $actualizables);
-                $copiadas += count($lote);
+                $copiadas += $this->guardar($destino, $lote);
             }
         } catch (Throwable $e) {
             $this->error("Falló la migración de licencias: {$e->getMessage()}");
@@ -132,6 +131,28 @@ class MigrarLicenciasSia extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Guarda un lote sin duplicar.
+     *
+     * Va con `insertOrIgnore` y no con `upsert` porque la clave que deduplica
+     * es una **expresión** —`COALESCE(solicitud, '')`, ver la migración
+     * `agregar_solicitud_a_licencias`— y el `upsert` de Laravel solo sabe
+     * nombrar columnas: al pasarle `(ci, fecha, turno_id)` el motor no encuentra
+     * ningún índice con esa forma exacta y falla.
+     *
+     * Lo que se pierde a cambio es refrescar una fila que haya cambiado en el
+     * SIA. Es aceptable: son licencias ya otorgadas de años anteriores, y el
+     * sistema viejo está congelado.
+     *
+     * @param  list<array<string, mixed>>  $lote
+     */
+    private function guardar(string $destino, array $lote): int
+    {
+        DB::connection($destino)->table('licencias')->insertOrIgnore($lote);
+
+        return count($lote);
     }
 
     /**
@@ -195,7 +216,17 @@ class MigrarLicenciasSia extends Command
             $local['fecha'] = Carbon::parse($local['fecha'])->toDateString();
         }
 
-        $local['solicitud'] = self::solicitudDelSia($local);
+        // Al revés con las horas de la licencia: el SIA las manda como datetime
+        // sobre la fecha base 1899-12-30 y acá las columnas son `time`. Se
+        // descarta el día, que no significa nada —la licencia ya tiene su
+        // `fecha`—, y sin recortarlo MySQL rechazaría el insert.
+        foreach (['lEntra', 'lSale'] as $hora) {
+            if ($local[$hora] !== null) {
+                $local[$hora] = Carbon::parse($local[$hora])->format('H:i:s');
+            }
+        }
+
+        // `solicitud` queda en null a propósito: lo del SIA no fue un pedido.
         $local['origen'] = 'sia';
 
         return $local;

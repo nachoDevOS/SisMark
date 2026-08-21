@@ -43,7 +43,7 @@ test('la pantalla del listado abre', function () {
 
 test('el listado muestra los días excepcionales', function () {
     DiaExcepcional::factory()->create([
-        'fecha' => '2025-01-01 00:00:00',
+        'fecha' => '2025-01-01',
         'motivoInasistencia' => 'AÑO NUEVO',
     ]);
 
@@ -54,8 +54,8 @@ test('el listado muestra los días excepcionales', function () {
 });
 
 test('la búsqueda filtra por motivo', function () {
-    DiaExcepcional::factory()->create(['fecha' => '2025-03-04 00:00:00', 'motivoInasistencia' => 'FERIADO POR CARNAVAL']);
-    DiaExcepcional::factory()->create(['fecha' => '2025-12-25 00:00:00', 'motivoInasistencia' => 'NAVIDAD']);
+    DiaExcepcional::factory()->create(['fecha' => '2025-03-04', 'motivoInasistencia' => 'FERIADO POR CARNAVAL']);
+    DiaExcepcional::factory()->create(['fecha' => '2025-12-25', 'motivoInasistencia' => 'NAVIDAD']);
 
     $this->get(route('dias-excepcionales.list', ['q' => 'carnaval']))
         ->assertOk()
@@ -64,8 +64,8 @@ test('la búsqueda filtra por motivo', function () {
 });
 
 test('la búsqueda filtra por fecha', function () {
-    DiaExcepcional::factory()->create(['fecha' => '2025-05-01 00:00:00', 'motivoInasistencia' => 'DIA DEL TRABAJO']);
-    DiaExcepcional::factory()->create(['fecha' => '2024-11-18 00:00:00', 'motivoInasistencia' => 'ANIVERSARIO DEL BENI']);
+    DiaExcepcional::factory()->create(['fecha' => '2025-05-01', 'motivoInasistencia' => 'DIA DEL TRABAJO']);
+    DiaExcepcional::factory()->create(['fecha' => '2024-11-18', 'motivoInasistencia' => 'ANIVERSARIO DEL BENI']);
 
     $this->get(route('dias-excepcionales.list', ['q' => '01/05/2025']))
         ->assertOk()
@@ -103,7 +103,7 @@ test('el alta valida fecha y motivo obligatorios', function () {
 });
 
 test('el alta rechaza una fecha repetida', function () {
-    DiaExcepcional::factory()->create(['fecha' => '2025-05-01 00:00:00']);
+    DiaExcepcional::factory()->create(['fecha' => '2025-05-01']);
 
     $this->post(route('dias-excepcionales.store'), [
         'fecha' => '2025-05-01',
@@ -115,7 +115,7 @@ test('el alta rechaza una fecha repetida', function () {
 
 test('muestra el formulario de edición con los datos actuales', function () {
     $dia = DiaExcepcional::factory()->create([
-        'fecha' => '2024-12-25 00:00:00',
+        'fecha' => '2024-12-25',
         'motivoInasistencia' => 'NAVIDAD',
     ]);
 
@@ -127,7 +127,7 @@ test('muestra el formulario de edición con los datos actuales', function () {
 
 test('actualiza un día excepcional', function () {
     $dia = DiaExcepcional::factory()->create([
-        'fecha' => '2024-11-18 00:00:00',
+        'fecha' => '2024-11-18',
         'motivoInasistencia' => 'ANIVERSARIO',
     ]);
 
@@ -225,7 +225,7 @@ test('rechaza un respaldo de más de 5 MB', function () {
 
 test('editar sin elegir archivo deja el respaldo que ya estaba', function () {
     $dia = DiaExcepcional::factory()->create([
-        'fecha' => '2025-03-04 00:00:00',
+        'fecha' => '2025-03-04',
         'adjunto' => 'dias-excepcionales/2025/original.pdf',
         'adjuntoNombre' => 'decreto.pdf',
     ]);
@@ -244,7 +244,7 @@ test('editar con archivo nuevo reemplaza el anterior y lo borra del bucket', fun
     Storage::disk(RespaldoDocumento::DISCO)->put('dias-excepcionales/2025/viejo.pdf', 'contenido');
 
     $dia = DiaExcepcional::factory()->create([
-        'fecha' => '2025-03-04 00:00:00',
+        'fecha' => '2025-03-04',
         'adjunto' => 'dias-excepcionales/2025/viejo.pdf',
         'adjuntoNombre' => 'decreto.pdf',
     ]);

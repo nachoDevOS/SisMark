@@ -22,7 +22,7 @@ function marcar(string $ci, string $hora, ?Carbon $fecha = null): Asistencia
     return Asistencia::factory()->create([
         'ci' => $ci,
         'fecha' => ($fecha ?? today())->copy()->startOfDay(),
-        'hora' => '1899-12-30 '.$hora,
+        'hora' => $hora,
     ]);
 }
 
@@ -84,6 +84,12 @@ test('el histograma reparte las marcaciones de hoy por hora', function () {
 });
 
 test('reparte en horas y días el tiempo desde la última marcación', function () {
+    // La hora se congela: la antigüedad se muestra con `intdiv($minutos, 1440)`,
+    // así que una marcación de las 08:00 de hace tres días son «3 d» solo si
+    // ahora es más tarde que las 08:00. Corriendo la prueba de madrugada daban
+    // 2 d 23 h y decía «2 d».
+    $this->travelTo(Carbon::parse('2026-08-20 16:00:00'));
+
     // Con la última marcación de hace días, la antigüedad deja de contarse en
     // minutos sueltos: `diffInMinutes()` devuelve float y el reparto en horas
     // usa intdiv(), que con un float aborta la petición.

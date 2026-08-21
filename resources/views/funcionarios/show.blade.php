@@ -26,7 +26,20 @@
             <dl class="datos grid-2">
                 <div>
                     <dt>Nro. carnet de identidad</dt>
-                    <dd>{{ trim($persona->ci) }}</dd>
+                    <dd>
+                        {{ trim($persona->ci) }}
+                        @if ($extension)
+                            <span class="persona-meta">{{ $extension }}</span>
+                        @endif
+                    </dd>
+                </div>
+                <div>
+                    {{-- La extensión es el departamento que emitió el carnet y
+                         solo la tiene Mamoré: `personas` no guarda la columna.
+                         Si la API no responde queda en «—» y la ficha se muestra
+                         igual. --}}
+                    <dt>Extensión</dt>
+                    <dd>{{ $extension ?: '—' }}</dd>
                 </div>
                 <div>
                     <dt>Expedido en</dt>

@@ -156,7 +156,7 @@ class RegistroAsistencia
     {
         $cis = array_values(array_unique(array_column($lote, 'ci')));
         $fechas = array_values(array_unique(array_map(
-            fn (array $fila): string => $fila['fecha']->toDateTimeString(),
+            fn (array $fila): string => $fila['fecha']->toDateString(),
             $lote,
         )));
 
@@ -181,9 +181,9 @@ class RegistroAsistencia
 
             $registro = [
                 'ci' => $fila['ci'],
-                'fecha' => $fila['fecha']->toDateTimeString(),
-                // La hora se guarda sobre la fecha base 1899-12-30, como el SIA real.
-                'hora' => '1899-12-30 '.$fila['hora'],
+                'fecha' => $fila['fecha']->toDateString(),
+                // Solo la hora: el día ya lo pone `fecha`.
+                'hora' => $fila['hora'],
                 'tipo' => Asistencia::TIPO_RELOJ,
                 'equipo_id' => $equipo?->id,
                 'estado' => 1,

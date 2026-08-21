@@ -117,8 +117,8 @@ class ResumenEscritorio
                     ? null
                     : count(array_diff($cisConTurno, $cisQueMarcaron)),
                 'licenciados' => Licencia::query()
-                    ->where('fecha', '>=', $hoy)
-                    ->where('fecha', '<', $hoy->copy()->addDay())
+                    ->where('fecha', '>=', $hoy->toDateString())
+                    ->where('fecha', '<', $hoy->copy()->addDay()->toDateString())
                     ->distinct()
                     ->count('ci'),
             ];
@@ -207,7 +207,7 @@ class ResumenEscritorio
                 'antes_2000' => Asistencia::where('fecha', '<', '2000-01-01')->count(),
                 // Fecha futura: la batería del RTC del reloj se agota y las
                 // marcaciones salen con años imposibles (2064, 2103).
-                'futuras' => Asistencia::where('fecha', '>=', $manana)->count(),
+                'futuras' => Asistencia::where('fecha', '>=', $manana->toDateString())->count(),
             ];
         });
     }
@@ -225,8 +225,8 @@ class ResumenEscritorio
 
             return [
                 'licencias_hoy' => Licencia::query()
-                    ->where('fecha', '>=', $hoy)
-                    ->where('fecha', '<', $hoy->copy()->addDay())
+                    ->where('fecha', '>=', $hoy->toDateString())
+                    ->where('fecha', '<', $hoy->copy()->addDay()->toDateString())
                     ->count(),
                 'funcionarios' => Persona::count(),
                 // Aviso para el instalador: sin asignaciones no hay control de
@@ -239,7 +239,7 @@ class ResumenEscritorio
             ...$datos,
             'proximo_excepcional' => DiaExcepcional::query()
                 ->whereNotNull('motivoInasistencia')
-                ->where('fecha', '>=', today())
+                ->where('fecha', '>=', today()->toDateString())
                 ->orderBy('fecha')
                 ->first(),
         ];
@@ -277,7 +277,7 @@ class ResumenEscritorio
         $manana = today()->addDay();
 
         $fecha = Asistencia::query()
-            ->where('fecha', '<', $manana)
+            ->where('fecha', '<', $manana->toDateString())
             ->orderByDesc('fecha')
             ->value('fecha');
 
@@ -288,8 +288,8 @@ class ResumenEscritorio
         $dia = Carbon::parse($fecha)->startOfDay();
 
         $hora = Asistencia::query()
-            ->where('fecha', '>=', $dia)
-            ->where('fecha', '<', $dia->copy()->addDay())
+            ->where('fecha', '>=', $dia->toDateString())
+            ->where('fecha', '<', $dia->copy()->addDay()->toDateString())
             ->orderByDesc('hora')
             ->value('hora');
 

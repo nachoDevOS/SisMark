@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -114,6 +115,18 @@ class MigrarMarcacionesSia extends Command
         foreach (self::MAPA as $origen => $destino) {
             $valor = $fila[$origen] ?? null;
             $local[$destino] = is_string($valor) ? trim($valor) : $valor;
+        }
+
+        // En el SIA las dos son datetime: «Fecha» siempre a las 00:00 y «Hora»
+        // sobre la fecha base 1899-12-30. Acá las columnas son `date` y `time`,
+        // así que se recorta lo que sobra —si no, MySQL en modo estricto
+        // rechaza el insert por truncamiento—.
+        if ($local['fecha'] !== null) {
+            $local['fecha'] = Carbon::parse($local['fecha'])->toDateString();
+        }
+
+        if ($local['hora'] !== null) {
+            $local['hora'] = Carbon::parse($local['hora'])->format('H:i:s');
         }
 
         return $local;

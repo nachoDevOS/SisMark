@@ -17,11 +17,10 @@ class AsistenciaFactory extends Factory
      */
     public function definition(): array
     {
-        // `hora` usa la fecha base 1899-12-30, como el SIA real.
         return [
             'ci' => (string) fake()->unique()->numberBetween(1, 9999999),
             'fecha' => today(),
-            'hora' => '1899-12-30 '.fake()->time('H:i:s'),
+            'hora' => fake()->time('H:i:s'),
             'tipo' => Asistencia::TIPO_RELOJ,
         ];
     }

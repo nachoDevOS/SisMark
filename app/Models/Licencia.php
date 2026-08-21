@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use App\Services\RegistroLicencia;
+use App\Traits\ManejaHorasDelDia;
 use App\Traits\RegistersUserEvents;
 use Database\Factories\LicenciaFactory;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,8 +21,11 @@ use Illuminate\Support\Collection;
  * Licencia/permiso en la base local (MySQL), migrada desde «Licencias» del SIA.
  *
  * Conexión por defecto (MySQL), con id propio, timestamps y eliminación lógica.
- * El carnet vive en `ci` (en el SIA era IdPersona). `lEntra`/`lSale` guardan la
- * hora sobre la fecha base 1899-12-30, como el SIA real.
+ * El carnet vive en `ci` (en el SIA era IdPersona). `lEntra`/`lSale` son
+ * columnas `time`: guardan **solo la hora**, porque el día ya lo pone `fecha`.
+ * El cast sigue siendo `datetime` para que se sigan leyendo como Carbon —todo
+ * el sistema las consume con `->format('H:i')`—; la fecha que Carbon les pone
+ * es la de hoy y no se usa en ninguna parte.
  *
  * El horario se referencia siempre por la FK `turno_id`. La columna `idTurno`
  * (código del SIA) sobrevive solo como dato histórico de lo migrado: no se
@@ -29,7 +34,7 @@ use Illuminate\Support\Collection;
 class Licencia extends Model
 {
     /** @use HasFactory<LicenciaFactory> */
-    use HasFactory, RegistersUserEvents, SoftDeletes;
+    use HasFactory, ManejaHorasDelDia, RegistersUserEvents, SoftDeletes;
 
     /**
      * Estado de aprobación. Solo «Pendiente» espera una decisión: es el estado
@@ -123,12 +128,25 @@ class Licencia extends Model
         return [
             'fechaPedido' => 'datetime',
             'fecha' => 'date',
-            'lEntra' => 'datetime',
-            'lSale' => 'datetime',
+            // `lEntra` y `lSale` las maneja {@see ManejaHorasDelDia}.
             'revisadoEn' => 'datetime',
             'tCompleto' => 'boolean',
             'goceHaberes' => 'boolean',
         ];
+    }
+
+    /**
+     * Tramo horario de la licencia: columnas `time`, Carbon al leer y H:i:s al
+     * escribir.
+     */
+    protected function lEntra(): Attribute
+    {
+        return self::horaDelDia();
+    }
+
+    protected function lSale(): Attribute
+    {
+        return self::horaDelDia();
     }
 
     public function persona(): BelongsTo
@@ -190,6 +208,53 @@ class Licencia extends Model
      * El `deleted_at IS NULL` va explícito: el scope de eliminación lógica alcanza
      * a la consulta de afuera, no a la subconsulta.
      */
+    /**
+     * Con qué clave se agrupa una licencia.
+     *
+     * Lo pedido desde SisMark o Mamoré comparte `solicitud`. Lo migrado del SIA
+     * la trae en **null** —no fue un pedido sino una licencia ya otorgada—, y
+     * ahí cada fila es su propia licencia: se la agrupa por su `id`.
+     *
+     * Un `id` numérico nunca choca con una `solicitud`, que es un ULID o un
+     * hash de 26 caracteres.
+     */
+    public const CLAVE_AGRUPADORA = 'COALESCE(solicitud, id)';
+
+    /**
+     * La misma clave, resuelta sobre una fila ya cargada.
+     */
+    public function getClaveAgrupadoraAttribute(): string
+    {
+        return (string) ($this->solicitud ?? $this->getKey());
+    }
+
+    /**
+     * Separa un puñado de claves entre las que son una solicitud de verdad y
+     * las que son el `id` de una fila del SIA.
+     *
+     * Se separan porque cada una se busca por su propio índice: las primeras
+     * por `(solicitud, fecha)`, las segundas por la clave primaria. Buscarlas
+     * todas juntas con un `COALESCE` obligaría a recorrer la tabla entera.
+     *
+     * @param  list<mixed>  $claves
+     * @return array{0: list<string>, 1: list<int>}
+     */
+    private static function separarClaves(array $claves): array
+    {
+        $solicitudes = [];
+        $ids = [];
+
+        foreach ($claves as $clave) {
+            if (ctype_digit((string) $clave)) {
+                $ids[] = (int) $clave;
+            } else {
+                $solicitudes[] = (string) $clave;
+            }
+        }
+
+        return [$solicitudes, $ids];
+    }
+
     public function scopeIniciosDeSolicitud(Builder $query): Builder
     {
         $tabla = $this->getTable();
@@ -222,25 +287,44 @@ class Licencia extends Model
     public static function paginarPorSolicitud(Builder $filtrada, int $porPagina): LengthAwarePaginator
     {
         $solicitudes = (clone $filtrada)
-            ->selectRaw('solicitud, MAX(fecha) as ultima')
-            ->groupBy('solicitud')
+            ->selectRaw(self::CLAVE_AGRUPADORA.' as clave, MAX(fecha) as ultima')
+            ->groupByRaw(self::CLAVE_AGRUPADORA)
             ->orderByDesc('ultima')
             ->paginate($porPagina);
 
-        $claves = $solicitudes->pluck('solicitud')->all();
+        $claves = $solicitudes->pluck('clave')->all();
+        [$conSolicitud, $delSia] = static::separarClaves($claves);
 
-        $inicios = $claves === []
-            ? collect()
-            : static::query()
+        // Dos consultas por índice en vez de una por expresión: las que son un
+        // pedido salen por `(solicitud, fecha)`; las del SIA, por su id.
+        $encontradas = collect();
+
+        if ($conSolicitud !== []) {
+            $encontradas = static::query()
                 ->with('turno')
-                ->whereIn('solicitud', $claves)
+                ->whereIn('solicitud', $conSolicitud)
                 ->iniciosDeSolicitud()
-                ->get()
-                ->keyBy('solicitud');
+                ->get();
+        }
+
+        if ($delSia !== []) {
+            $encontradas = $encontradas->concat(
+                static::query()->with('turno')->whereKey($delSia)->get()
+            );
+        }
+
+        // Se juntan las filas y recién después se indexan. Juntar dos
+        // colecciones **ya indexadas** con `merge()` no sirve acá: por debajo es
+        // `array_merge`, que renumera las claves enteras, y la clave de una
+        // licencia del SIA es su `id`. Las del SIA quedaban bajo 0, 1, 2… y
+        // ninguna aparecía en pantalla, aunque el total las siguiera contando.
+        $inicios = $encontradas->keyBy(
+            fn (self $licencia): string => $licencia->clave_agrupadora
+        );
 
         // El orden lo manda el primer paso; el segundo solo trae las filas.
         $filas = collect($claves)
-            ->map(fn (string $clave) => $inicios->get($clave))
+            ->map(fn ($clave) => $inicios->get((string) $clave))
             ->filter()
             ->values();
 
@@ -267,12 +351,31 @@ class Licencia extends Model
             return collect();
         }
 
-        return static::query()
-            ->whereIn('solicitud', $claves->all())
-            ->selectRaw('solicitud, MAX(fecha) as hasta, COUNT(*) as dias, COUNT(DISTINCT estado) as estados')
-            ->groupBy('solicitud')
-            ->get()
-            ->keyBy('solicitud');
+        [$conSolicitud, $delSia] = static::separarClaves($claves->all());
+
+        $resumen = collect();
+
+        if ($conSolicitud !== []) {
+            $resumen = static::query()
+                ->whereIn('solicitud', $conSolicitud)
+                ->selectRaw('solicitud as clave, MAX(fecha) as hasta, COUNT(*) as dias, COUNT(DISTINCT estado) as estados')
+                ->groupBy('solicitud')
+                ->get();
+        }
+
+        // Una fila del SIA es su propia licencia: un día y un solo estado.
+        if ($delSia !== []) {
+            $resumen = $resumen->concat(
+                static::query()->whereKey($delSia)
+                    ->selectRaw('id as clave, fecha as hasta, 1 as dias, 1 as estados')
+                    ->get()
+            );
+        }
+
+        // Indexar al final y no antes, por lo mismo que en `paginarPorSolicitud`:
+        // `merge()` sobre claves enteras las renumera y el resumen del SIA se
+        // perdía, dejando el período y la cantidad de días en blanco.
+        return $resumen->keyBy(fn (self $fila): string => (string) $fila->clave);
     }
 
     /**
@@ -285,7 +388,9 @@ class Licencia extends Model
      */
     public static function solicitudesPendientes(): int
     {
-        return static::query()->pendientes()->distinct()->count('solicitud');
+        return (int) static::query()->pendientes()
+            ->selectRaw('COUNT(DISTINCT '.self::CLAVE_AGRUPADORA.') as total')
+            ->value('total');
     }
 
     /**
@@ -388,7 +493,13 @@ class Licencia extends Model
     }
 
     /**
-     * Etiqueta legible del horario licenciado: «MIE: 08:00 – 16:00».
+     * Etiqueta legible del turno licenciado: «MIE: 08:00 – 16:00».
+     *
+     * Los turnos que vienen del SIA **ya se llaman con su horario** —el
+     * `nombreTurno` es literalmente «MIE: 08:00 - 16:00»—, así que pegarle las
+     * horas otra vez daba «MIE: 08:00 - 16:00: 08:00 – 16:00». Si el nombre ya
+     * trae una hora adentro se lo usa tal cual; si no, se le agrega el horario,
+     * que es lo que hace falta para los turnos con nombre propio.
      */
     public function getResumenTurnoAttribute(): string
     {
@@ -398,8 +509,45 @@ class Licencia extends Model
             return '—';
         }
 
-        return trim((string) $turno->nombreTurno).': '
-            .($turno->hEntrada?->format('H:i') ?? '—').' – '
+        $nombre = trim((string) $turno->nombreTurno);
+        $horario = ($turno->hEntrada?->format('H:i') ?? '—').' – '
             .($turno->hSalida?->format('H:i') ?? '—');
+
+        if ($nombre === '') {
+            return $horario;
+        }
+
+        // ¿El nombre ya dice la hora? Basta con encontrar un «08:00» adentro.
+        return preg_match('/\d{1,2}:\d{2}/', $nombre) === 1
+            ? $nombre
+            : "{$nombre}: {$horario}";
+    }
+
+    /**
+     * Qué parte del turno cubre la licencia de **este día**.
+     *
+     * Cada fila es un día y puede tener su propio alcance: el alta expande el
+     * rango, pero nada obliga a que todos los días se pidan iguales. Por eso se
+     * lee de la fila y no de la solicitud.
+     *
+     * `null` cuando cubre el turno entero, para que quien la muestre decida cómo
+     * decirlo.
+     */
+    public function getAlcanceDelDiaAttribute(): ?string
+    {
+        if ($this->tCompleto) {
+            return null;
+        }
+
+        $entra = $this->lEntra?->format('H:i');
+        $sale = $this->lSale?->format('H:i');
+
+        // Sin horas cargadas no se puede afirmar qué parte cubre. Es el caso de
+        // lo migrado del SIA que vino marcado como parcial y sin `LEntra`.
+        if ($entra === null && $sale === null) {
+            return 'Sin horario cargado';
+        }
+
+        return ($entra ?? '—').' – '.($sale ?? '—');
     }
 }

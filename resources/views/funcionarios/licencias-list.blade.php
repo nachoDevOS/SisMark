@@ -28,7 +28,7 @@
                 @php
                     // La fila es la que abre la solicitud, así que su `fecha` es
                     // el «desde»; el resto lo trae el resumen de la página.
-                    $datos = $resumen[$licencia->solicitud] ?? null;
+                    $datos = $resumen[$licencia->clave_agrupadora] ?? null;
                     $desde = $licencia->fecha;
                     $hasta = $datos ? \Illuminate\Support\Carbon::parse($datos->hasta) : $desde;
                     $dias = $datos->dias ?? 1;
