@@ -362,13 +362,7 @@ class PersonaController extends Controller
         }
     }
 
-    /**
-     * Totales de cada situación de contrato para etiquetar el select. La API los
-     * entrega en su `meta`, ya con la búsqueda aplicada.
-     *
-     * @param  array<string, mixed>  $meta
-     * @return array{con: ?int, sin: ?int}
-     */
+
     private function totalesPorContrato(array $meta): array
     {
         return [
@@ -377,12 +371,7 @@ class PersonaController extends Controller
         ];
     }
 
-    /**
-     * Normaliza filas de la API de Mamoré a la forma común de la tabla.
-     *
-     * @param  array<int, array<string, mixed>>  $data
-     * @return array<int, array<string, mixed>>
-     */
+
     private function normalizarMamore(array $data): array
     {
         return app(DirectorioMamore::class)->normalizar($data);
