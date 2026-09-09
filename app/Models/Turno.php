@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Http\Resources\TurnoSugeridoResource;
 use App\Traits\RegistersUserEvents;
 use Database\Factories\TurnoFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -56,6 +57,7 @@ class Turno extends Model
         'sTolerancia',
         'hTrabajadas',
         'siguienteDia',
+        'sugerido',
         'observacion',
         'estado',
     ];
@@ -76,6 +78,7 @@ class Turno extends Model
             'sTolerancia' => 'datetime',
             'hTrabajadas' => 'decimal:2',
             'siguienteDia' => 'boolean',
+            'sugerido' => 'boolean',
         ];
     }
 
@@ -93,5 +96,44 @@ class Turno extends Model
     public function scopeOrdenado(Builder $query): Builder
     {
         return $query->orderBy('dia')->orderBy('nombreTurno');
+    }
+
+    /**
+     * Los turnos que forman el horario sugerido de la institución, en orden de
+     * día de la semana.
+     *
+     * Son varias filas y no una: `turnos` guarda **un día por fila**, así que
+     * un horario semanal de lunes a viernes son cinco turnos distintos. Quien
+     * los consuma tiene que tratarlos como un juego, no como cinco opciones
+     * ({@see TurnoSugeridoResource}).
+     */
+    public function scopeSugeridos(Builder $query): Builder
+    {
+        return $query->where('sugerido', true)->orderBy('dia')->orderBy('hEntrada');
+    }
+
+    /**
+     * Clave que junta en un mismo horario semanal a los turnos que solo se
+     * diferencian por el día.
+     *
+     * Se arma con los campos que definen la jornada y **no** con `nombreTurno`,
+     * que trae el día pegado adelante («LUN: 08:00 - 16:00») y además se repite
+     * entre turnos distintos: hay nombres con once filas sobre cinco días, así
+     * que agrupar por texto mezclaría horarios que no son el mismo.
+     */
+    public function getClaveHorarioAttribute(): string
+    {
+        return implode('|', [
+            $this->hEntrada?->format('H:i:s'),
+            $this->hSalida?->format('H:i:s'),
+            $this->hTolerancia?->format('H:i:s'),
+            $this->eMinima?->format('H:i:s'),
+            $this->eMaxima?->format('H:i:s'),
+            $this->sMinima?->format('H:i:s'),
+            $this->sMaxima?->format('H:i:s'),
+            $this->sTolerancia?->format('H:i:s'),
+            $this->hTrabajadas,
+            $this->siguienteDia ? '1' : '0',
+        ]);
     }
 }

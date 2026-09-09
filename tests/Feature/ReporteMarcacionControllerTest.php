@@ -87,8 +87,8 @@ test('el combo devuelve la foto en null cuando el funcionario sale de la base lo
 test('el combo cae a la base local si Mamoré falla', function () {
     funcionarioConMarcaciones();
 
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
     Http::fake(['mamore.test/*' => Http::response('boom', 500)]);
 
     $this->getJson(route('reportes.marcaciones.funcionarios', ['q' => 'ignacio molina']))

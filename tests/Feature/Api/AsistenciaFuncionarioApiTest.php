@@ -4,6 +4,7 @@ use App\Models\AsignacionTurno;
 use App\Models\Asistencia;
 use App\Models\Licencia;
 use App\Models\Persona;
+use App\Models\SistemaExterno;
 use App\Models\Turno;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
@@ -13,18 +14,12 @@ use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
-const CLAVE = 'clave-de-prueba-de-la-api';
-
-beforeEach(function () {
-    config()->set('services.sismark_api.key', CLAVE);
-});
-
 /**
- * Pedido autenticado con la clave compartida, como lo hace el sistema externo.
+ * Pedido autenticado con el token del sistema, como lo hace el consumidor real.
  */
 function comoMamore(string $ruta): TestResponse
 {
-    return test()->getJson($ruta, ['X-API-KEY' => CLAVE]);
+    return test()->getJson($ruta, cabecerasApi());
 }
 
 /**
@@ -75,30 +70,75 @@ function funcionarioConAsistencia(string $ci = '7633685'): void
     ]);
 }
 
-test('sin clave el acceso se rechaza', function () {
+test('sin token el acceso se rechaza', function () {
     $this->getJson('/api/v1/funcionarios/7633685/marcaciones')
         ->assertUnauthorized();
 });
 
-test('con una clave equivocada el acceso se rechaza', function () {
-    $this->getJson('/api/v1/funcionarios/7633685/marcaciones', ['X-API-KEY' => 'otra'])
+test('con un token inventado el acceso se rechaza', function () {
+    $this->getJson('/api/v1/funcionarios/7633685/marcaciones', [
+        'Authorization' => 'Bearer 1|noExisteEsteToken',
+    ])->assertUnauthorized();
+});
+
+test('un despliegue sin ningún sistema cargado no atiende a nadie', function () {
+    // Antes esto lo garantizaba la clave vacía; ahora lo garantiza que no haya
+    // token emitido: sin fila en `sistemas_externos` no hay con qué entrar.
+    expect(SistemaExterno::query()->count())->toBe(0);
+
+    $this->getJson('/api/v1/funcionarios/7633685/marcaciones')
         ->assertUnauthorized();
 });
 
-test('si el servidor no tiene clave configurada la API no atiende a nadie', function () {
-    // Un despliegue recién hecho y sin configurar no puede quedar abierto.
-    config()->set('services.sismark_api.key', null);
+/**
+ * Pedido a la API olvidando primero el usuario que el guard dejó resuelto.
+ *
+ * En producción cada pedido levanta su propio contenedor, pero dentro de un
+ * test el guard vive entre uno y otro y devuelve el mismo usuario que resolvió
+ * la primera vez. Sin esto, apagar el sistema en medio del test no se notaría:
+ * el segundo pedido pasaría con el resultado cacheado del primero.
+ */
+function pedirOlvidandoElGuard(array $cabeceras): TestResponse
+{
+    app('auth')->forgetGuards();
 
-    $this->getJson('/api/v1/funcionarios/7633685/marcaciones', ['X-API-KEY' => CLAVE])
-        ->assertStatus(503);
+    return test()->getJson('/api/v1/funcionarios/7633685/marcaciones?desde=2026-08-01&hasta=2026-08-31', $cabeceras);
+}
+
+test('apagar el sistema le corta el acceso en el próximo pedido', function () {
+    funcionarioConAsistencia();
+    $cabeceras = cabecerasApi();
+
+    pedirOlvidandoElGuard($cabeceras)->assertOk();
+
+    // El interruptor no borra el token: lo deja sin efecto. Volver a encenderlo
+    // restablece el acceso sin coordinar una credencial nueva.
+    SistemaExterno::query()->where('slug', 'pruebas')->update(['activo' => false]);
+
+    pedirOlvidandoElGuard($cabeceras)->assertUnauthorized();
+
+    SistemaExterno::query()->where('slug', 'pruebas')->update(['activo' => true]);
+
+    pedirOlvidandoElGuard($cabeceras)->assertOk();
 });
 
-test('la clave también se acepta como Bearer token', function () {
+test('dar de baja el sistema también le corta el acceso', function () {
+    funcionarioConAsistencia();
+    $cabeceras = cabecerasApi();
+
+    SistemaExterno::query()->where('slug', 'pruebas')->delete();
+
+    pedirOlvidandoElGuard($cabeceras)->assertUnauthorized();
+});
+
+test('un token sin el alcance de asistencia no puede leer las marcaciones', function () {
     funcionarioConAsistencia();
 
-    $this->getJson('/api/v1/funcionarios/7633685/marcaciones?desde=2026-08-01&hasta=2026-08-31', [
-        'Authorization' => 'Bearer '.CLAVE,
-    ])->assertOk();
+    // El token existe y el sistema está activo: lo que falta es el alcance.
+    $this->getJson(
+        '/api/v1/funcionarios/7633685/marcaciones?desde=2026-08-01&hasta=2026-08-31',
+        cabecerasApi(['licencias:read'])
+    )->assertForbidden();
 });
 
 test('devuelve las marcaciones crudas del funcionario en el rango', function () {
@@ -135,20 +175,21 @@ test('la asistencia procesada calcula el atraso y las horas del día', function 
         ->assertOk()
         ->assertJsonCount(1, 'data');
 
-    // 08:12:04 contra una hora de entrada de 08:00 → 12 min 4 seg de atraso.
+    // 08:12:04 contra una hora de entrada de 08:00 → 12 minutos de atraso. Los
+    // 4 segundos se descartan: el atraso se cuenta en minutos completos.
     $respuesta
         ->assertJsonPath('data.0.fecha', '2026-08-03')
         ->assertJsonPath('data.0.estado', 'atraso')
         ->assertJsonPath('data.0.estadoEtiqueta', 'Atraso')
-        ->assertJsonPath('data.0.atrasoSegundos', 724)
-        ->assertJsonPath('data.0.atraso', '12 min 4 seg')
+        ->assertJsonPath('data.0.atrasoSegundos', 720)
+        ->assertJsonPath('data.0.atraso', '12 min')
         ->assertJsonPath('data.0.bloques.0.entrada', '08:12:04')
         ->assertJsonPath('data.0.bloques.0.salida', '16:03:00')
         ->assertJsonPath('data.0.bloques.0.turno', 'LUN: 08:00 - 16:00')
         // Vacías: el día no fue ni abandono ni falta.
         ->assertJsonPath('data.0.bloques.0.abandono', '')
         ->assertJsonPath('data.0.bloques.0.falta', '')
-        ->assertJsonPath('totales.atraso', '12 min 4 seg');
+        ->assertJsonPath('totales.atraso', '12 min');
 });
 
 test('el día sin marcar informa la falta como texto listo para el reporte', function () {

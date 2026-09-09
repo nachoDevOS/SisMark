@@ -150,11 +150,11 @@ test('la búsqueda por nombre cruza nombre y apellido sin traer al resto', funct
 });
 
 test('la columna funcionario usa el nombre de Mamoré cuando existe', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['id' => 1, 'ci' => '7633685', 'full_name' => 'MARIELA CRUZ PORCO'],
         ], 200),
     ]);
@@ -170,8 +170,8 @@ test('la columna funcionario usa el nombre de Mamoré cuando existe', function (
 });
 
 test('la columna funcionario cae a la BD local si el CI no está en Mamoré', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake(['mamore.test/*' => Http::response(['message' => 'not found'], 404)]);
 
@@ -184,8 +184,8 @@ test('la columna funcionario cae a la BD local si el CI no está en Mamoré', fu
 });
 
 test('la columna funcionario muestra «Sin persona» si el CI no está en ningún sistema', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake(['mamore.test/*' => Http::response(['message' => 'not found'], 404)]);
 
@@ -197,8 +197,8 @@ test('la columna funcionario muestra «Sin persona» si el CI no está en ningú
 });
 
 test('un fallo de la API de Mamoré no rompe el listado y cae a la BD local', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake(['mamore.test/*' => Http::response('boom', 500)]);
 
@@ -248,8 +248,8 @@ test('avisa si el CI no figura en Mamoré y no carga sus turnos', function () {
 test('avisa cuando la API de Mamoré no responde', function () {
     [$persona] = funcionarioConTurno();
 
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
     Http::fake(['mamore.test/*' => Http::response('boom', 500)]);
 
     $this->get(route('licencias.create', ['ci' => $persona->ci]))
@@ -434,8 +434,8 @@ test('el combo cruza nombre y apellido aunque la API busque por un solo término
 });
 
 test('el combo informa el error cuando la API de Mamoré falla', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
     Http::fake(['mamore.test/*' => Http::response('boom', 500)]);
 
     $this->getJson(route('licencias.funcionarios', ['q' => 'cruz']))

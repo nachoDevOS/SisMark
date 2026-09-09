@@ -20,9 +20,11 @@ use Illuminate\Support\Collection;
  *
  * 1. **Prioridad**: día excepcional → sin turno → licencia de día completo →
  *    recién ahí se miran las marcaciones.
- * 2. **Atraso**: lo dispara `hTolerancia` (`marca > hTolerancia`), pero se mide
- *    contra `hEntrada`, la hora nominal. A las 08:10:00 no hay atraso; a las
- *    08:10:01 hay 10 min 1 seg.
+ * 2. **Atraso**: se cuenta en **minutos completos** desde `hEntrada`, la hora
+ *    nominal, y lo dispara `hTolerancia` medida en la misma unidad. Con entrada
+ *    08:00 y tolerancia 08:10, el minuto 08:10 entero está adentro: a las
+ *    08:10:59 no hay atraso; a las 08:11:00 hay 11 min. Los segundos se
+ *    descartan: la tolerancia se concede en minutos.
  * 3. **Horas computadas**: se acotan al turno. Llegar dentro de la tolerancia
  *    cuenta como llegar a la hora; quedarse de más no suma. La permanencia real
  *    viaja aparte, como dato.
@@ -230,8 +232,11 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Formatea un desvío como «25 min» o «10 min 1 seg»: el segundo suelto
-     * importa, porque a las 08:10:01 ya hay atraso.
+     * Formatea un desvío como «25 min» o «10 min 1 seg».
+     *
+     * El atraso llega siempre en minutos completos, así que ahí los segundos no
+     * aparecen nunca. Los conserva para la salida anticipada, que sí se mide al
+     * segundo.
      */
     public static function desvio(int $segundos): string
     {
@@ -467,12 +472,28 @@ class ProcesadorAsistencia
         $toleranciaSalida = $sTolerancia + $cruce;
         $salidaReal = $salida === null ? null : $salida + $cruce;
 
-        $atraso = $entrada !== null && $entrada > $hTolerancia ? $entrada - $hEntrada : 0;
+        // El atraso se cuenta en **minutos completos** desde la hora nominal de
+        // entrada, y la tolerancia se mide en la misma unidad. Con entrada 08:00
+        // y tolerancia 08:10 hay diez minutos de gracia, así que el minuto 08:10
+        // entero está adentro: a las 08:10:59 todavía van 10 minutos y no hay
+        // atraso; a las 08:11:00 van 11 y sí lo hay.
+        //
+        // Los segundos se descartan a propósito. El reloj los registra, pero la
+        // tolerancia se concede en minutos: sancionar por 08:10:01 castigaría un
+        // segundo dentro del minuto que el reglamento regala.
+        $minutosDeAtraso = $entrada === null ? 0 : intdiv(max($entrada - $hEntrada, 0), 60);
+        $minutosDeTolerancia = intdiv(max($hTolerancia - $hEntrada, 0), 60);
+        $enTolerancia = $entrada === null || $minutosDeAtraso <= $minutosDeTolerancia;
+
+        $atraso = $enTolerancia ? 0 : $minutosDeAtraso * 60;
         $anticipo = $salidaReal !== null && $salidaReal < $toleranciaSalida ? $toleranciaSalida - $salidaReal : 0;
 
         // Llegar dentro de la tolerancia cuenta como llegar a la hora; quedarse
-        // después de la salida no suma.
-        $inicio = $entrada === null ? null : ($entrada <= $hTolerancia ? $hEntrada : min($entrada, $finTurno));
+        // después de la salida no suma. Fuera de la tolerancia el inicio es el
+        // minuto en punto del atraso y no la marca cruda: si el descuento dice
+        // once minutos, las horas computadas tienen que descontar esos once y no
+        // once y medio.
+        $inicio = $entrada === null ? null : ($enTolerancia ? $hEntrada : min($hEntrada + $atraso, $finTurno));
         $fin = $salidaReal === null ? null : ($salidaReal >= $toleranciaSalida ? $finTurno : max($salidaReal, $hEntrada));
 
         $licenciado = $conLicencia ? $licSale - $licEntra : 0;

@@ -239,14 +239,26 @@
         tbody tr.fila--inactiva td { color: var(--muted); background: var(--bg); }
         /* Cabecera de bloque dentro del cuerpo: agrupa las filas que comparten
            un período de vigencia (los días de un mismo turno asignado). */
-        tbody tr.fila--periodo th { text-align: left; background: var(--bg); padding: .45rem .75rem;
+        tbody tr.fila--periodo th { text-align: left; background: var(--bg); padding: .3rem .75rem;
             border-bottom: 1px solid var(--border); border-top: 2px solid var(--border); font-weight: 600; }
         tbody tr.fila--periodo:first-child th { border-top: 0; }
         tbody tr.fila--periodo:hover th { background: var(--bg); }
-        .periodo { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
-        .periodo__fechas { font-size: .8125rem; color: var(--thead); letter-spacing: .01em; }
-        .periodo__flecha { color: var(--muted); margin: 0 .15rem; }
+        /* Va acotada a la fila de bloque y con la direccion explicita: suelta,
+           heredaba el `flex-direction: column` de la `.periodo` de licencias y
+           la cabecera se partia en tres renglones centrados. */
+        .fila--periodo .periodo { display: flex; flex-direction: row; align-items: center;
+            gap: .45rem; flex-wrap: wrap; font-weight: 400; white-space: normal; }
+        .periodo__fechas { font-size: .75rem; font-weight: 700; color: var(--thead);
+            letter-spacing: .01em; white-space: nowrap; }
+        .periodo__flecha { color: var(--muted); margin: 0 .1rem; font-weight: 400; }
         .periodo__conteo { font-size: .7rem; color: var(--muted); font-weight: 500; }
+
+        /* Filas de un solo dato corto (dia y horario): el alto por defecto las
+           deja demasiado aireadas cuando son cinco por cada bloque. */
+        .tabla--compacta thead th { padding: .4rem .75rem; }
+        .tabla--compacta tbody td { padding: .3rem .75rem; }
+        .horario { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .horario__sep { color: var(--muted); margin: 0 .3rem; }
 
         .pill { display: inline-block; padding: .2rem .6rem; border-radius: 9999px; font-size: .7rem; font-weight: 700; }
         .pill--ok { background: #dcfce7; color: #166534; }
@@ -256,6 +268,7 @@
         /* Origen del dato, no un estado: va apagado para que no le compita al
            verde de «Con contrato», que es lo que de verdad hay que leer. */
         .pill--neutro { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+        .pill--mini { padding: .05rem .4rem; font-size: .65rem; }
 
         .acciones { display: flex; gap: .35rem; align-items: center; }
 

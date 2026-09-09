@@ -15,10 +15,7 @@ use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
-const CLAVE_SOLICITUD = 'clave-de-prueba-de-la-api';
-
 beforeEach(function () {
-    config()->set('services.sismark_api.key', CLAVE_SOLICITUD);
     // Ningún test toca el bucket real.
     Storage::fake('s3');
 });
@@ -62,7 +59,7 @@ function solicitudValida(array $extra = []): array
 test('la solicitud del funcionario queda «Pendiente» y sin usuario de SisMark', function () {
     funcionarioLicenciable();
 
-    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(), ['X-API-KEY' => CLAVE_SOLICITUD])
+    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(), cabecerasApi())
         ->assertCreated()
         ->assertJsonPath('estado', 'Pendiente');
 
@@ -80,7 +77,7 @@ test('la solicitud del funcionario queda «Pendiente» y sin usuario de SisMark'
 test('una solicitud pendiente no justifica la ausencia', function () {
     funcionarioLicenciable();
 
-    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(), ['X-API-KEY' => CLAVE_SOLICITUD])
+    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(), cabecerasApi())
         ->assertCreated();
 
     // El cálculo de asistencia solo mira las aprobadas: mientras espere
@@ -96,7 +93,7 @@ test('la solicitud puede traer un respaldo y queda guardado en el bucket', funct
     $this->post(
         '/api/v1/funcionarios/7633685/licencias',
         solicitudValida(['respaldo' => $archivo]),
-        ['X-API-KEY' => CLAVE_SOLICITUD, 'Accept' => 'application/json'],
+        cabecerasApi([], ['Accept' => 'application/json']),
     )->assertCreated();
 
     $licencia = Licencia::firstOrFail();
@@ -112,7 +109,7 @@ test('la solicitud puede traer un respaldo y queda guardado en el bucket', funct
 test('el respaldo es opcional', function () {
     funcionarioLicenciable();
 
-    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(), ['X-API-KEY' => CLAVE_SOLICITUD])
+    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(), cabecerasApi())
         ->assertCreated();
 
     expect(Licencia::firstOrFail()->adjunto)->toBeNull();
@@ -124,13 +121,13 @@ test('el respaldo se limita a imagen o PDF de hasta 5 MB', function () {
     $this->post(
         '/api/v1/funcionarios/7633685/licencias',
         solicitudValida(['respaldo' => UploadedFile::fake()->create('planilla.xlsx', 40)]),
-        ['X-API-KEY' => CLAVE_SOLICITUD, 'Accept' => 'application/json'],
+        cabecerasApi([], ['Accept' => 'application/json']),
     )->assertJsonValidationErrors('respaldo');
 
     $this->post(
         '/api/v1/funcionarios/7633685/licencias',
         solicitudValida(['respaldo' => UploadedFile::fake()->create('enorme.pdf', 6000, 'application/pdf')]),
-        ['X-API-KEY' => CLAVE_SOLICITUD, 'Accept' => 'application/json'],
+        cabecerasApi([], ['Accept' => 'application/json']),
     )->assertJsonValidationErrors('respaldo');
 
     expect(Licencia::count())->toBe(0);
@@ -148,7 +145,7 @@ test('una licencia parcial en multipart sigue exigiendo las horas', function () 
             'tCompleto' => '0',
             'respaldo' => UploadedFile::fake()->create('certificado.pdf', 40, 'application/pdf'),
         ]),
-        ['X-API-KEY' => CLAVE_SOLICITUD, 'Accept' => 'application/json'],
+        cabecerasApi([], ['Accept' => 'application/json']),
     )->assertJsonValidationErrors(['lEntra', 'lSale']);
 
     expect(Licencia::count())->toBe(0);
@@ -157,7 +154,7 @@ test('una licencia parcial en multipart sigue exigiendo las horas', function () 
 test('sin turnos asignados no hay nada que licenciar', function () {
     Persona::factory()->create(['ci' => '7633685']);
 
-    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(), ['X-API-KEY' => CLAVE_SOLICITUD])
+    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(), cabecerasApi())
         ->assertStatus(422);
 
     expect(Licencia::count())->toBe(0);
@@ -197,7 +194,7 @@ test('el funcionario da de baja su solicitud pendiente, con eliminación lógica
 
     $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$licencias->first()->id, [
         'observacion' => 'Me equivoqué de fecha.',
-    ], ['X-API-KEY' => CLAVE_SOLICITUD])->assertOk();
+    ], cabecerasApi())->assertOk();
 
     // Los dos días del pedido, no solo el que se pidió.
     expect(Licencia::count())->toBe(0)
@@ -217,9 +214,7 @@ test('no se puede dar de baja la licencia de otro funcionario', function () {
 
     // El id es un número corrido: sin la comprobación, subirlo de a uno
     // borraría las licencias de todo el personal.
-    $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$ajena->id, [], [
-        'X-API-KEY' => CLAVE_SOLICITUD,
-    ])->assertNotFound();
+    $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$ajena->id, [], cabecerasApi())->assertNotFound();
 
     expect(Licencia::whereKey($ajena->id)->exists())->toBeTrue();
 });
@@ -230,9 +225,7 @@ test('una licencia ya resuelta no la puede dar de baja el funcionario', function
 
     // Ya justifica una ausencia y entró en reportes firmados: la baja es
     // decisión de Recursos Humanos.
-    $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$licencias->first()->id, [], [
-        'X-API-KEY' => CLAVE_SOLICITUD,
-    ])->assertStatus(422);
+    $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$licencias->first()->id, [], cabecerasApi())->assertStatus(422);
 
     expect(Licencia::count())->toBe(2);
 });
@@ -249,9 +242,7 @@ test('sin la clave compartida no se da de baja ninguna licencia', function () {
 test('el motivo de la baja es opcional', function () {
     $licencias = solicitudDelFuncionario(dias: 1);
 
-    $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$licencias->first()->id, [], [
-        'X-API-KEY' => CLAVE_SOLICITUD,
-    ])->assertOk();
+    $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$licencias->first()->id, [], cabecerasApi())->assertOk();
 
     // Sin motivo igual queda constancia de dónde salió la baja.
     expect(Licencia::withTrashed()->first()->deleteObservacion)
@@ -263,7 +254,7 @@ test('el motivo de la baja tiene tope de largo', function () {
 
     $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$licencias->first()->id, [
         'observacion' => str_repeat('x', 256),
-    ], ['X-API-KEY' => CLAVE_SOLICITUD])->assertJsonValidationErrors('observacion');
+    ], cabecerasApi())->assertJsonValidationErrors('observacion');
 
     expect(Licencia::count())->toBe(1);
 });
@@ -288,7 +279,7 @@ test('un pedido de varios días se agrupa igual venga de Mamoré o de SisMark', 
         'motivo' => 'CONSULTA MEDICA',
         'tCompleto' => true,
         'solicitante' => 'Ignacio Molina',
-    ], ['X-API-KEY' => CLAVE_SOLICITUD])->assertCreated();
+    ], cabecerasApi())->assertCreated();
 
     // (2) Desde SisMark: el mismo rango, por el servicio que usa la pantalla.
     app(RegistroLicencia::class)->anotar(
@@ -334,9 +325,7 @@ test('un pedido de varios días se agrupa igual venga de Mamoré o de SisMark', 
 test('el funcionario declara si pide con o sin goce de haberes', function () {
     funcionarioLicenciable();
 
-    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(['goceHaberes' => false]), [
-        'X-API-KEY' => CLAVE_SOLICITUD,
-    ])->assertCreated();
+    $this->postJson('/api/v1/funcionarios/7633685/licencias', solicitudValida(['goceHaberes' => false]), cabecerasApi())->assertCreated();
 
     // Lo declara, pero no lo decide: la licencia sigue naciendo «Pendiente».
     expect(Licencia::firstOrFail()->goceHaberes)->toBeFalse()
@@ -351,7 +340,7 @@ test('sin el campo, la solicitud se anota con goce', function () {
     $datos = solicitudValida();
     unset($datos['goceHaberes']);
 
-    $this->postJson('/api/v1/funcionarios/7633685/licencias', $datos, ['X-API-KEY' => CLAVE_SOLICITUD])
+    $this->postJson('/api/v1/funcionarios/7633685/licencias', $datos, cabecerasApi())
         ->assertCreated();
 
     expect(Licencia::firstOrFail()->goceHaberes)->toBeTrue();
@@ -368,7 +357,7 @@ test('el goce sobrevive el multipart cuando se adjunta respaldo', function () {
             'goceHaberes' => '0',
             'respaldo' => UploadedFile::fake()->create('certificado.pdf', 40, 'application/pdf'),
         ]),
-        ['X-API-KEY' => CLAVE_SOLICITUD, 'Accept' => 'application/json'],
+        cabecerasApi([], ['Accept' => 'application/json']),
     )->assertCreated();
 
     expect(Licencia::firstOrFail()->goceHaberes)->toBeFalse();
@@ -382,7 +371,7 @@ function pedirLicencia(array $extra = []): TestResponse
     return test()->postJson(
         '/api/v1/funcionarios/7633685/licencias',
         solicitudValida($extra),
-        ['X-API-KEY' => CLAVE_SOLICITUD],
+        cabecerasApi(),
     );
 }
 
@@ -431,7 +420,7 @@ test('una licencia dada de baja tampoco se pisa: queda como historial', function
     // El funcionario retira su pedido desde el perfil.
     $this->deleteJson('/api/v1/funcionarios/7633685/licencias/'.$baja->id, [
         'observacion' => 'Me equivoqué de fecha.',
-    ], ['X-API-KEY' => CLAVE_SOLICITUD])->assertOk();
+    ], cabecerasApi())->assertOk();
 
     // Y vuelve a pedir el mismo día.
     pedirLicencia(['motivo' => 'ESTA VEZ SÍ'])->assertCreated();

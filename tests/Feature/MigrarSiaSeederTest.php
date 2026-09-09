@@ -39,6 +39,37 @@ test('el seeder corre toda la migración del SIA en orden y resuelve turno_id', 
     expect(DB::table('asignacion_turnos')->value('turno_id'))->toBe($turnoId);
 });
 
+test('la migración no marca ningún horario como sugerido', function () {
+    DiaTurno::factory()->count(3)->create();
+
+    $this->seed(MigrarSiaSeeder::class);
+
+    // Cuál es el horario sugerido lo decide Recursos Humanos desde la pantalla
+    // de Horarios. Migrar los datos del SIA no puede elegirlo por ellos: un
+    // horario marcado solo es el que alguien marcó a propósito.
+    expect(DB::table('turnos')->where('sugerido', true)->count())->toBe(0);
+});
+
+test('recopiar los horarios no borra lo marcado como sugerido', function () {
+    DiaTurno::factory()->create(['IdTurno' => '8DW']);
+
+    $this->seed(MigrarSiaSeeder::class);
+
+    // Un turno marcado a mano desde la pantalla de Horarios: `sia:migrar-horarios`
+    // no lo lleva en su MAPA, así que volver a copiar no puede pisarlo.
+    DB::table('turnos')->where('idTurno', '8DW')->update([
+        'sugerido' => true,
+        'nombreTurno' => 'PISAME',
+    ]);
+    $this->artisan('sia:migrar-horarios')->assertSuccessful();
+
+    $turno = DB::table('turnos')->where('idTurno', '8DW')->first();
+
+    expect($turno->sugerido)->toEqual(1)
+        // El resto de las columnas sí se recopia: la de arriba se pisó.
+        ->and($turno->nombreTurno)->not->toBe('PISAME');
+});
+
 test('el seeder es idempotente: correrlo dos veces no duplica', function () {
     Persona::factory()->count(2)->create();
 

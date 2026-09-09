@@ -11,19 +11,34 @@ use Illuminate\Support\Facades\Http;
 
 /**
  * Cliente HTTP de la API externa de Datos Personales «Mamoré» (solo lectura).
- * Consulta la lista y el detalle de personas con el header X-API-KEY.
  *
  * La API tiene un único listado: `/people` devuelve todas las personas, y cada
  * una trae su contrato firmado en la clave `contrato` (o `null` si no tiene).
+ *
+ * ---
+ * **Autenticación: token de Sanctum que emite Mamoré**, en `MAMORE_TOKEN`.
+ * Se saca de su pantalla `/admin/tokens-api`, con el alcance `personal:read`.
+ *
+ * Antes era una clave compartida en `X-API-KEY`, la misma para todos los
+ * consumidores de Mamoré: rotarla los cortaba a todos y no quedaba registro de
+ * cuál pidió qué. Con el token, Mamoré nos puede cortar el acceso sin tocar a
+ * los demás y cada consulta deja su fila del otro lado.
+ *
+ * **Va con `Origin`.** Mamoré compara esa cabecera contra el dominio con el que
+ * registró el sistema y contesta 403 si falta. No es la puerta —el `Origin` se
+ * forja— sino una baranda: atrapa el token pegado en el sistema equivocado, que
+ * si no funcionaría perfecto y dejaría los logs mintiendo durante meses. Sale de
+ * `MAMORE_ORIGIN`, o de `APP_URL` si no está.
+ * ---
  */
 class MamoreClient
 {
     /**
-     * ¿Están cargadas la URL y la clave para poder consultar la API?
+     * ¿Están cargadas la URL y el token para poder consultar la API?
      */
     public function configurado(): bool
     {
-        return filled(config('services.mamore.url')) && filled(config('services.mamore.key'));
+        return filled(config('services.mamore.url')) && filled(config('services.mamore.token'));
     }
 
     /**
@@ -154,7 +169,7 @@ class MamoreClient
         }
 
         if (! $this->configurado()) {
-            throw new MamoreException('La API de Mamoré no está configurada (MAMORE_API_URL / MAMORE_API_KEY en el .env).');
+            throw new MamoreException('La API de Mamoré no está configurada (MAMORE_URL / MAMORE_TOKEN en el .env).');
         }
 
         $respuestas = Http::pool(fn (Pool $pool): array => array_map(
@@ -219,7 +234,7 @@ class MamoreClient
     private function http(): PendingRequest
     {
         if (! $this->configurado()) {
-            throw new MamoreException('La API de Mamoré no está configurada (MAMORE_API_URL / MAMORE_API_KEY en el .env).');
+            throw new MamoreException('La API de Mamoré no está configurada (MAMORE_URL / MAMORE_TOKEN en el .env).');
         }
 
         return $this->configurar(Http::createPendingRequest());
@@ -233,9 +248,25 @@ class MamoreClient
     {
         return $peticion
             ->baseUrl(rtrim((string) config('services.mamore.url'), '/'))
-            ->withHeaders(['X-API-KEY' => config('services.mamore.key')])
+            ->withToken((string) config('services.mamore.token'))
+            // Mamoré exige `Origin` y lo compara con el dominio registrado; sin
+            // esta cabecera contesta 403 «origen_requerido».
+            ->withHeaders(['Origin' => $this->origen()])
             ->acceptJson()
             ->timeout(10);
+    }
+
+    /**
+     * El dominio con el que Mamoré tiene registrado a SisMark.
+     *
+     * Se declara aparte de `APP_URL` porque no siempre coinciden: el sistema
+     * puede servirse detrás de un túnel o de un dominio interno distinto del que
+     * Recursos Humanos cargó en la ficha del sistema. Si no se declara, se cae en
+     * `APP_URL`, que es lo correcto en el caso normal.
+     */
+    private function origen(): string
+    {
+        return (string) (config('services.mamore.origen') ?: config('app.url'));
     }
 
     private function motivo(int $status): string

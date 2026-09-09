@@ -3,16 +3,29 @@
     $etiquetaSituacion = ['vigente' => 'Vigente', 'vencida' => 'Vencida', 'futura' => 'Aún no vigente'];
     // Sin acciones cuando la tabla se muestra solo de referencia (modal de licencia).
     $conAcciones = $conAcciones ?? true;
-    $columnas = $conAcciones ? 5 : 4;
+    $columnas = $conAcciones ? 3 : 2;
+
+    /**
+     * El nombre del turno del SIA suele ser «LUN: 08:00 - 16:00», que es día y
+     * horario otra vez. Se muestra solo cuando aporta algo que la fila no dice.
+     */
+    $nombreQueAporta = function (?string $nombre, ?string $entrada, ?string $salida): string {
+        $nombre = trim((string) $nombre);
+
+        if ($nombre === '' || ($entrada !== null && $salida !== null
+            && str_contains($nombre, $entrada) && str_contains($nombre, $salida))) {
+            return '';
+        }
+
+        return $nombre;
+    };
 @endphp
 <div class="card">
-    <table>
+    <table class="tabla--compacta">
         <thead>
             <tr>
-                <th>Turno</th>
                 <th>Día</th>
-                <th>Entrada</th>
-                <th>Salida</th>
+                <th>Horario</th>
                 @if ($conAcciones)
                     <th></th>
                 @endif
@@ -35,7 +48,7 @@
                                 <span class="periodo__flecha" aria-hidden="true">→</span>
                                 {{ $periodo->hasta?->format('d/m/Y') ?? '—' }}
                             </span>
-                            <span class="pill {{ $pillPorSituacion[$situacion] ?? 'pill--info' }}">
+                            <span class="pill pill--mini {{ $pillPorSituacion[$situacion] ?? 'pill--info' }}">
                                 {{ $etiquetaSituacion[$situacion] ?? $situacion }}
                             </span>
                             <span class="periodo__conteo">
@@ -45,11 +58,21 @@
                     </th>
                 </tr>
                 @foreach ($delPeriodo as $asignacion)
+                    @php
+                        $entrada = $asignacion->turno?->hEntrada?->format('H:i');
+                        $salida = $asignacion->turno?->hSalida?->format('H:i');
+                        $nombre = $nombreQueAporta($asignacion->turno?->nombreTurno, $entrada, $salida);
+                    @endphp
                     <tr @class(['fila--inactiva' => $vencido])>
-                        <td><strong>{{ trim((string) $asignacion->turno?->nombreTurno) ?: '—' }}</strong></td>
-                        <td>{{ $asignacion->turno?->nombre_dia ?? '—' }}</td>
-                        <td>{{ $asignacion->turno?->hEntrada?->format('H:i') ?? '—' }}</td>
-                        <td>{{ $asignacion->turno?->hSalida?->format('H:i') ?? '—' }}</td>
+                        <td>
+                            <strong>{{ $asignacion->turno?->nombre_dia ?? '—' }}</strong>
+                            @if ($nombre !== '')
+                                <div class="ayuda">{{ $nombre }}</div>
+                            @endif
+                        </td>
+                        <td class="horario">
+                            {{ $entrada ?? '—' }}<span class="horario__sep" aria-hidden="true">→</span>{{ $salida ?? '—' }}
+                        </td>
                         @if ($conAcciones)
                             <td>
                                 <div class="acciones">

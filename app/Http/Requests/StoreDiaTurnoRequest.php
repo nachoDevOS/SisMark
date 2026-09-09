@@ -40,17 +40,19 @@ class StoreDiaTurnoRequest extends FormRequest
             'SMaxima' => ['required', 'date_format:H:i'],
             'HTrabajadas' => ['required', 'numeric', 'min:0', 'max:24'],
             'SiguienteDia' => ['nullable', 'boolean'],
+            'Sugerido' => ['nullable', 'boolean'],
         ];
     }
 
     /**
-     * El checkbox «salida al día siguiente» llega solo cuando está marcado;
-     * se normaliza a booleano para el campo bit NOT NULL de la tabla.
+     * Los checkbox llegan solo cuando están marcados; se normalizan a booleano
+     * para los campos bit NOT NULL de la tabla.
      */
     protected function prepareForValidation(): void
     {
         $this->merge([
             'SiguienteDia' => $this->boolean('SiguienteDia'),
+            'Sugerido' => $this->boolean('Sugerido'),
         ]);
     }
 
@@ -72,6 +74,7 @@ class StoreDiaTurnoRequest extends FormRequest
             'SMaxima' => 'máxima hora de salida',
             'HTrabajadas' => 'horas trabajadas',
             'SiguienteDia' => 'salida al día siguiente',
+            'Sugerido' => 'horario sugerido',
         ];
     }
 }

@@ -194,13 +194,13 @@ it('el reporte procesado no se genera si no se pudieron verificar los contratos'
 
     funcionarioParaContratos();
 
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     // La ficha responde, pero los contratos no: es el caso de una caída parcial.
     Http::fake([
-        'mamore.test/api/personal/people/ci/*/contracts*' => Http::response(['message' => 'boom'], 500),
-        'mamore.test/api/personal/people/ci/*' => Http::response(['data' => [
+        'mamore.test/api/externo/personal/people/ci/*/contracts*' => Http::response(['message' => 'boom'], 500),
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response(['data' => [
             'ci' => CI_CONTRATO,
             'full_name' => 'MILTON HIPAMO CHOLIMA',
         ]]),

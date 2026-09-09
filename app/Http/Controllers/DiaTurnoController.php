@@ -46,9 +46,10 @@ class DiaTurnoController extends Controller
 
         $buscar = trim((string) $request->query('buscar', ''));
         $dia = (string) $request->query('dia', '');
+        $sugerido = $this->filtroSugerido($request);
         $porPagina = $this->porPagina($request);
 
-        return view('horarios.index', compact('buscar', 'dia', 'porPagina'));
+        return view('horarios.index', compact('buscar', 'dia', 'sugerido', 'porPagina'));
     }
 
     /**
@@ -60,11 +61,16 @@ class DiaTurnoController extends Controller
 
         $buscar = trim((string) $request->query('q', ''));
         $dia = (string) $request->query('dia', '');
+        $sugerido = $this->filtroSugerido($request);
         $porPagina = $this->porPagina($request);
 
         $horarios = Turno::query()
             ->when($buscar !== '', fn (Builder $query) => $query->where('nombreTurno', 'like', "%{$buscar}%"))
             ->when($dia !== '', fn (Builder $query) => $query->where('dia', $dia))
+            ->when($sugerido !== '', fn (Builder $query) => $query->where('sugerido', $sugerido === '1'))
+            // Los sugeridos arriba: son los pocos que se consultan seguido entre
+            // los cientos que arrastra el SIA.
+            ->orderByDesc('sugerido')
             ->ordenado()
             ->paginate($porPagina)
             ->withQueryString();
@@ -159,6 +165,20 @@ class DiaTurnoController extends Controller
     }
 
     /**
+     * Valor del filtro «horario sugerido»: «1», «0» o cadena vacía (sin filtrar).
+     *
+     * Solo se aceptan esos tres: cualquier otra cosa que llegue por la URL se
+     * trata como «sin filtrar», así un valor manipulado no cambia el listado por
+     * un camino no previsto.
+     */
+    private function filtroSugerido(Request $request): string
+    {
+        $valor = (string) $request->query('sugerido', '');
+
+        return in_array($valor, ['0', '1'], true) ? $valor : '';
+    }
+
+    /**
      * Copia los datos validados al modelo, convirtiendo cada "HH:MM" del
      * formulario a datetime sobre la fecha base 1899-12-30 (patrón del SIA).
      *
@@ -175,6 +195,7 @@ class DiaTurnoController extends Controller
 
         $horario->hTrabajadas = $datos['HTrabajadas'];
         $horario->siguienteDia = $datos['SiguienteDia'] ?? false;
+        $horario->sugerido = $datos['Sugerido'] ?? false;
     }
 
     /**

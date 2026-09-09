@@ -249,7 +249,7 @@ Están todas explicadas, una por una, en
 | `DB_HOST` · `DB_DATABASE` · `DB_USERNAME` · `DB_PASSWORD` | La base MySQL. |
 | `APP_URL` | El dominio real, con `https`. |
 | `DEVICE_SERVICE_TOKEN` | Compartido con el microservicio. Vacío = rechaza todo. |
-| `MAMORE_API_URL` · `MAMORE_API_KEY` | Nombres y cargos de los funcionarios. |
+| `MAMORE_URL` · `MAMORE_TOKEN` · `MAMORE_ORIGIN` | Nombres, cargos y contratos de los funcionarios. El token lo emite Mamoré. |
 
 > `--env-file` de Docker **no quita las comillas**: `APP_NAME="X"` entra con las
 > comillas incluidas. En ese archivo los valores van sin comillas.

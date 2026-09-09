@@ -1,11 +1,11 @@
 <?php
 
-use App\Http\Middleware\VerifyApiKey;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 
 /**
  * ¿La petición la hizo un script y no la barra de direcciones?
@@ -34,17 +34,20 @@ $esSegundoPlano = static fn (Request $request): bool => $request->ajax()
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
-        // API de solo lectura para los sistemas externos (hoy Mamoré). Va sin
-        // sesión ni CSRF: se autentica con la clave compartida del middleware
-        // `apikey`, y el prefijo `api/` es el que ya activa las respuestas JSON
-        // de errores más abajo.
+        // API para los sistemas externos (hoy Mamoré). Va sin sesión ni CSRF:
+        // se autentica con un token de Sanctum emitido sobre un
+        // `App\Models\SistemaExterno`, y el prefijo `api/` es el que ya activa
+        // las respuestas JSON de errores más abajo.
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // `abilities` viene de Sanctum y no se registra solo: exige que el token
+        // traiga **todos** los alcances que pide la ruta. Los alcances están
+        // declarados en `SistemaExterno::ALCANCES`.
         $middleware->alias([
-            'apikey' => VerifyApiKey::class,
+            'abilities' => CheckAbilities::class,
         ]);
 
         // Los invitados van al login propio del sitio (routes/web.php).

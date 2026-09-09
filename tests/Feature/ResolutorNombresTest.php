@@ -62,8 +62,8 @@ test('una cédula que Mamoré no tiene cae en la base local y no se vuelve a ped
 test('un fallo de la API no se cachea y se reintenta en la carga siguiente', function () {
     // La API se configura a mano y no con fakeMamore(): los stubs se acumulan y
     // gana el primero que matchea, así que el padrón falso taparía la caída.
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake(['mamore.test/*' => Http::response('', 500)]);
 

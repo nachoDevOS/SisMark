@@ -32,6 +32,18 @@ return new class extends Migration
             $table->decimal('hTrabajadas', 19, 4);
             $table->boolean('siguienteDia');
 
+            // Cuál de los turnos forma el horario que se ofrece por defecto al
+            // dar de alta un contrato. No existe en el SIA: es propio, y por eso
+            // no lo toca `sia:migrar-horarios` —no está en su MAPA, así que
+            // recopiar los horarios no borra lo marcado—.
+            //
+            // Son varias filas y no una: la tabla guarda un día por fila, así
+            // que un horario de lunes a viernes son cinco turnos marcados. El
+            // índice lleva `dia` adentro porque el único acceso por esta columna
+            // es «traeme los sugeridos, ordenados por día».
+            $table->boolean('sugerido')->default(false);
+            $table->index(['sugerido', 'dia'], 'turnos_sugerido_dia_index');
+
             $table->text('observacion')->nullable();
             $table->smallInteger('estado')->default(1);
 

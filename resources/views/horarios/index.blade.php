@@ -30,6 +30,14 @@
                     <option value="{{ $numero }}" @selected($dia === (string) $numero)>{{ $nombre }}</option>
                 @endforeach
             </select>
+
+            {{-- Con 757 turnos en la tabla, encontrar los pocos marcados como
+                 sugeridos a ojo no es viable: este filtro los aísla. --}}
+            <select id="f-sugerido" aria-label="Horario sugerido">
+                <option value="">Sugeridos y no sugeridos</option>
+                <option value="1" @selected($sugerido === '1')>Solo los sugeridos</option>
+                <option value="0" @selected($sugerido === '0')>Solo los no sugeridos</option>
+            </select>
         </div>
 
         <div class="buscador">
@@ -50,10 +58,12 @@
             const inputBuscar = document.getElementById('f-buscar');
             const selPaginate = document.getElementById('f-paginate');
             const selDia = document.getElementById('f-dia');
+            const selSugerido = document.getElementById('f-sugerido');
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
                     dia: selDia.value,
+                    sugerido: selSugerido.value,
                     q: inputBuscar.value,
                     por_pagina: selPaginate.value,
                     page: page,
@@ -81,6 +91,7 @@
 
             selPaginate.addEventListener('change', () => cargar(1));
             selDia.addEventListener('change', () => cargar(1));
+            selSugerido.addEventListener('change', () => cargar(1));
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }

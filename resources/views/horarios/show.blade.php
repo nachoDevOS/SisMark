@@ -87,9 +87,24 @@
 
         <div class="tarjeta" style="grid-column: 1 / -1;">
             <h2>Horas trabajadas</h2>
-            <dl class="datos">
-                <dt>Horas trabajadas</dt>
-                <dd>{{ number_format((float) $horario->hTrabajadas, 2) }}</dd>
+            <dl class="datos grid-2">
+                <div>
+                    <dt>Horas trabajadas</dt>
+                    <dd>{{ number_format((float) $horario->hTrabajadas, 2) }}</dd>
+                </div>
+                <div>
+                    <dt>¿Horario sugerido?</dt>
+                    <dd>
+                        <span class="pill {{ $horario->sugerido ? 'pill--info' : 'pill--neutro' }}">
+                            {{ $horario->sugerido ? 'Sí' : 'No' }}
+                        </span>
+                        @if ($horario->sugerido)
+                            <small style="display: block; color: var(--muted); margin-top: .35rem;">
+                                Se ofrece por defecto al dar de alta un contrato en Mamoré.
+                            </small>
+                        @endif
+                    </dd>
+                </div>
             </dl>
         </div>
     </div>

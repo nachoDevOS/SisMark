@@ -17,7 +17,14 @@
             @forelse ($horarios as $horario)
                 <tr>
                     <td><strong>{{ $horario->nombre_dia }}</strong></td>
-                    <td>{{ trim($horario->nombreTurno) }}</td>
+                    <td>
+                        {{ trim($horario->nombreTurno) }}
+                        {{-- El horario que se ofrece por defecto al dar de alta un
+                             contrato en Mamoré. Son varias filas, una por día. --}}
+                        @if ($horario->sugerido)
+                            <span class="pill pill--info" title="Se ofrece por defecto al dar de alta un contrato">Sugerido</span>
+                        @endif
+                    </td>
                     <td>{{ $horario->hEntrada?->format('H:i') }}</td>
                     <td>{{ $horario->hSalida?->format('H:i') }}</td>
                     <td>{{ $horario->hTolerancia?->format('H:i') }}</td>

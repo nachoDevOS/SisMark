@@ -173,20 +173,33 @@ test('el atraso se dispara con la tolerancia pero se mide contra la hora de entr
         ->and($dia['computado'])->toBe(7 * 3600 + 35 * 60);
 });
 
-test('la tolerancia es inclusive al segundo', function () {
+test('la tolerancia cubre hasta el último segundo de su minuto', function (string $marca) {
     asignarProc(turnoProc());
-    marcarProc(LUNES_PROC, '08:10:00', '16:00');
+    marcarProc(LUNES_PROC, $marca, '16:00');
 
-    expect(diaProc()['atraso'])->toBe(0);
-});
+    $dia = diaProc();
 
-test('un segundo después de la tolerancia ya es atraso', function () {
+    // Con entrada 08:00 y tolerancia 08:10 son diez minutos de gracia: mientras
+    // el reloj siga marcando las 08:10 van diez minutos, no once.
+    expect($dia['atraso'])->toBe(0)
+        ->and($dia['estado'])->toBe(ProcesadorAsistencia::CUMPLE)
+        // Sin atraso no hay déficit: la jornada se acredita entera.
+        ->and($dia['computado'])->toBe(8 * 3600);
+})->with(['08:10:00', '08:10:01', '08:10:30', '08:10:59']);
+
+test('pasado el minuto de tolerancia el atraso son minutos completos', function (string $marca) {
     asignarProc(turnoProc());
-    marcarProc(LUNES_PROC, '08:10:01', '16:00');
+    marcarProc(LUNES_PROC, $marca, '16:00');
 
-    expect(diaProc()['atraso'])->toBe(10 * 60 + 1)
-        ->and(ProcesadorAsistencia::desvio(diaProc()['atraso']))->toBe('10 min 1 seg');
-});
+    $dia = diaProc();
+
+    // 08:11:00 y 08:11:59 son los dos «11 minutos»: los segundos se descartan.
+    expect($dia['atraso'])->toBe(11 * 60)
+        ->and(ProcesadorAsistencia::desvio($dia['atraso']))->toBe('11 min')
+        ->and($dia['estado'])->toBe(ProcesadorAsistencia::ATRASO)
+        // Las horas descuentan los mismos once minutos que informa el atraso.
+        ->and($dia['computado'])->toBe(8 * 3600 - 11 * 60);
+})->with(['08:11:00', '08:11:01', '08:11:59']);
 
 test('la marca posterior a la máxima hora de entrada no vale como entrada', function () {
     asignarProc(turnoProc());

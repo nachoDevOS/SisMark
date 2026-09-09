@@ -99,11 +99,23 @@
 
     <div class="tarjeta" style="grid-column: 1 / -1;">
         <h2>Horas trabajadas</h2>
-        <div class="campo" style="max-width: 14rem; margin-bottom: 0;">
+        <div class="campo" style="max-width: 14rem;">
             <label for="HTrabajadas">Horas trabajadas <span class="req">*</span></label>
             <input type="number" id="HTrabajadas" name="HTrabajadas" step="0.01" min="0" max="24"
                    value="{{ old('HTrabajadas', $horario->hTrabajadas ?? '0.00') }}" required>
             @error('HTrabajadas') <div class="error">{{ $message }}</div> @enderror
+        </div>
+
+        <div class="campo check" style="margin-bottom: 0;">
+            <input type="checkbox" id="Sugerido" name="Sugerido" value="1"
+                   @checked(old('Sugerido', $horario->sugerido ?? false))>
+            <label for="Sugerido" style="margin: 0;">
+                Forma parte del horario sugerido
+                <small style="display: block; font-weight: 400; color: #6b7280;">
+                    Es el que se ofrece por defecto al dar de alta un contrato. Marcá un turno por
+                    cada día que se trabaja: el horario semanal son varias filas, una por día.
+                </small>
+            </label>
         </div>
     </div>
 </div>

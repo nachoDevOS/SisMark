@@ -47,24 +47,31 @@ return [
 
     /*
     | API externa de Datos Personales del sistema «Mamoré» (solo lectura).
-    | Se consulta por HTTP con el header X-API-KEY para listar/ver personas.
-    | `url` incluye el prefijo completo, p.ej. https://servidor/api/personal
+    |
+    | `token` es un token de Sanctum que **emite Mamoré** desde su pantalla
+    | `/admin/tokens-api`, con el alcance `personal:read`. Acá solo se pega:
+    | SisMark no genera nada para esta dirección.
+    |
+    | `origen` es el dominio con el que Mamoré tiene registrado a SisMark. Viaja
+    | en la cabecera `Origin` porque del otro lado la comparan y contestan 403 si
+    | falta. Vacío, se cae en `APP_URL`.
+    |
+    | `url` incluye el prefijo completo:
+    |   https://servidor/api/externo/personal
     */
     'mamore' => [
-        'url' => env('MAMORE_API_URL'),
-        'key' => env('MAMORE_API_KEY'),
+        'url' => env('MAMORE_URL'),
+        'token' => env('MAMORE_TOKEN'),
+        'origen' => env('MAMORE_ORIGIN'),
     ],
 
     /*
-    | API propia de asistencia (solo lectura), que exponemos a los sistemas
-    | externos. Hoy la consume Mamoré, para que cada funcionario vea sus
-    | propias marcaciones sin entrar a SisMark.
+    | La API propia de asistencia ya no se configura acá.
     |
-    | Es la contraparte de 'mamore': el mismo mecanismo de clave compartida,
-    | en la dirección opuesta. Vacía, la API rechaza todo con 503.
+    | Antes vivía en `sismark_api.key`: una sola clave compartida en el `.env`,
+    | igual para todos los consumidores. Ahora cada uno es una fila de
+    | `sistemas_externos` con su propio token de Sanctum, emitido con
+    | `php artisan sismark:token {slug}`. No hay nada que poner en el `.env`.
     */
-    'sismark_api' => [
-        'key' => env('SISMARK_API_KEY'),
-    ],
 
 ];

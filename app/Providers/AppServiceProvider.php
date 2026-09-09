@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Database\SqlServer2008Connection;
 use App\Models\Licencia;
 use App\Models\Role;
+use App\Models\SistemaExterno;
 use App\Policies\RolePolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Connection;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\View\View as Vista;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -58,15 +61,20 @@ class AppServiceProvider extends ServiceProvider
                 : 0);
         });
 
-        // Límite de la API de asistencia. Va por clave y no por IP: el sistema
-        // consumidor llama desde su servidor, así que todos sus pedidos —los de
-        // los ~4.600 funcionarios— llegan con la misma IP, y limitar por ahí
-        // dejaría sin servicio a todos por el tráfico normal de la institución.
-        // Con la clave, cada consumidor tiene su propia cuota.
-        RateLimiter::for('api', function (Request $request): Limit {
-            $clave = $request->header('X-API-KEY') ?: $request->bearerToken();
+        $this->configurarTokensDeSistemas();
 
-            return Limit::perMinute(300)->by($clave ?: $request->ip());
+        // Límite de la API de asistencia. Va por consumidor y no por IP: el
+        // sistema consumidor llama desde su servidor, así que todos sus pedidos
+        // —los de los ~4.600 funcionarios— llegan con la misma IP, y limitar por
+        // ahí dejaría sin servicio a todos por el tráfico normal de la
+        // institución. Con el token resuelto a su `SistemaExterno`, cada
+        // consumidor tiene su propia cuota y el exceso de uno no castiga al otro.
+        RateLimiter::for('api', function (Request $request): Limit {
+            $sistema = $request->user();
+
+            return Limit::perMinute(300)->by(
+                $sistema instanceof SistemaExterno ? 'sistema:'.$sistema->id : $request->ip()
+            );
         });
 
         // La vista de paginación por defecto de Laravel usa clases Tailwind
@@ -74,5 +82,36 @@ class AppServiceProvider extends ServiceProvider
         // (resources/views/vendor/pagination/custom.blade.php) acorde al
         // estilo del sitio, aplicada a todas las tablas paginadas.
         Paginator::defaultView('vendor.pagination.custom');
+    }
+
+    /**
+     * Regla propia de vigencia para los tokens de los sistemas consumidores.
+     *
+     * Sanctum solo mira si el token existe y no venció. Acá se agrega el
+     * interruptor: apagar o dar de baja un sistema tiene que cortarle el acceso
+     * en el **próximo pedido**, sin ir a borrarle los tokens uno por uno. Así
+     * una falsa alarma se revierte volviendo a encenderlo, en vez de coordinar
+     * una credencial nueva con el otro equipo.
+     *
+     * Los tokens que no sean de un `SistemaExterno` siguen con la regla de
+     * siempre: acá no se les cambia nada.
+     */
+    private function configurarTokensDeSistemas(): void
+    {
+        Sanctum::authenticateAccessTokensUsing(
+            function (PersonalAccessToken $token, bool $esValido): bool {
+                $duenio = $token->tokenable;
+
+                if (! $duenio instanceof SistemaExterno) {
+                    return $esValido;
+                }
+
+                if (! $duenio->activo || $duenio->trashed()) {
+                    return false;
+                }
+
+                return $esValido;
+            }
+        );
     }
 }

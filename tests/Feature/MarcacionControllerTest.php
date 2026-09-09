@@ -279,11 +279,11 @@ test('una fila con fecha basura futura del reloj (RTC) se descarta y no rompe el
 });
 
 test('la columna funcionario usa el nombre de Mamoré cuando existe', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['id' => 1, 'ci' => '777', 'full_name' => 'MARIELA CRUZ PORCO'],
         ], 200),
     ]);
@@ -316,8 +316,8 @@ test('la columna funcionario muestra el cargo que informa Mamoré', function () 
 });
 
 test('la columna funcionario cae a la BD local si no está en Mamoré', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake(['mamore.test/*' => Http::response(['message' => 'not found'], 404)]);
 
@@ -334,8 +334,8 @@ test('la columna funcionario cae a la BD local si no está en Mamoré', function
 });
 
 test('la columna funcionario muestra «Sin persona» si el CI no está en ningún sistema', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake(['mamore.test/*' => Http::response(['message' => 'not found'], 404)]);
 

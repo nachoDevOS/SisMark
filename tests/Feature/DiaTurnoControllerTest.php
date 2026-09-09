@@ -119,6 +119,83 @@ test('el listado filtra por día', function () {
         ->assertDontSee('Turno del martes');
 });
 
+test('el listado distingue con una etiqueta los horarios sugeridos', function () {
+    Turno::factory()->create(['nombreTurno' => 'El sugerido', 'sugerido' => true]);
+
+    $this->get(route('horarios.list'))
+        ->assertOk()
+        ->assertSee('El sugerido')
+        ->assertSee('Sugerido');
+});
+
+test('el listado no pone la etiqueta cuando ningún horario está marcado', function () {
+    Turno::factory()->count(3)->create(['sugerido' => false]);
+
+    $this->get(route('horarios.list'))
+        ->assertOk()
+        ->assertDontSee('>Sugerido<', false);
+});
+
+test('el listado filtra por horario sugerido', function () {
+    Turno::factory()->create(['nombreTurno' => 'El sugerido', 'sugerido' => true]);
+    Turno::factory()->create(['nombreTurno' => 'El comun', 'sugerido' => false]);
+
+    $this->get(route('horarios.list', ['sugerido' => '1']))
+        ->assertOk()
+        ->assertSee('El sugerido')
+        ->assertDontSee('El comun');
+
+    $this->get(route('horarios.list', ['sugerido' => '0']))
+        ->assertOk()
+        ->assertSee('El comun')
+        ->assertDontSee('El sugerido');
+});
+
+test('un valor raro en el filtro de sugeridos no filtra nada', function () {
+    Turno::factory()->create(['nombreTurno' => 'El sugerido', 'sugerido' => true]);
+    Turno::factory()->create(['nombreTurno' => 'El comun', 'sugerido' => false]);
+
+    // Cualquier cosa que no sea «0» ni «1» se trata como «sin filtrar», así un
+    // valor manipulado por la URL no cambia el listado por un camino no previsto.
+    $this->get(route('horarios.list', ['sugerido' => 'todos']))
+        ->assertOk()
+        ->assertSee('El sugerido')
+        ->assertSee('El comun');
+});
+
+test('el listado pone los sugeridos primero', function () {
+    // El sugerido va un día después, así que sin el orden propio saldría segundo.
+    Turno::factory()->create(['dia' => '2', 'nombreTurno' => 'El comun', 'sugerido' => false]);
+    Turno::factory()->create(['dia' => '3', 'nombreTurno' => 'El sugerido', 'sugerido' => true]);
+
+    $html = $this->get(route('horarios.list'))->assertOk()->getContent();
+
+    expect(strpos($html, 'El sugerido'))->toBeLessThan(strpos($html, 'El comun'));
+});
+
+test('el alta guarda si el horario es sugerido', function () {
+    $this->post(route('horarios.store'), datosDeHorario(['Sugerido' => '1']))
+        ->assertRedirect(route('horarios.index'));
+
+    expect(Turno::query()->first()->sugerido)->toBeTrue();
+});
+
+test('sin marcar la casilla, el horario nuevo no queda sugerido', function () {
+    $this->post(route('horarios.store'), datosDeHorario())
+        ->assertRedirect(route('horarios.index'));
+
+    expect(Turno::query()->first()->sugerido)->toBeFalse();
+});
+
+test('la edición puede desmarcar un horario sugerido', function () {
+    $horario = Turno::factory()->create(['sugerido' => true]);
+
+    $this->put(route('horarios.update', $horario), datosDeHorario())
+        ->assertRedirect(route('horarios.index'));
+
+    expect($horario->fresh()->sugerido)->toBeFalse();
+});
+
 test('muestra el formulario de edición con los datos actuales', function () {
     $horario = Turno::factory()->create(['nombreTurno' => 'Turno Tarde']);
 

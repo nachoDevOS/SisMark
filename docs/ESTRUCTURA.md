@@ -172,8 +172,11 @@ cargada. Si Mamoré no responde, el reporte no se emite.
 
 ### Tres detalles que explican casi todas las dudas
 
-- **El atraso lo dispara `hTolerancia`, pero se mide contra `hEntrada`.** A las
-  08:10:00 no hay atraso; a las 08:10:01 hay 10 min 1 seg.
+- **El atraso se cuenta en minutos completos desde `hEntrada`, y `hTolerancia`
+  se mide en la misma unidad.** Con entrada 08:00 y tolerancia 08:10 hay diez
+  minutos de gracia, así que el minuto 08:10 entero está adentro: a las 08:10:59
+  no hay atraso; a las 08:11:00 hay 11 min. Los segundos se descartan —el reloj
+  los registra, pero la tolerancia se concede en minutos—.
 - **Las horas computadas se acotan al turno.** Llegar dentro de la tolerancia
   cuenta como llegar en hora; quedarse de más no suma. La permanencia real
   viaja aparte, como dato.
@@ -214,13 +217,33 @@ Solo lectura, salvo un endpoint. La consumen los sistemas externos que necesitan
 mostrarle a un funcionario **su propia** asistencia sin darle acceso a SisMark.
 Hoy el único consumidor es Mamoré.
 
-**Autenticación:** clave compartida en `X-API-KEY` o `Authorization: Bearer`.
-Se define en `SISMARK_API_KEY`. Sin clave configurada, la API responde **503 a
-todo**: un servidor recién desplegado no puede quedar abierto. La comparación es
-en tiempo constante, para no filtrar la clave por el tiempo que tarda en fallar.
+**Autenticación: token de Sanctum** en `Authorization: Bearer`, emitido sobre un
+`App\Models\SistemaExterno` —no sobre un `User`— con
+`php artisan sismark:token {slug}`. Sin ningún sistema cargado no hay token
+posible y la API rechaza todo con **401**: un servidor recién desplegado no
+queda abierto.
 
-**Limitador:** `throttle:api`, por clave y no por IP — detrás de un proxy todos
-los pedidos llegan con la misma IP.
+Antes era una sola clave en `SISMARK_API_KEY`. Con una clave compartida no se le
+puede cortar el acceso a un consumidor sin cortárselo a todos, ni rotarla sin
+coordinar el mismo día con cada equipo, ni saber cuál pidió qué.
+
+| Pieza | Para qué |
+|---|---|
+| `sistemas_externos` | una fila por consumidor, con su interruptor `activo` |
+| `SistemaExterno::ALCANCES` | los cinco alcances, fuente única |
+| `AppServiceProvider::configurarTokensDeSistemas()` | apagar o dar de baja un sistema le corta el acceso en el próximo pedido, sin borrarle el token |
+| `config/sanctum.php` | `guard => []` (para que el tokenable no sea `User`) y `expiration => null` (credencial de máquina) |
+
+**Alcances:** `asistencia:read`, `licencias:read`, `licencias:write`,
+`turnos:read`, `turnos:write`. Van por área y no por endpoint: partirlos más
+fino obligaría a reemitir el token cada vez que se agrega una ruta.
+
+**Un sistema tiene un solo token vivo.** Emitir uno nuevo revoca el anterior, y
+el consumidor queda cortado hasta que lo cargue: no hay ventana de convivencia.
+
+**Limitador:** `throttle:api`, por consumidor y no por IP — detrás de un proxy
+todos los pedidos llegan con la misma IP, así que el exceso de uno castigaría al
+otro.
 
 | Método | Endpoint | Qué hace |
 |---|---|---|
@@ -257,8 +280,26 @@ constancia y nunca se reescribe.
 
 ## 8. Integración con Mamoré — la dirección opuesta
 
-Mismo mecanismo de clave compartida, al revés: SisMark consulta la API de
-Datos Personales con `X-API-KEY` (`MAMORE_API_URL`, `MAMORE_API_KEY`).
+Mismo mecanismo, al revés: SisMark consulta la API de Datos Personales de
+Mamoré (`/api/externo/personal`) con un **token de Sanctum que emite Mamoré**
+desde su pantalla `/admin/tokens-api`, con el alcance `personal:read`.
+
+| Variable | Para qué |
+|---|---|
+| `MAMORE_URL` | la URL con el prefijo completo |
+| `MAMORE_TOKEN` | el token que emitió Mamoré; acá solo se pega |
+| `MAMORE_ORIGIN` | el dominio con el que Mamoré tiene registrado a SisMark |
+
+`MAMORE_ORIGIN` viaja en la cabecera `Origin`: del otro lado la comparan contra
+el dominio de la ficha del sistema y contestan **403** si falta o no coincide.
+No es la puerta —el `Origin` se forja— sino una baranda: atrapa el token pegado
+en el sistema equivocado, que si no funcionaría perfecto y dejaría los logs
+mintiendo. Vacío, se cae en `APP_URL`.
+
+**Cada sistema emite el token de su propia API.** Mamoré emite el que usa
+SisMark para entrar acá; SisMark emite el que usa Mamoré para entrar a la API v1
+(§7). Un token de Sanctum no va firmado: su hash vive en la base que lo creó, así
+que el de un lado no lo puede validar el otro.
 
 | Servicio | Qué resuelve |
 |---|---|
@@ -406,6 +447,7 @@ MVC clásico de Laravel. El patrón se repite en todos los recursos:
 app/
 ├── Console/Commands/
 │   ├── Migrar*Sia.php                 # 7 comandos de migración del SIA
+│   ├── EmitirTokenSistema.php         # sismark:token {slug}
 │   └── SincronizarEquipos.php         # sismark:sincronizar-equipos
 ├── Database/
 │   ├── SqlServer2008Connection.php    # conexión sqlsrv con grammar propio
@@ -428,10 +470,10 @@ app/
 │   │   ├── MarcacionController.php
 │   │   ├── PersonaController.php      # funcionarios + solapas de la ficha
 │   │   └── ReporteMarcacionController.php
-│   ├── Middleware/VerifyApiKey.php    # clave compartida de la API v1
 │   └── Requests/                      # Store*/Update*/Revisar* por recurso
 ├── Models/
 │   ├── Sia/                           # solo lectura, conexión `sia`
+│   ├── SistemaExterno.php             # consumidor de la API v1, dueño del token
 │   └── *.php                          # base local
 ├── Policies/                          # una por modelo, autodescubiertas
 ├── Providers/AppServiceProvider.php   # conexión sqlsrv 2008, Gate::before

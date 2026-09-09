@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\SistemaExterno;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\Request as ClientRequest;
@@ -37,7 +38,7 @@ pest()->extend(TestCase::class)
 
         // Mamoré (API externa) desactivada por defecto: ningún test pega a la red
         // salvo los que la configuran y falsean la respuesta con Http::fake().
-        config()->set('services.mamore', ['url' => null, 'key' => null]);
+        config()->set('services.mamore', ['url' => null, 'token' => null, 'origen' => null]);
 
         // Caché limpia por test (evita arrastrar nombres de Mamoré cacheados).
         Cache::flush();
@@ -69,6 +70,33 @@ function asSuperAdmin(): User
 }
 
 /**
+ * Cabeceras con las que un sistema externo consume la API de asistencia.
+ *
+ * Emite un token de Sanctum sobre un `SistemaExterno` de prueba. Sin
+ * `$alcances` se le dan todos, que es lo que quiere la mayoría de los tests: los
+ * que prueban justamente el corte por alcance piden los suyos.
+ *
+ * Emite uno nuevo en cada llamada, sin cachear. Cachearlo en un `static` es la
+ * trampa obvia y no funciona: `RefreshDatabase` vacía la tabla entre tests, así
+ * que un token guardado de un test anterior deja de existir y el siguiente
+ * pedido se rechaza con 401 por un motivo que no tiene nada que ver con lo que
+ * se estaba probando.
+ *
+ * @param  list<string>  $alcances
+ * @param  array<string, string>  $extra
+ * @return array<string, string>
+ */
+function cabecerasApi(array $alcances = [], array $extra = []): array
+{
+    $token = SistemaExterno::query()
+        ->firstOrCreate(['slug' => 'pruebas'], ['nombre' => 'Sistema de pruebas'])
+        ->createToken('pruebas', $alcances ?: array_keys(SistemaExterno::ALCANCES))
+        ->plainTextToken;
+
+    return ['Authorization' => 'Bearer '.$token] + $extra;
+}
+
+/**
  * Configura la API de Mamoré y falsea sus dos endpoints (`/people` y
  * `/people/ci/{ci}`) con el padrón dado, para probar sin red las pantallas que
  * leen los datos personales de ahí.
@@ -82,8 +110,9 @@ function asSuperAdmin(): User
  */
 function fakeMamore(array $padron = []): void
 {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
+    config()->set('services.mamore.origen', 'http://sismark.test');
 
     $filas = collect($padron)
         ->map(function (string|array $datos, string $ci): array {
@@ -147,7 +176,7 @@ function fakeMamore(array $padron = []): void
         // De estos contratos depende qué días procesa el sistema, así que el
         // fake tiene que responder la misma forma que la API real: una lista
         // bajo `data`, con `start` y `finish`.
-        'mamore.test/api/personal/people/ci/*/contracts*' => function (ClientRequest $peticion) use ($filas) {
+        'mamore.test/api/externo/personal/people/ci/*/contracts*' => function (ClientRequest $peticion) use ($filas) {
             $partes = explode('/', trim((string) parse_url($peticion->url(), PHP_URL_PATH), '/'));
             $ci = urldecode($partes[count($partes) - 2] ?? '');
             $fila = $filas->firstWhere('ci', $ci);
@@ -155,7 +184,7 @@ function fakeMamore(array $padron = []): void
             return Http::response(['data' => $fila['contratos'] ?? []]);
         },
         // El patrón del detalle va primero: el del listado también lo alcanzaría.
-        'mamore.test/api/personal/people/ci/*' => function (ClientRequest $peticion) use ($filas) {
+        'mamore.test/api/externo/personal/people/ci/*' => function (ClientRequest $peticion) use ($filas) {
             $ci = urldecode(basename((string) parse_url($peticion->url(), PHP_URL_PATH)));
             $fila = $filas->firstWhere('ci', $ci);
 
@@ -163,7 +192,7 @@ function fakeMamore(array $padron = []): void
                 ? Http::response(['data' => $fila])
                 : Http::response(['message' => 'not found'], 404);
         },
-        'mamore.test/api/personal/people*' => function (ClientRequest $peticion) use ($filas) {
+        'mamore.test/api/externo/personal/people*' => function (ClientRequest $peticion) use ($filas) {
             parse_str((string) parse_url($peticion->url(), PHP_URL_QUERY), $parametros);
             $buscado = mb_strtolower(trim((string) ($parametros['search'] ?? '')));
 

@@ -58,11 +58,12 @@ test('la búsqueda SIAT por varias palabras cruza nombre y apellido', function (
 });
 
 test('el listado por defecto usa Mamoré y muestra sus personas', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
+    config()->set('services.mamore.origen', 'http://sismark.test');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [
                 ['id' => 25, 'ci' => '7654321', 'paternal_surname' => 'Perez', 'maternal_surname' => 'Gomez', 'first_name' => 'Juan', 'middle_name' => 'Carlos'],
             ],
@@ -76,16 +77,19 @@ test('el listado por defecto usa Mamoré y muestra sus personas', function () {
         ->assertSee('7654321')
         ->assertSee('Juan Carlos');
 
-    Http::assertSent(fn ($request) => $request->hasHeader('X-API-KEY', 'secreta')
+    // El token de Mamoré viaja como Bearer, y con el `Origin` que del otro lado
+    // comparan contra el dominio registrado.
+    Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer secreta')
+        && $request->hasHeader('Origin', 'http://sismark.test')
         && str_contains($request->url(), '/people'));
 });
 
 test('el listado muestra la foto que entrega Mamoré', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [
                 ['id' => 25, 'ci' => '7654321', 'paternal_surname' => 'Perez', 'maternal_surname' => 'Gomez',
                     'first_name' => 'Juan', 'middle_name' => 'Carlos',
@@ -127,11 +131,11 @@ test('una foto sin extensión reconocible se sirve tal cual', function () {
 });
 
 test('la ficha de Mamoré muestra la foto original del funcionario', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['ci' => '7654321', 'full_name' => 'Juan Perez', 'image' => 'https://cdn.test/people/juan.png'],
         ], 200),
     ]);
@@ -143,11 +147,11 @@ test('la ficha de Mamoré muestra la foto original del funcionario', function ()
 });
 
 test('la ficha de Mamoré cae en el ícono genérico si la persona no tiene foto', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['ci' => '7654321', 'full_name' => 'Juan Perez', 'image' => null],
         ], 200),
     ]);
@@ -161,11 +165,11 @@ test('la ficha de Mamoré cae en el ícono genérico si la persona no tiene foto
 });
 
 test('el listado cae en el ícono genérico cuando la persona de Mamoré no tiene foto', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [
                 ['id' => 26, 'ci' => '1111111', 'paternal_surname' => 'Rojas', 'first_name' => 'Ana', 'image' => null],
             ],
@@ -189,11 +193,11 @@ test('el listado SIAT no rompe por la foto: siempre muestra el ícono genérico'
 });
 
 test('el filtro «sin contrato» le pide a la API el listado de personas sin contrato', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [
                 ['id' => 9, 'ci' => '999', 'full_name' => 'PERSONA SIN CONTRATO', 'has_contract' => false],
             ],
@@ -212,11 +216,11 @@ test('el filtro «sin contrato» le pide a la API el listado de personas sin con
 });
 
 test('el listado publica los totales por situación de contrato para el select', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [['id' => 1, 'ci' => '111', 'full_name' => 'CUALQUIERA', 'has_contract' => true]],
             'meta' => [
                 'current_page' => 1, 'per_page' => 10, 'total' => 4595,
@@ -234,13 +238,13 @@ test('el listado publica los totales por situación de contrato para el select',
 });
 
 test('la lista muestra juntas a las personas con contrato y sin contrato', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     // Un único listado: la persona con contrato lo trae embebido, la que no
     // tiene viene con `contrato: null` y aparece igual en la tabla.
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [
                 [
                     'id' => 4772,
@@ -283,11 +287,11 @@ test('la lista muestra juntas a las personas con contrato y sin contrato', funct
 });
 
 test('el filtro «con contrato» le pide a la API solo los que tienen contrato', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [
                 [
                     'id' => 4772,
@@ -327,11 +331,11 @@ test('el filtro por contrato no aplica a la fuente SIAT', function () {
 });
 
 test('un valor raro en el filtro de contrato cae en «todos»', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [['id' => 1, 'ci' => '111', 'full_name' => 'CUALQUIERA']],
             'meta' => ['current_page' => 1, 'per_page' => 10, 'total' => 1],
         ], 200),
@@ -344,11 +348,11 @@ test('un valor raro en el filtro de contrato cae en «todos»', function () {
 });
 
 test('la búsqueda Mamoré por varias palabras se delega entera a la API', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [
                 ['id' => 1, 'ci' => '111', 'full_name' => 'SERGIO MILTON MORALES FLORES'],
             ],
@@ -366,11 +370,11 @@ test('la búsqueda Mamoré por varias palabras se delega entera a la API', funct
 });
 
 test('la búsqueda Mamoré de varias palabras pide una sola página, no un lote grande', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people*' => Http::response([
+        'mamore.test/api/externo/personal/people*' => Http::response([
             'data' => [],
             'meta' => ['total' => 0, 'per_page' => 25, 'current_page' => 1],
         ], 200),
@@ -383,8 +387,8 @@ test('la búsqueda Mamoré de varias palabras pide una sola página, no un lote 
 });
 
 test('la fuente Mamoré avisa si la API responde con error', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake(['mamore.test/*' => Http::response(['message' => 'no'], 401)]);
 
@@ -395,7 +399,7 @@ test('la fuente Mamoré avisa si la API responde con error', function () {
 
 test('la fuente Mamoré avisa si no está configurada', function () {
     config()->set('services.mamore.url', null);
-    config()->set('services.mamore.key', null);
+    config()->set('services.mamore.token', null);
 
     $this->get(route('funcionarios.list'))
         ->assertOk()
@@ -403,11 +407,11 @@ test('la fuente Mamoré avisa si no está configurada', function () {
 });
 
 test('la ficha de una persona de Mamoré se ve por cédula', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => [
                 'id' => 25, 'full_name' => 'Juan Carlos Perez Gomez', 'ci' => '7654321',
                 'full_ci' => '7654321-BE', 'phone' => '70000000', 'email' => 'juan@example.com',
@@ -422,11 +426,11 @@ test('la ficha de una persona de Mamoré se ve por cédula', function () {
 });
 
 test('la ficha de Mamoré muestra el contrato vigente del funcionario', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => [
                 'id' => 4772, 'full_name' => 'LUIS CARLOS ALPIRE DURAN', 'ci' => '7604314',
                 'has_contract' => true,
@@ -453,11 +457,11 @@ test('la ficha de Mamoré muestra el contrato vigente del funcionario', function
 });
 
 test('la ficha de Mamoré avisa cuando la persona no tiene contrato', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['id' => 500, 'full_name' => 'CLAUDIA VARGAS', 'ci' => '1938650', 'has_contract' => false, 'contrato' => null],
         ], 200),
     ]);
@@ -471,11 +475,11 @@ test('la ficha de Mamoré avisa cuando la persona no tiene contrato', function (
 });
 
 test('la ficha de Mamoré trae el panel AJAX de marcaciones con esa cédula', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['id' => 25, 'full_name' => 'IGNACIO MOLINA GUZMAN', 'ci' => '7633685'],
         ], 200),
     ]);
@@ -488,11 +492,11 @@ test('la ficha de Mamoré trae el panel AJAX de marcaciones con esa cédula', fu
 });
 
 test('la ficha de Mamoré ofrece el reporte imprimible solo si la cédula está en la base local', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['id' => 25, 'full_name' => 'IGNACIO MOLINA GUZMAN', 'ci' => '7633685'],
         ], 200),
     ]);
@@ -509,8 +513,8 @@ test('la ficha de Mamoré ofrece el reporte imprimible solo si la cédula está 
 });
 
 test('la ficha de Mamoré da 404 si la cédula no existe', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake(['mamore.test/*' => Http::response(['message' => 'not found'], 404)]);
 
@@ -693,11 +697,11 @@ test('la ficha del funcionario trae las tres solapas del pie', function () {
 });
 
 test('la ficha de Mamoré trae las mismas solapas', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['id' => 25, 'full_name' => 'Juan Carlos Perez Gomez', 'ci' => '7654321'],
         ], 200),
     ]);
@@ -719,10 +723,33 @@ test('el listado AJAX de turnos de la ficha lista los del funcionario', function
 
     $this->get(route('funcionarios.turnos.list', ['ci' => '7633685']))
         ->assertOk()
-        ->assertSee('LUN: 08:00 - 16:00')
         ->assertSee('Lunes')
+        ->assertSee('08:00')
+        ->assertSee('16:00')
         ->assertSee('Vigente')
         ->assertDontSee('TURNO AJENO');
+});
+
+test('el listado AJAX de turnos calla el nombre del turno cuando repite el día y el horario de la fila', function () {
+    // Como los nombra el SIA: el nombre no agrega nada que la fila no diga.
+    $repetido = Turno::factory()->create(['nombreTurno' => 'LUN: 08:00 - 16:00', 'dia' => '2']);
+    AsignacionTurno::factory()->create(['ci' => '7633685', 'turno_id' => $repetido->id]);
+
+    // El nombre sigue estando en el aviso de los botones; lo que no se repite
+    // es la línea bajo el día, que es lo que abultaba la fila.
+    $this->get(route('funcionarios.turnos.list', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertSee('Lunes')
+        ->assertDontSee('<div class="ayuda">', escape: false);
+});
+
+test('el listado AJAX de turnos muestra el nombre del turno cuando aporta algo', function () {
+    $conNombre = Turno::factory()->create(['nombreTurno' => 'GUARDIA NOCTURNA', 'dia' => '2']);
+    AsignacionTurno::factory()->create(['ci' => '7633685', 'turno_id' => $conNombre->id]);
+
+    $this->get(route('funcionarios.turnos.list', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertSee('<div class="ayuda">GUARDIA NOCTURNA</div>', escape: false);
 });
 
 test('el listado AJAX de turnos filtra por situación', function () {
@@ -887,7 +914,7 @@ test('el listado AJAX de turnos oculta concluir y eliminar cuando se pide sin ac
     // En el modal de licencia la tabla es solo de referencia.
     $this->get(route('funcionarios.turnos.list', ['ci' => '7633685', 'acciones' => 0]))
         ->assertOk()
-        ->assertSee('LUN: 08:00 - 16:00')
+        ->assertSee('08:00')
         ->assertDontSee('aria-label="Concluir"', escape: false)
         ->assertDontSee('aria-label="Eliminar"', escape: false);
 });
@@ -1066,7 +1093,7 @@ test('la ficha local se muestra igual si Mamoré no responde', function () {
     // Sin Mamoré configurado no hay de dónde sacar la extensión: la ficha sale
     // entera y ese dato queda en «—».
     config()->set('services.mamore.url', null);
-    config()->set('services.mamore.key', null);
+    config()->set('services.mamore.token', null);
 
     $this->get(route('funcionarios.show', $persona))
         ->assertOk()
@@ -1077,11 +1104,11 @@ test('la ficha local se muestra igual si Mamoré no responde', function () {
 test('la ficha de Mamoré muestra la extensión dentro de la cédula y no como campo aparte', function () {
     // Mamoré ya manda la cédula con su extensión en `full_ci`. Repetirla en un
     // campo suelto gastaba una fila entera para decir lo mismo dos veces.
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => [
                 'ci' => '7633685',
                 'extension' => 'BE',
@@ -1139,11 +1166,11 @@ test('el directorio conserva la extensión al normalizar una persona de Mamoré'
  */
 function fakeFichaMamoreConContrato(array $contrato): void
 {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => [
                 'ci' => '7654321',
                 'full_name' => 'Juan Perez',
@@ -1201,11 +1228,11 @@ test('una fecha de contrato con forma inesperada se muestra cruda y no rompe la 
 });
 
 test('la ficha de Mamoré no muestra la vigencia si la persona no tiene contrato', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['ci' => '7654321', 'full_name' => 'Juan Perez', 'has_contract' => false, 'contrato' => null],
         ], 200),
     ]);
@@ -1220,11 +1247,11 @@ test('la ficha de Mamoré junta los datos personales y el contacto en una sola t
     // Son la misma cosa —quién es la persona— y separarlos en dos tarjetas
     // dejaba a la de contacto, con cinco campos contra siete, al lado de un
     // hueco. La foto va al costado de los datos y no encima.
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => [
                 'ci' => '7654321',
                 'full_name' => 'Juan Perez',
@@ -1257,11 +1284,11 @@ test('la ficha de Mamoré junta los datos personales y el contacto en una sola t
 });
 
 test('la ficha de Mamoré marca el origen del dato en la cabecera y no en una franja aparte', function () {
-    config()->set('services.mamore.url', 'http://mamore.test/api/personal');
-    config()->set('services.mamore.key', 'secreta');
+    config()->set('services.mamore.url', 'http://mamore.test/api/externo/personal');
+    config()->set('services.mamore.token', 'secreta');
 
     Http::fake([
-        'mamore.test/api/personal/people/ci/*' => Http::response([
+        'mamore.test/api/externo/personal/people/ci/*' => Http::response([
             'data' => ['ci' => '7654321', 'full_name' => 'Juan Perez', 'has_contract' => true],
         ], 200),
     ]);
