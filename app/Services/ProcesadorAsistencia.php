@@ -159,8 +159,6 @@ class ProcesadorAsistencia
     public function procesar(string $ci, Carbon $desde, Carbon $hasta): Collection
     {
         $ci = trim($ci);
-        $desde = $desde->copy()->startOfDay();
-        $hasta = $hasta->copy()->startOfDay();
 
         // **La primera puerta es el contrato**, antes que el turno: un día que
         // ningún contrato cubre no se controla, aunque haya turno asignado y
@@ -168,10 +166,36 @@ class ProcesadorAsistencia
         // para que lo hereden todos los consumidores —el reporte procesado, su
         // imprimible, el Excel, la API de asistencia y el régimen del RIP— sin
         // tener que acordarse en cada uno.
-        //
-        // `null` es «no se conocen los contratos» —Mamoré sin configurar— y se
-        // procesa todo, como antes. Vacío es «no tuvo contrato», que sí excluye.
-        $tramos = $this->contratos->tramos($ci, $desde, $hasta);
+        $tramos = $this->contratos->tramos(
+            $ci,
+            $desde->copy()->startOfDay(),
+            $hasta->copy()->startOfDay(),
+        );
+
+        return $this->procesarConTramos($ci, $desde, $hasta, $tramos);
+    }
+
+    /**
+     * Lo mismo, pero con los contratos ya consultados por quien llama.
+     *
+     * Es para el reporte por dirección: ahí los tramos de toda la plantilla se
+     * traen en una sola petición por lote, y volver a preguntarlos persona por
+     * persona sería repetir cientos de viajes que ya se hicieron —con una cuota
+     * de 60 pedidos por minuto, el reporte no llegaría a terminar—.
+     *
+     * `$tramos` en `null` es «no se conocen los contratos» —Mamoré sin
+     * configurar— y se procesa todo el rango. Vacío es «no tuvo contrato», que
+     * sí excluye cada día. La distinción es la misma de {@see ContratosFuncionario}
+     * y no puede aplanarse: confundirlas imputa faltas o las perdona de más.
+     *
+     * @param  list<array{desde: Carbon, hasta: ?Carbon}>|null  $tramos
+     * @return Collection<int, Dia>
+     */
+    public function procesarConTramos(string $ci, Carbon $desde, Carbon $hasta, ?array $tramos): Collection
+    {
+        $ci = trim($ci);
+        $desde = $desde->copy()->startOfDay();
+        $hasta = $hasta->copy()->startOfDay();
 
         $asignaciones = $this->asignacionesDelRango($ci, $desde, $hasta);
         $excepcionales = $this->excepcionalesDelRango($desde, $hasta);

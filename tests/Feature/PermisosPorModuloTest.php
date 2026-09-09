@@ -3,36 +3,12 @@
 use App\Models\AsignacionTurno;
 use App\Models\Equipo;
 use App\Models\Turno;
-use App\Models\User;
-use App\Policies\RolePolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
-/**
- * Usuario con exactamente los permisos pedidos y ninguno más, para comprobar
- * dónde corta cada módulo. No usa `asSuperAdmin()`: ese rol pasa por el
- * `Gate::before` de AppServiceProvider y puede todo sin permisos asignados.
- *
- * @param  list<string>  $permisos
- */
-function usuarioCon(array $permisos): User
-{
-    foreach (RolePolicy::nombresDePermiso() as $nombre) {
-        Permission::firstOrCreate(['name' => $nombre, 'guard_name' => 'web']);
-    }
-
-    // Nombre único: cada prueba arma más de un usuario para comparar el antes y
-    // el después, y el nombre del rol es clave única.
-    static $numero = 0;
-
-    $rol = Role::create(['name' => 'acotado_'.(++$numero), 'guard_name' => 'web']);
-    $rol->givePermissionTo($permisos);
-
-    return User::factory()->create()->assignRole($rol);
-}
+// `usuarioCon()` vive en tests/Pest.php: la comparten esta suite y la de
+// «Tokens de API», que prueba lo mismo sobre su propio módulo.
 
 test('el escritorio exige su propio permiso', function () {
     // Antes no pedía ninguno: lo veía cualquiera con sesión abierta.

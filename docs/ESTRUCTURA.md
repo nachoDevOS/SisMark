@@ -218,10 +218,9 @@ mostrarle a un funcionario **su propia** asistencia sin darle acceso a SisMark.
 Hoy el único consumidor es Mamoré.
 
 **Autenticación: token de Sanctum** en `Authorization: Bearer`, emitido sobre un
-`App\Models\SistemaExterno` —no sobre un `User`— con
-`php artisan sismark:token {slug}`. Sin ningún sistema cargado no hay token
-posible y la API rechaza todo con **401**: un servidor recién desplegado no
-queda abierto.
+`App\Models\SistemaExterno` —no sobre un `User`—. Sin ningún sistema cargado no
+hay token posible y la API rechaza todo con **401**: un servidor recién
+desplegado no queda abierto.
 
 Antes era una sola clave en `SISMARK_API_KEY`. Con una clave compartida no se le
 puede cortar el acceso a un consumidor sin cortárselo a todos, ni rotarla sin
@@ -233,6 +232,7 @@ coordinar el mismo día con cada equipo, ni saber cuál pidió qué.
 | `SistemaExterno::ALCANCES` | los cinco alcances, fuente única |
 | `AppServiceProvider::configurarTokensDeSistemas()` | apagar o dar de baja un sistema le corta el acceso en el próximo pedido, sin borrarle el token |
 | `config/sanctum.php` | `guard => []` (para que el tokenable no sea `User`) y `expiration => null` (credencial de máquina) |
+| `sistema_externo_auditorias` | quién emitió o revocó cada token, cuándo y desde dónde |
 
 **Alcances:** `asistencia:read`, `licencias:read`, `licencias:write`,
 `turnos:read`, `turnos:write`. Van por área y no por endpoint: partirlos más
@@ -240,6 +240,39 @@ fino obligaría a reemitir el token cada vez que se agrega una ruta.
 
 **Un sistema tiene un solo token vivo.** Emitir uno nuevo revoca el anterior, y
 el consumidor queda cortado hasta que lo cargue: no hay ventana de convivencia.
+
+### Dónde se emite
+
+La pantalla **«Tokens de API»** (`/tokens-api`): alta y baja de consumidores,
+interruptor `activo`, emisión y revocación.
+
+**La pantalla emite siempre con todos los alcances.** Elegirlos de a uno obliga a
+saber de antemano qué endpoints va a usar el consumidor, que es justo lo que no
+se sabe al darlo de alta, y equivocarse ahí se manifiesta como un 403 del otro
+lado que manda a buscar el problema al lado equivocado. El corte fino sigue
+existiendo, por consola: `sismark:token {slug} --alcance=…`.
+
+Emitir pide **su propio permiso** (`Token:SistemaExterno`) y **la contraseña** de
+quien lo hace. No sale de `Update:SistemaExterno` a propósito: administrar la
+ficha de un consumidor es una cosa, y entregar la credencial que abre la
+asistencia de los ~4.600 funcionarios es otra. El token se muestra **una sola
+vez** —la base guarda solo su hash— y la emisión va limitada a 5 por hora y por
+usuario.
+
+Dar de alta un nombre corto que existe **dado de baja** reactiva esa ficha en vez
+de rechazarla: el índice único no distingue `deleted_at`, y rechazarla dejaría ese
+slug quemado sin pantalla desde donde recuperarlo. Al reactivar se le revoca el
+token que tenía, porque quien da de alta puede ser otro equipo que eligió el
+mismo nombre.
+
+`php artisan sismark:token {slug}` queda como respaldo: es el camino cuando la
+pantalla no sirve —un despliegue nuevo, sin usuarios ni roles todavía—. Anota en
+la misma bitácora, sin usuario.
+
+Fuera de producción, `IntegracionMamoreSeeder` —al final de `MigrarSiaSeeder`—
+deja sembrado un token de **texto fijo** y marca el horario sugerido, para que un
+`migrate:fresh` no obligue a reemitir la credencial ni a volver a tocar el `.env`
+de Mamoré. En producción se planta y no siembra nada.
 
 **Limitador:** `throttle:api`, por consumidor y no por IP — detrás de un proxy
 todos los pedidos llegan con la misma IP, así que el exceso de uno castigaría al
@@ -254,6 +287,45 @@ otro.
 | `GET` | `/api/v1/funcionarios/{ci}/licencias/{id}/respaldo` | enlace temporal al certificado |
 | `POST` | `/api/v1/funcionarios/{ci}/licencias` | el funcionario solicita una licencia |
 | `DELETE` | `/api/v1/funcionarios/{ci}/licencias/{id}` | baja de su propia solicitud, mientras siga «Pendiente» |
+| `GET` | `/api/v1/turnos/sugeridos` | el horario que se propone al dar de alta un contrato |
+| `POST` | `/api/v1/funcionarios/{ci}/turnos` | le asigna el horario por la vigencia del contrato |
+| `PUT` | `/api/v1/funcionarios/{ci}/turnos` | mueve esa vigencia cuando el contrato cambia de fechas |
+| `DELETE` | `/api/v1/funcionarios/{ci}/turnos` | baja lógica del horario cuando el contrato se anula |
+
+### El horario y la vigencia del contrato
+
+`POST` asigna, `PUT` mueve, `DELETE` da de baja. Los tres van atados al contrato
+por `contrato_id`, que es lo que permite saber **cuáles** de las asignaciones de
+un funcionario hay que tocar con él. Se guarda el id y no el código porque
+Mamoré regenera el código cuando cambia el año de inicio o la dirección
+administrativa. Los tres filtran además por cédula: sola, una cédula equivocada
+del otro lado tocaría el horario de quien no corresponde.
+
+El `POST` es idempotente sobre `(ci, idTurno, desde)`: reintentarlo no duplica.
+El `PUT` mueve las filas de ese contrato y **crea las que falten**, para el
+contrato anterior a esta integración o aquel cuyo alta falló. El `DELETE` marca
+`deleted_at` y contesta `eliminados: 0` —no un error— si no había nada.
+
+**La baja es lógica y la fila se queda.** El turno es el respaldo de por qué a
+esa persona se le exigió marcar en esas fechas: borrarlo dejaría sin explicación
+los atrasos y las faltas ya imputadas mientras el contrato estuvo vigente. El
+reporte igual deja de contarlos —el contrato es la primera puerta del
+procesador—; la baja es para que el horario no siga en pantalla como si esa
+persona tuviera que ir a trabajar.
+
+**Volver a cargar un contrato anulado revive sus filas.** La única de
+`asignacion_turnos` no distingue `deleted_at`, así que sin eso la fila muerta
+bloquearía el alta y el funcionario quedaría sin horario —o sea sin control de
+asistencia— sin que nadie lo note. Solo se revive lo del **mismo** contrato: una
+baja de otro contrato en la misma terna se informa como `omitidos`.
+
+> **Por qué el `PUT` importa más de lo que parece.** Una adenda que renueva deja
+> al contrato cubriendo días que el turno no cubre, y `ProcesadorAsistencia` los
+> resuelve como «no laborable»: esa persona queda **sin control de asistencia** y
+> nadie se entera hasta el reporte del mes. Concluir un contrato antes de tiempo
+> es inofensivo —el contrato es la primera puerta del procesador, así que un día
+> sin contrato no se procesa aunque sobre el turno— pero deja el horario
+> mintiendo en pantalla.
 
 > **La clave autentica al sistema, no a la persona.** Quién es el funcionario lo
 > decide el consumidor desde su propia sesión. Por eso, en los endpoints donde
@@ -458,8 +530,10 @@ app/
 ├── Http/
 │   ├── Controllers/
 │   │   ├── Api/
+│   │   │   ├── AsignacionTurnoApiController.php      # asigna el turno del contrato
 │   │   │   ├── AsistenciaFuncionarioController.php   # los GET de la API v1
-│   │   │   └── SolicitudLicenciaController.php       # POST y DELETE
+│   │   │   ├── SolicitudLicenciaController.php       # POST y DELETE
+│   │   │   └── TurnoSugeridoController.php           # el horario sugerido
 │   │   ├── AsignacionTurnoController.php
 │   │   ├── Auth/LoginController.php
 │   │   ├── DashboardController.php
@@ -469,11 +543,13 @@ app/
 │   │   ├── LicenciaController.php
 │   │   ├── MarcacionController.php
 │   │   ├── PersonaController.php      # funcionarios + solapas de la ficha
-│   │   └── ReporteMarcacionController.php
+│   │   ├── ReporteMarcacionController.php
+│   │   └── SistemaExternoController.php  # «Tokens de API»
 │   └── Requests/                      # Store*/Update*/Revisar* por recurso
 ├── Models/
 │   ├── Sia/                           # solo lectura, conexión `sia`
 │   ├── SistemaExterno.php             # consumidor de la API v1, dueño del token
+│   ├── SistemaExternoAuditoria.php    # bitácora de emisión y revocación
 │   └── *.php                          # base local
 ├── Policies/                          # una por modelo, autodescubiertas
 ├── Providers/AppServiceProvider.php   # conexión sqlsrv 2008, Gate::before

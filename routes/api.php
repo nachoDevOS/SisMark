@@ -37,7 +37,9 @@ use Illuminate\Support\Facades\Route;
 | por área y no por endpoint: partirlos más fino obligaría a reemitir el token
 | de Mamoré cada vez que se agrega una ruta.
 |
-| Emisión: `php artisan sismark:token {slug}`.
+| Emisión: pantalla «Tokens de API» (`/tokens-api`), con su permiso propio, la
+| contraseña de quien la hace y bitácora. Por consola, de respaldo:
+| `php artisan sismark:token {slug}`.
 |
 | El limitador es por consumidor y no por IP: detrás de un proxy todos los
 | pedidos llegan con la misma IP, así que limitar por ahí castigaría a un
@@ -103,4 +105,20 @@ Route::middleware(['auth:sanctum', 'throttle:api'])
         Route::post('funcionarios/{ci}/turnos', [AsignacionTurnoApiController::class, 'store'])
             ->middleware('abilities:turnos:write')
             ->name('api.funcionarios.turnos.store');
+
+        // Mueve la vigencia de lo ya asignado cuando el contrato cambia de
+        // fechas: una adenda que renueva, una conclusión anticipada, una fecha
+        // corregida. Sin esto, extender un contrato dejaba los días nuevos sin
+        // turno y por lo tanto sin control de asistencia.
+        Route::put('funcionarios/{ci}/turnos', [AsignacionTurnoApiController::class, 'update'])
+            ->middleware('abilities:turnos:write')
+            ->name('api.funcionarios.turnos.update');
+
+        // Baja lógica del horario cuando el contrato se anula. La fila se queda
+        // con `deleted_at`: el turno es el respaldo de por qué se le exigió
+        // marcar a esa persona en esas fechas, y borrarlo dejaría sin
+        // explicación las faltas que ya se le imputaron.
+        Route::delete('funcionarios/{ci}/turnos', [AsignacionTurnoApiController::class, 'destroy'])
+            ->middleware('abilities:turnos:write')
+            ->name('api.funcionarios.turnos.destroy');
     });

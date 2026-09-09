@@ -6,6 +6,7 @@ use App\Providers\AppServiceProvider;
 use App\Traits\RegistersUserEvents;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -86,6 +87,37 @@ class SistemaExterno extends Model
     public function scopeActivo(Builder $query): Builder
     {
         return $query->where('activo', true);
+    }
+
+    /**
+     * Quién emitió o revocó tokens de este sistema.
+     *
+     * @return HasMany<SistemaExternoAuditoria, $this>
+     */
+    public function bitacora(): HasMany
+    {
+        return $this->hasMany(SistemaExternoAuditoria::class, 'sistema_externo_id');
+    }
+
+    /**
+     * Anota una emisión o una revocación en la bitácora.
+     *
+     * Vive acá y no en el controlador para que el comando de consola y la
+     * pantalla dejen la misma fila. Sin esto, un token emitido desde el
+     * servidor no aparecería en ningún lado.
+     *
+     * @param  list<string>  $alcances
+     */
+    public function anotar(string $accion, ?int $tokenId = null, array $alcances = [], ?int $usuarioId = null, ?string $ip = null): void
+    {
+        $this->bitacora()->create([
+            'token_id' => $tokenId,
+            'accion' => $accion,
+            'alcances' => $alcances === [] ? null : implode(', ', $alcances),
+            'user_id' => $usuarioId,
+            'ip' => $ip,
+            'created_at' => now(),
+        ]);
     }
 
     /**

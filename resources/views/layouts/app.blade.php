@@ -714,9 +714,11 @@
                 'reportes' => request()->routeIs('reportes.*'),
                 'reporte-sin-procesar' => request()->routeIs('reportes.marcaciones.sin-procesar*'),
                 'reporte-procesado' => request()->routeIs('reportes.marcaciones.procesado*'),
+                'reporte-direccion' => request()->routeIs('reportes.marcaciones.direccion*'),
                 'equipos' => request()->routeIs('equipos.*'),
                 'usuarios' => request()->routeIs('usuarios.*'),
                 'roles' => request()->routeIs('roles.*'),
+                'tokens-api' => request()->routeIs('tokens-api.*'),
             ];
             // El grupo «Parámetros» arranca desplegado cuando la pantalla actual
             // es una de las suyas; si no, el ítem activo quedaría escondido.
@@ -798,6 +800,9 @@
                     <a href="{{ route('reportes.marcaciones.procesado') }}" @class(['sidebar__sublink', 'activo' => $enMenu['reporte-procesado']]) title="Marcaciones procesadas"@if ($enMenu['reporte-procesado']) aria-current="page"@endif>
                         <x-heroicon-o-clipboard-document-list /><span class="sidebar__texto">Procesado</span>
                     </a>
+                    <a href="{{ route('reportes.marcaciones.direccion') }}" @class(['sidebar__sublink', 'activo' => $enMenu['reporte-direccion']]) title="Marcaciones por dirección"@if ($enMenu['reporte-direccion']) aria-current="page"@endif>
+                        <x-heroicon-o-building-office-2 /><span class="sidebar__texto">Por dirección</span>
+                    </a>
                 </div>
             </div>
             @can('ViewAny:Equipo')
@@ -813,6 +818,11 @@
             @can('ViewAny:Role')
                 <a href="{{ route('roles.index') }}" @class(['sidebar__link', 'activo' => $enMenu['roles']]) title="Roles"@if ($enMenu['roles']) aria-current="page"@endif>
                     <x-heroicon-o-shield-check /><span class="sidebar__texto">Roles</span>
+                </a>
+            @endcan
+            @can('ViewAny:SistemaExterno')
+                <a href="{{ route('tokens-api.index') }}" @class(['sidebar__link', 'activo' => $enMenu['tokens-api']]) title="Tokens de API"@if ($enMenu['tokens-api']) aria-current="page"@endif>
+                    <x-heroicon-o-key /><span class="sidebar__texto">Tokens de API</span>
                 </a>
             @endcan
 

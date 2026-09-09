@@ -35,6 +35,7 @@ class AsignacionTurno extends Model
         'turno_id',
         'desde',
         'hasta',
+        'contrato_id',
         'observacion',
         'estado',
     ];
@@ -47,6 +48,7 @@ class AsignacionTurno extends Model
         return [
             'desde' => 'datetime',
             'hasta' => 'datetime',
+            'contrato_id' => 'integer',
         ];
     }
 
@@ -88,6 +90,19 @@ class AsignacionTurno extends Model
     public function scopeVigenteEn(Builder $query, CarbonInterface $fecha): Builder
     {
         return $query->whereDate('desde', '<=', $fecha)->whereDate('hasta', '>=', $fecha);
+    }
+
+    /**
+     * Las asignaciones que nacieron de un contrato de Mamoré.
+     *
+     * Son varias y no una: un horario semanal es un turno por cada día que se
+     * trabaja, así que el contrato de lunes a viernes deja cinco filas con el
+     * mismo `contrato_id`. Se mueven todas juntas cuando la vigencia del
+     * contrato cambia.
+     */
+    public function scopeDelContrato(Builder $query, int $contratoId): Builder
+    {
+        return $query->where('contrato_id', $contratoId);
     }
 
     /**

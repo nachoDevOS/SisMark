@@ -39,14 +39,19 @@ test('el seeder corre toda la migración del SIA en orden y resuelve turno_id', 
     expect(DB::table('asignacion_turnos')->value('turno_id'))->toBe($turnoId);
 });
 
-test('la migración no marca ningún horario como sugerido', function () {
+test('copiar los horarios del SIA no marca ninguno como sugerido', function () {
     DiaTurno::factory()->count(3)->create();
 
-    $this->seed(MigrarSiaSeeder::class);
+    $this->artisan('sia:migrar-horarios')->assertSuccessful();
 
     // Cuál es el horario sugerido lo decide Recursos Humanos desde la pantalla
-    // de Horarios. Migrar los datos del SIA no puede elegirlo por ellos: un
+    // de Horarios. Copiar los datos del SIA no puede elegirlo por ellos: un
     // horario marcado solo es el que alguien marcó a propósito.
+    //
+    // Se prueba sobre el comando y no sobre `MigrarSiaSeeder` entero porque el
+    // seeder termina llamando a `IntegracionMamoreSeeder`, que fuera de
+    // producción sí deja marcado el horario general para no tener que
+    // rehacerlo después de cada `migrate:fresh`. El comando de copia, nunca.
     expect(DB::table('turnos')->where('sugerido', true)->count())->toBe(0);
 });
 

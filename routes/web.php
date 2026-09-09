@@ -11,6 +11,7 @@ use App\Http\Controllers\MarcacionController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\ReporteMarcacionController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SistemaExternoController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -48,6 +49,28 @@ Route::middleware('auth')->group(function (): void {
         ->except('show');
     // Roles y su matriz de permisos.
     Route::resource('roles', RoleController::class)->except('show');
+
+    /*
+    | Tokens de API: los sistemas que consumen la API v1 de asistencia.
+    |
+    | Emitir acá es dar acceso a la asistencia de los ~4.600 funcionarios con
+    | una credencial que no caduca, así que la emisión y la revocación tienen su
+    | propio permiso (`Token:SistemaExterno`), aparte del de editar la ficha.
+    |
+    | El limitador de la emisión es por usuario y no por IP: varias personas de
+    | Recursos Humanos comparten la salida a internet de la Gobernación, y por IP
+    | el tope de una les cortaría a todas.
+    */
+    Route::get('tokens-api/ajax/list', [SistemaExternoController::class, 'list'])->name('tokens-api.list');
+    Route::post('tokens-api/{sistema}/toggle', [SistemaExternoController::class, 'toggleActivo'])->name('tokens-api.toggle');
+    Route::post('tokens-api/{sistema}/tokens', [SistemaExternoController::class, 'emitirToken'])
+        ->middleware('throttle:5,60')
+        ->name('tokens-api.tokens.emitir');
+    Route::delete('tokens-api/{sistema}/tokens/{token}', [SistemaExternoController::class, 'revocarToken'])
+        ->whereNumber('token')
+        ->name('tokens-api.tokens.revocar');
+    Route::resource('tokens-api', SistemaExternoController::class)
+        ->parameters(['tokens-api' => 'sistema']);
 
     // Funcionarios (solo lectura). Listado con dos fuentes (Mamoré/SIAT) y ficha.
     // La ficha por cédula de Mamoré va antes del resource para que no la capture
@@ -131,6 +154,15 @@ Route::middleware('auth')->group(function (): void {
     // excepcionales y las licencias, con entradas, salidas, atrasos y horas.
     Route::get('reportes/marcaciones/procesado', [ReporteMarcacionController::class, 'procesado'])->name('reportes.marcaciones.procesado');
     Route::get('reportes/marcaciones/procesado/generar', [ReporteMarcacionController::class, 'procesadoList'])->name('reportes.marcaciones.procesado.generar');
+    // El mismo procesado pero de una dirección administrativa entera: una fila
+    // por funcionario con sus totales del rango. El individual obliga a saber de
+    // antemano a quién mirar, así que el atraso de quien nadie consultó no
+    // aparecía nunca.
+    Route::get('reportes/marcaciones/direccion', [ReporteMarcacionController::class, 'porDireccion'])->name('reportes.marcaciones.direccion');
+    Route::get('reportes/marcaciones/direccion/generar', [ReporteMarcacionController::class, 'porDireccionList'])->name('reportes.marcaciones.direccion.generar');
+    // Combo de direcciones. Va por AJAX porque el conteo de cada una depende del
+    // rango elegido.
+    Route::get('reportes/marcaciones/direcciones', [ReporteMarcacionController::class, 'direcciones'])->name('reportes.marcaciones.direcciones');
     // Búsqueda JSON de funcionarios para el combo (select2) del reporte.
     Route::get('reportes/marcaciones/funcionarios', [ReporteMarcacionController::class, 'buscarFuncionarios'])->name('reportes.marcaciones.funcionarios');
 });

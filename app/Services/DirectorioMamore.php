@@ -72,6 +72,135 @@ class DirectorioMamore
     }
 
     /**
+     * Filas por página al recorrer una dirección. 100 es el tope de la API, y
+     * conviene usarlo entero: la cuota es de 60 pedidos por minuto, así que
+     * pedir de a 20 gastaría cinco veces más cupo para traer lo mismo.
+     */
+    private const POR_PAGINA = 100;
+
+    /**
+     * Tope de páginas que se recorren de una dirección. Ninguna de la
+     * Gobernación llega a 1.000 funcionarios; el corte está para que un cambio
+     * del otro lado no deje el reporte pidiendo páginas para siempre.
+     */
+    private const PAGINAS_MAXIMAS = 10;
+
+    /**
+     * La estructura administrativa para los combos del reporte: direcciones y
+     * unidades, ya ordenadas por Mamoré y con cuánta gente tuvo cada una en el
+     * rango.
+     *
+     * Las dos vienen del mismo pedido a `/catalogos` a propósito: son pocas
+     * filas y la unidad se elige recién después de la dirección, así que pedirlas
+     * aparte gastaría un segundo viaje —de una cuota de 60 por minuto— para
+     * traer algo que ya estaba en el primero.
+     *
+     * Se piden solo las que tienen a alguien: un reporte de una dirección vacía
+     * no tiene filas que mostrar, y el combo con 70 opciones muertas obliga a
+     * probar de a una para descubrir cuál sirve.
+     *
+     * @return array{direcciones: Collection<int, array{id: int, nombre: string, sigla: string, funcionarios: int}>, unidades: Collection<int, array{id: int, direccionId: ?int, nombre: string, sigla: string, funcionarios: int}>}
+     *
+     * @throws MamoreException
+     */
+    public function estructura(?string $desde = null, ?string $hasta = null): array
+    {
+        $catalogos = $this->mamore->catalogos(
+            activas: false,
+            conContratos: true,
+            desde: $desde,
+            hasta: $hasta,
+        );
+
+        return [
+            'direcciones' => collect($catalogos['direcciones'])
+                ->map(fn (array $fila): array => $this->filaDeEstructura($fila))
+                ->values(),
+            'unidades' => collect($catalogos['unidades'])
+                ->map(fn (array $fila): array => $this->filaDeEstructura($fila) + [
+                    // De qué dirección cuelga, para filtrar el combo sin otro
+                    // viaje cuando se elige una.
+                    'direccionId' => isset($fila['direccion_administrativa_id'])
+                        ? (int) $fila['direccion_administrativa_id']
+                        : null,
+                ])
+                ->values(),
+        ];
+    }
+
+    /**
+     * Una dirección o una unidad reducida a lo que pinta el combo.
+     *
+     * @param  array<string, mixed>  $fila
+     * @return array{id: int, nombre: string, sigla: string, funcionarios: int}
+     */
+    private function filaDeEstructura(array $fila): array
+    {
+        return [
+            'id' => (int) $fila['id'],
+            'nombre' => trim((string) ($fila['nombre'] ?? '')) ?: 'Sin nombre',
+            'sigla' => trim((string) ($fila['sigla'] ?? '')),
+            // Personas distintas, no contratos: en un rango alguien puede tener
+            // dos —una renovación, o un pase de dirección—, y contar contratos
+            // ponía «(221)» arriba de una tabla de 220 filas. El conteo de
+            // contratos queda de respaldo por si la API es vieja y todavía no
+            // manda el de funcionarios.
+            'funcionarios' => (int) ($fila['funcionarios_count'] ?? $fila['contratos_count'] ?? 0),
+        ];
+    }
+
+    /**
+     * Las personas que estuvieron en una dirección durante el rango, ya
+     * normalizadas.
+     *
+     * El rango es lo que hace que la lista sea histórica y no una foto de hoy:
+     * con fechas, Mamoré cuenta también los contratos concluidos, así que entra
+     * quien se fue a mitad del período. Trabajó esos días y marcó; dejarlo
+     * afuera sería perderlo en silencio.
+     *
+     * Recorre la paginación de la API hasta agotarla, porque el reporte necesita
+     * la plantilla entera y no una página.
+     *
+     * Con `$unidad` se acota a una unidad administrativa de esa dirección; en
+     * `null` salen todas, que es el caso normal.
+     *
+     * @return Collection<int, array<string, mixed>>
+     *
+     * @throws MamoreException
+     */
+    public function porDireccion(int $direccion, string $desde, string $hasta, ?int $unidad = null): Collection
+    {
+        $personas = collect();
+
+        for ($pagina = 1; $pagina <= self::PAGINAS_MAXIMAS; $pagina++) {
+            $respuesta = $this->mamore->people(
+                page: $pagina,
+                limit: self::POR_PAGINA,
+                direccion: $direccion,
+                desde: $desde,
+                hasta: $hasta,
+                unidad: $unidad,
+            );
+
+            $filas = $respuesta['data'] ?? [];
+
+            if ($filas === []) {
+                break;
+            }
+
+            $personas = $personas->concat($this->normalizar($filas));
+
+            if (count($filas) < self::POR_PAGINA) {
+                break;
+            }
+        }
+
+        // Sin cédula no hay con qué cruzar las marcaciones: la tabla local de
+        // asistencia se indexa por CI y nada más.
+        return $personas->filter(fn (array $persona): bool => $persona['ci'] !== '')->values();
+    }
+
+    /**
      * Ficha de un funcionario por su cédula. `null` si Mamoré no lo tiene.
      *
      * @return array<string, mixed>|null

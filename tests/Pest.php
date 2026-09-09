@@ -2,12 +2,14 @@
 
 use App\Models\SistemaExterno;
 use App\Models\User;
+use App\Policies\RolePolicy;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -70,6 +72,29 @@ function asSuperAdmin(): User
 }
 
 /**
+ * Usuario con exactamente los permisos pedidos y ninguno más, para comprobar
+ * dónde corta cada módulo. No usa `asSuperAdmin()`: ese rol pasa por el
+ * `Gate::before` de AppServiceProvider y puede todo sin permisos asignados.
+ *
+ * @param  list<string>  $permisos
+ */
+function usuarioCon(array $permisos): User
+{
+    foreach (RolePolicy::nombresDePermiso() as $nombre) {
+        Permission::firstOrCreate(['name' => $nombre, 'guard_name' => 'web']);
+    }
+
+    // Nombre único: cada prueba arma más de un usuario para comparar el antes y
+    // el después, y el nombre del rol es clave única.
+    static $numero = 0;
+
+    $rol = Role::create(['name' => 'acotado_'.(++$numero), 'guard_name' => 'web']);
+    $rol->givePermissionTo($permisos);
+
+    return User::factory()->create()->assignRole($rol);
+}
+
+/**
  * Cabeceras con las que un sistema externo consume la API de asistencia.
  *
  * Emite un token de Sanctum sobre un `SistemaExterno` de prueba. Sin
@@ -97,14 +122,16 @@ function cabecerasApi(array $alcances = [], array $extra = []): array
 }
 
 /**
- * Configura la API de Mamoré y falsea sus dos endpoints (`/people` y
- * `/people/ci/{ci}`) con el padrón dado, para probar sin red las pantallas que
- * leen los datos personales de ahí.
+ * Configura la API de Mamoré y falsea sus endpoints con el padrón dado, para
+ * probar sin red las pantallas que leen los datos personales de ahí: `/people`,
+ * `/people/ci/{ci}`, sus contratos —de a uno y por lote— y `/catalogos`.
  *
  * Cada persona puede darse como `ci => 'NOMBRE COMPLETO'` (sin contrato) o como
  * `ci => ['nombre' => ..., 'cargo' => ..., 'direccion' => ...]` para que salga
  * con contrato firmado, igual que lo entrega la API real. Con `image` se le
- * agrega la foto, de donde sale la miniatura que pintan las tablas.
+ * agrega la foto, de donde sale la miniatura que pintan las tablas, y con
+ * `direccion_id` la dirección administrativa por la que filtra el reporte por
+ * dirección.
  *
  * @param  array<string, string|array<string, mixed>>  $padron
  */
@@ -136,8 +163,33 @@ function fakeMamore(array $padron = []): void
                 'finish' => $hasta,
             ]]);
 
+            // Dónde estaba destinada la persona en cada contrato. La API real lo
+            // manda adentro de cada uno, no solo en la ficha: sin eso, el reporte
+            // por dirección de un mes pasado no podría decir en qué dirección
+            // cayó cada tramo de quien se movió a mitad de año.
+            $direccionId = $datos['direccion_id'] ?? null;
+            $direccionSigla = $datos['direccion'] ?? null;
+            $unidadId = $datos['unidad_id'] ?? null;
+            $unidadSigla = $datos['unidad'] ?? null;
+
+            $contratos = array_map(fn (array $contrato): array => $contrato + [
+                'status' => 'firmado',
+                'direccion_administrativa' => $direccionSigla === null ? null : [
+                    'id' => $direccionId,
+                    'nombre' => $direccionSigla,
+                    'sigla' => $direccionSigla,
+                ],
+                'unidad_administrativa' => $unidadSigla === null ? null : [
+                    'id' => $unidadId,
+                    'nombre' => $unidadSigla,
+                    'sigla' => $unidadSigla,
+                ],
+            ], $contratos);
+
             return [
                 'id' => crc32($ci),
+                'direccion_id' => $direccionId,
+                'unidad_id' => $unidadId,
                 'ci' => (string) $ci,
                 // Extensión del carnet (el departamento que lo emitió) y la
                 // cédula completa que Mamoré arma con las dos.
@@ -154,8 +206,10 @@ function fakeMamore(array $padron = []): void
                     'denominacion' => $datos['denominacion'] ?? $cargo,
                     'cargo' => $cargo,
                     'cargo_completo' => $cargo,
-                    'direccion_administrativa' => ['nombre' => $datos['direccion'] ?? 'Dirección', 'sigla' => $datos['direccion'] ?? null],
-                    'unidad_administrativa' => null,
+                    'direccion_administrativa' => ['id' => $direccionId, 'nombre' => $datos['direccion'] ?? 'Dirección', 'sigla' => $datos['direccion'] ?? null],
+                    'unidad_administrativa' => $unidadSigla === null ? null : [
+                        'id' => $unidadId, 'nombre' => $unidadSigla, 'sigla' => $unidadSigla,
+                    ],
                     // Haber y vigencia: los usa el régimen disciplinario para
                     // pasar los días de descuento a bolivianos. `sueldo` acepta
                     // `null` explícito, que es el contrato sin haber cargado.
@@ -169,6 +223,31 @@ function fakeMamore(array $padron = []): void
         })
         ->values();
 
+    /**
+     * Los contratos que tocan el rango pedido, con la misma regla que la API
+     * real: empiezan antes de que termine y terminan después de que empiece; sin
+     * `finish` siguen vigentes. Sin rango van todos.
+     *
+     * El fake tiene que recortar igual que la API. Si devolviera el historial
+     * entero, quien tuvo su último contrato el año pasado saldría con tramos y
+     * el reporte lo listaría como funcionario del mes que se está mirando.
+     *
+     * @param  list<array<string, mixed>>  $contratos
+     * @return list<array<string, mixed>>
+     */
+    $delRango = function (array $contratos, ?string $desde, ?string $hasta): array {
+        return array_values(array_filter($contratos, function (array $contrato) use ($desde, $hasta): bool {
+            $inicio = $contrato['start'] ?? null;
+            $fin = $contrato['finish'] ?? null;
+
+            if ($hasta !== null && $inicio !== null && $inicio > $hasta) {
+                return false;
+            }
+
+            return ! ($desde !== null && $fin !== null && $fin < $desde);
+        }));
+    };
+
     Http::fake([
         // Los contratos van primero: su ruta cuelga de la del detalle, así que
         // el patrón de abajo también la alcanzaría y devolvería la ficha entera.
@@ -176,12 +255,80 @@ function fakeMamore(array $padron = []): void
         // De estos contratos depende qué días procesa el sistema, así que el
         // fake tiene que responder la misma forma que la API real: una lista
         // bajo `data`, con `start` y `finish`.
-        'mamore.test/api/externo/personal/people/ci/*/contracts*' => function (ClientRequest $peticion) use ($filas) {
+        'mamore.test/api/externo/personal/people/ci/*/contracts*' => function (ClientRequest $peticion) use ($filas, $delRango) {
             $partes = explode('/', trim((string) parse_url($peticion->url(), PHP_URL_PATH), '/'));
             $ci = urldecode($partes[count($partes) - 2] ?? '');
             $fila = $filas->firstWhere('ci', $ci);
+            parse_str((string) parse_url($peticion->url(), PHP_URL_QUERY), $parametros);
 
-            return Http::response(['data' => $fila['contratos'] ?? []]);
+            return Http::response(['data' => $delRango(
+                $fila['contratos'] ?? [],
+                $parametros['desde'] ?? null,
+                $parametros['hasta'] ?? null,
+            )]);
+        },
+        // Los contratos de varias cédulas de una vez, agrupados por cédula. Va
+        // antes que el patrón del listado, que también lo alcanzaría.
+        //
+        // Como la API real, la cédula que no existe vuelve con lista vacía y no
+        // omitida: para quien procesa no es lo mismo «no tuvo contratos» que «no
+        // vino en la respuesta».
+        'mamore.test/api/externo/personal/people/contracts*' => function (ClientRequest $peticion) use ($filas, $delRango) {
+            $cis = (array) ($peticion->data()['ci'] ?? []);
+            parse_str((string) parse_url($peticion->url(), PHP_URL_QUERY), $parametros);
+
+            $data = [];
+
+            foreach ($cis as $ci) {
+                $fila = $filas->firstWhere('ci', (string) $ci);
+                $data[(string) $ci] = $delRango(
+                    $fila['contratos'] ?? [],
+                    $parametros['desde'] ?? null,
+                    $parametros['hasta'] ?? null,
+                );
+            }
+
+            return Http::response(['data' => $data]);
+        },
+        // Direcciones y unidades administrativas, con cuánta gente tiene cada
+        // una. Se arman desde el propio padrón para que el conteo del combo y
+        // las filas del reporte no puedan discrepar.
+        'mamore.test/api/externo/personal/catalogos*' => function () use ($filas) {
+            // Los dos conteos, como la API real: contratos por un lado y
+            // personas distintas por el otro. En un rango alguien puede tener
+            // dos contratos, y el combo del reporte cuenta funcionarios.
+            $conteos = fn ($delGrupo): array => [
+                'direccion' => null,
+                'activa' => true,
+                'contratos_count' => $delGrupo->sum(fn (array $fila): int => count($fila['contratos'])),
+                'funcionarios_count' => $delGrupo->count(),
+            ];
+
+            $direcciones = $filas
+                ->filter(fn (array $fila): bool => $fila['direccion_id'] !== null)
+                ->groupBy('direccion_id')
+                ->map(fn ($delGrupo, $id): array => [
+                    'id' => (int) $id,
+                    'nombre' => $delGrupo->first()['contrato']['direccion_administrativa']['nombre'] ?? 'Dirección',
+                    'sigla' => $delGrupo->first()['contrato']['direccion_administrativa']['sigla'] ?? null,
+                ] + $conteos($delGrupo))
+                ->values();
+
+            $unidades = $filas
+                ->filter(fn (array $fila): bool => $fila['unidad_id'] !== null)
+                ->groupBy('unidad_id')
+                ->map(fn ($delGrupo, $id): array => [
+                    'id' => (int) $id,
+                    'nombre' => $delGrupo->first()['contrato']['unidad_administrativa']['nombre'] ?? 'Unidad',
+                    'sigla' => $delGrupo->first()['contrato']['unidad_administrativa']['sigla'] ?? null,
+                    'direccion_administrativa_id' => $delGrupo->first()['direccion_id'],
+                ] + $conteos($delGrupo))
+                ->values();
+
+            return Http::response([
+                'data' => ['direcciones' => $direcciones->all(), 'unidades' => $unidades->all()],
+                'meta' => ['total_direcciones' => $direcciones->count(), 'total_unidades' => $unidades->count()],
+            ]);
         },
         // El patrón del detalle va primero: el del listado también lo alcanzaría.
         'mamore.test/api/externo/personal/people/ci/*' => function (ClientRequest $peticion) use ($filas) {
@@ -192,7 +339,7 @@ function fakeMamore(array $padron = []): void
                 ? Http::response(['data' => $fila])
                 : Http::response(['message' => 'not found'], 404);
         },
-        'mamore.test/api/externo/personal/people*' => function (ClientRequest $peticion) use ($filas) {
+        'mamore.test/api/externo/personal/people*' => function (ClientRequest $peticion) use ($filas, $delRango) {
             parse_str((string) parse_url($peticion->url(), PHP_URL_QUERY), $parametros);
             $buscado = mb_strtolower(trim((string) ($parametros['search'] ?? '')));
 
@@ -210,6 +357,32 @@ function fakeMamore(array $padron = []): void
                 $encontrados = $encontrados->filter(fn (array $fila): bool => $fila['has_contract'])->values();
             } elseif ($contrato === 'sin') {
                 $encontrados = $encontrados->filter(fn (array $fila): bool => ! $fila['has_contract'])->values();
+            }
+
+            // Dirección administrativa. Con `desde`/`hasta` la API real pide
+            // además que algún contrato toque el rango, concluidos incluidos:
+            // así el reporte de un mes pasado alcanza a quien se fue a mitad de
+            // período y deja afuera a quien nunca lo trabajó.
+            $direccion = (string) ($parametros['direccion'] ?? '');
+
+            if ($direccion !== '') {
+                $desdeQ = $parametros['desde'] ?? null;
+                $hastaQ = $parametros['hasta'] ?? null;
+
+                $encontrados = $encontrados
+                    ->filter(fn (array $fila): bool => (string) $fila['direccion_id'] === $direccion
+                        && ($desdeQ === null && $hastaQ === null
+                            || $delRango($fila['contratos'], $desdeQ, $hastaQ) !== []))
+                    ->values();
+            }
+
+            // Unidad administrativa, que acota dentro de la dirección.
+            $unidad = (string) ($parametros['unidad'] ?? '');
+
+            if ($unidad !== '') {
+                $encontrados = $encontrados
+                    ->filter(fn (array $fila): bool => (string) $fila['unidad_id'] === $unidad)
+                    ->values();
             }
 
             return Http::response([

@@ -18,6 +18,11 @@ function asignarComoMamore(string $ci, array $datos): TestResponse
     return test()->postJson("/api/v1/funcionarios/{$ci}/turnos", $datos, cabecerasApi());
 }
 
+function moverVigenciaComoMamore(string $ci, array $datos): TestResponse
+{
+    return test()->putJson("/api/v1/funcionarios/{$ci}/turnos", $datos, cabecerasApi());
+}
+
 /**
  * El horario general: cinco turnos idénticos salvo el día, uno por cada día
  * hábil. Es la forma que tiene la tabla real.
@@ -121,6 +126,30 @@ it('asigna el horario sugerido con solo mandar la cédula y las fechas', functio
         ->and($asignacion->observacion)->toBe('Contrato 123');
 });
 
+it('deja las cinco filas atadas al contrato que las originó', function (): void {
+    horarioGeneralSugerido();
+
+    asignarComoMamore('7633685', [
+        'desde' => '2026-01-05',
+        'hasta' => '2026-12-31',
+        'contratoId' => 16599,
+        'observacion' => 'Contrato A-001/2026',
+    ])->assertStatus(201);
+
+    // Las cinco, no una: sin el vínculo en todas, renovar el contrato movería
+    // unos días y dejaría los otros con la vigencia vieja.
+    expect(AsignacionTurno::query()->delContrato(16599)->count())->toBe(5);
+});
+
+it('acepta la asignación sin contrato, para lo que se carga a mano', function (): void {
+    horarioGeneralSugerido();
+
+    asignarComoMamore('7633685', ['desde' => '2026-01-05', 'hasta' => '2026-12-31'])
+        ->assertStatus(201);
+
+    expect(AsignacionTurno::query()->where('ci', '7633685')->whereNotNull('contrato_id')->count())->toBe(0);
+});
+
 it('asigna solo los turnos indicados cuando vienen en la petición', function (): void {
     horarioGeneralSugerido();
     $otro = Turno::factory()->create(['dia' => '7', 'sugerido' => false]);
@@ -183,4 +212,311 @@ it('exige el token para asignar', function (): void {
         ->assertStatus(401);
 
     expect(AsignacionTurno::query()->count())->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Mover la vigencia cuando el contrato cambia de fechas
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Deja en la base el horario general asignado a un contrato.
+ *
+ * Se arma derecho contra el modelo y no llamando al endpoint de alta: el guard
+ * de Sanctum cachea el usuario resuelto durante todo el test, así que una
+ * llamada autenticada acá dejaría autenticadas también a las que vienen después
+ * y las pruebas de «exige el token» pasarían por el motivo equivocado.
+ */
+function asignarContrato(string $ci, int $contratoId, string $desde, string $hasta): void
+{
+    foreach (horarioGeneralSugerido() as $turno) {
+        AsignacionTurno::create([
+            'ci' => $ci,
+            'turno_id' => $turno->id,
+            'idTurno' => trim((string) $turno->idTurno),
+            'desde' => $desde,
+            'hasta' => $hasta,
+            'contrato_id' => $contratoId,
+        ]);
+    }
+}
+
+it('extiende la vigencia cuando una adenda renueva el contrato', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-06-30');
+
+    moverVigenciaComoMamore('7633685', [
+        'contratoId' => 16599,
+        'desde' => '2026-01-05',
+        'hasta' => '2026-12-31',
+    ])->assertOk()->assertJsonPath('actualizados', 5);
+
+    // Las cinco: si se moviera una sola, los otros cuatro días de la semana
+    // saldrían «no laborable» a partir de julio.
+    $hastas = AsignacionTurno::query()->delContrato(16599)->pluck('hasta')
+        ->map(fn ($fecha): string => $fecha->toDateString())->unique()->all();
+
+    expect($hastas)->toBe(['2026-12-31']);
+});
+
+it('recorta la vigencia cuando el contrato se concluye antes', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    moverVigenciaComoMamore('7633685', [
+        'contratoId' => 16599,
+        'desde' => '2026-01-05',
+        'hasta' => '2026-03-31',
+    ])->assertOk()->assertJsonPath('actualizados', 5);
+
+    expect(AsignacionTurno::query()->delContrato(16599)->get()
+        ->every(fn (AsignacionTurno $a): bool => $a->hasta->toDateString() === '2026-03-31'))->toBeTrue();
+});
+
+it('mueve también la fecha de inicio', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-06-30');
+
+    moverVigenciaComoMamore('7633685', [
+        'contratoId' => 16599,
+        'desde' => '2026-02-01',
+        'hasta' => '2026-06-30',
+    ])->assertOk();
+
+    expect(AsignacionTurno::query()->delContrato(16599)->get()
+        ->every(fn (AsignacionTurno $a): bool => $a->desde->toDateString() === '2026-02-01'))->toBeTrue();
+});
+
+it('no toca las asignaciones de otro contrato del mismo funcionario', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-06-30');
+
+    // Un segundo contrato, con los mismos turnos pero otro período.
+    asignarComoMamore('7633685', [
+        'desde' => '2026-07-01',
+        'hasta' => '2026-12-31',
+        'contratoId' => 16600,
+    ])->assertStatus(201);
+
+    moverVigenciaComoMamore('7633685', [
+        'contratoId' => 16599,
+        'desde' => '2026-01-05',
+        'hasta' => '2026-05-31',
+    ])->assertOk();
+
+    expect(AsignacionTurno::query()->delContrato(16600)->get()
+        ->every(fn (AsignacionTurno $a): bool => $a->hasta->toDateString() === '2026-12-31'))->toBeTrue();
+});
+
+it('no le mueve el horario a otra persona aunque el contrato coincida', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-06-30');
+
+    // La cédula manda junto con el contrato: sin ese filtro, una cédula
+    // equivocada del otro lado movería filas de quien no corresponde. Y tampoco
+    // se crean nuevas: eso dejaría dos personas con el mismo contrato.
+    moverVigenciaComoMamore('9999999', [
+        'contratoId' => 16599,
+        'desde' => '2026-01-05',
+        'hasta' => '2026-12-31',
+    ])->assertStatus(422);
+
+    $delContrato = AsignacionTurno::query()->delContrato(16599)->get();
+
+    expect($delContrato)->toHaveCount(5)
+        ->and($delContrato->every(fn (AsignacionTurno $a): bool => $a->ci === '7633685'
+            && $a->hasta->toDateString() === '2026-06-30'))->toBeTrue();
+});
+
+it('le asigna el horario al contrato que todavía no tenía ninguno', function (): void {
+    horarioGeneralSugerido();
+
+    // Un contrato anterior a esta integración, o uno cuyo alta falló: la
+    // edición es la oportunidad de dejarlo bien sin cargarlo a mano.
+    moverVigenciaComoMamore('7633685', [
+        'contratoId' => 16599,
+        'desde' => '2026-01-05',
+        'hasta' => '2026-12-31',
+    ])->assertOk()->assertJsonPath('creados', 5);
+
+    expect(AsignacionTurno::query()->delContrato(16599)->count())->toBe(5);
+});
+
+it('avisa cuando no hay horario sugerido y el contrato no tenía nada', function (): void {
+    Turno::factory()->count(3)->create(['sugerido' => false]);
+
+    moverVigenciaComoMamore('7633685', [
+        'contratoId' => 16599,
+        'desde' => '2026-01-05',
+        'hasta' => '2026-12-31',
+    ])->assertStatus(422);
+
+    expect(AsignacionTurno::query()->count())->toBe(0);
+});
+
+it('rechaza un rango invertido al mover la vigencia', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-06-30');
+
+    moverVigenciaComoMamore('7633685', [
+        'contratoId' => 16599,
+        'desde' => '2026-12-31',
+        'hasta' => '2026-01-05',
+    ])->assertStatus(422)->assertJsonValidationErrors('hasta');
+});
+
+it('exige el contrato para mover la vigencia', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-06-30');
+
+    // Sin contrato no hay forma de saber qué filas mover: mover «las del
+    // funcionario» pisaría las de sus otros contratos.
+    moverVigenciaComoMamore('7633685', ['desde' => '2026-01-05', 'hasta' => '2026-12-31'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('contratoId');
+});
+
+it('exige el token para mover la vigencia', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-06-30');
+
+    test()->putJson('/api/v1/funcionarios/7633685/turnos', [
+        'contratoId' => 16599,
+        'desde' => '2026-01-05',
+        'hasta' => '2026-12-31',
+    ])->assertStatus(401);
+
+    expect(AsignacionTurno::query()->delContrato(16599)->get()
+        ->every(fn (AsignacionTurno $a): bool => $a->hasta->toDateString() === '2026-06-30'))->toBeTrue();
+});
+
+/*
+|--------------------------------------------------------------------------
+| Dar de baja el horario cuando el contrato se anula
+|--------------------------------------------------------------------------
+*/
+
+function anularContratoComoMamore(string $ci, array $datos): TestResponse
+{
+    return test()->deleteJson("/api/v1/funcionarios/{$ci}/turnos", $datos, cabecerasApi());
+}
+
+it('da de baja el horario cuando el contrato se anula', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    anularContratoComoMamore('7633685', ['contratoId' => 16599])
+        ->assertOk()
+        ->assertJsonPath('eliminados', 5);
+
+    expect(AsignacionTurno::query()->delContrato(16599)->count())->toBe(0);
+});
+
+it('la baja es lógica: la fila se queda con su fecha', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    anularContratoComoMamore('7633685', ['contratoId' => 16599])->assertOk();
+
+    // El turno es el respaldo de por qué se le exigió marcar a esa persona en
+    // esas fechas: borrarlo de verdad dejaría sin explicación las faltas ya
+    // imputadas.
+    $bajas = AsignacionTurno::onlyTrashed()->delContrato(16599)->get();
+
+    expect($bajas)->toHaveCount(5)
+        ->and($bajas->every(fn (AsignacionTurno $a): bool => $a->deleted_at !== null))->toBeTrue()
+        ->and($bajas->first()->deleteObservacion)->toBe('Contrato anulado en Mamoré.');
+});
+
+it('guarda el motivo que manda el consumidor', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    anularContratoComoMamore('7633685', [
+        'contratoId' => 16599,
+        'observacion' => 'Contrato A-001/2026 anulado por resolución 12/2026.',
+    ])->assertOk();
+
+    expect(AsignacionTurno::onlyTrashed()->delContrato(16599)->first()->deleteObservacion)
+        ->toBe('Contrato A-001/2026 anulado por resolución 12/2026.');
+});
+
+it('no le da de baja el horario a otro contrato del funcionario', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-06-30');
+
+    asignarComoMamore('7633685', [
+        'desde' => '2026-07-01',
+        'hasta' => '2026-12-31',
+        'contratoId' => 16600,
+    ])->assertStatus(201);
+
+    anularContratoComoMamore('7633685', ['contratoId' => 16599])->assertOk();
+
+    expect(AsignacionTurno::query()->delContrato(16600)->count())->toBe(5)
+        ->and(AsignacionTurno::query()->delContrato(16599)->count())->toBe(0);
+});
+
+it('no le da de baja el horario a otra persona', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    anularContratoComoMamore('9999999', ['contratoId' => 16599])
+        ->assertOk()
+        ->assertJsonPath('eliminados', 0);
+
+    expect(AsignacionTurno::query()->delContrato(16599)->count())->toBe(5);
+});
+
+it('anular dos veces no es un error', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    anularContratoComoMamore('7633685', ['contratoId' => 16599])->assertOk();
+
+    // El estado final es el que se pidió: reintentar porque la red cortó la
+    // respuesta no puede contestar un error.
+    anularContratoComoMamore('7633685', ['contratoId' => 16599])
+        ->assertOk()
+        ->assertJsonPath('eliminados', 0);
+});
+
+it('exige el contrato para dar de baja', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    // Sin contrato, «dar de baja los turnos del funcionario» le borraría también
+    // los de sus otros contratos.
+    anularContratoComoMamore('7633685', [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('contratoId');
+
+    expect(AsignacionTurno::query()->delContrato(16599)->count())->toBe(5);
+});
+
+it('exige el token para dar de baja', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    test()->deleteJson('/api/v1/funcionarios/7633685/turnos', ['contratoId' => 16599])
+        ->assertStatus(401);
+
+    expect(AsignacionTurno::query()->delContrato(16599)->count())->toBe(5);
+});
+
+it('revive el horario si el contrato se vuelve a cargar', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+    AsignacionTurno::query()->delContrato(16599)->get()->each->delete();
+
+    // La única de la tabla no distingue `deleted_at`, así que la fila muerta
+    // bloqueaba el alta y el funcionario quedaba sin horario —o sea sin control
+    // de asistencia— sin que nadie lo notara.
+    asignarComoMamore('7633685', [
+        'desde' => '2026-01-05',
+        'hasta' => '2026-12-31',
+        'contratoId' => 16599,
+    ])->assertStatus(201)->assertJsonPath('revividos', 5)->assertJsonPath('creados', 5);
+
+    expect(AsignacionTurno::query()->delContrato(16599)->count())->toBe(5);
+});
+
+it('no revive la asignación dada de baja de otro contrato', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+    AsignacionTurno::query()->delContrato(16599)->get()->each->delete();
+
+    // Otro contrato que cae en la misma terna: revivir lo ajeno le daría a este
+    // contrato filas que no son suyas.
+    asignarComoMamore('7633685', [
+        'desde' => '2026-01-05',
+        'hasta' => '2026-12-31',
+        'contratoId' => 16600,
+    ])->assertOk()->assertJsonPath('creados', 0)->assertJsonPath('omitidos', 5);
+
+    expect(AsignacionTurno::query()->delContrato(16600)->count())->toBe(0)
+        ->and(AsignacionTurno::onlyTrashed()->delContrato(16599)->count())->toBe(5);
 });

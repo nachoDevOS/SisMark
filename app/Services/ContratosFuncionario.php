@@ -23,7 +23,7 @@ use Illuminate\Support\Carbon;
  * anteriores no sabría que la persona estaba contratada. Los borradores
  * (`elaborado`, `enviado`) quedan afuera: no habilitan nada.
  *
- * @phpstan-type Tramo array{desde: Carbon, hasta: ?Carbon}
+ * @phpstan-type Tramo array{desde: Carbon, hasta: ?Carbon, direccion: ?string, cargo: ?string}
  */
 class ContratosFuncionario
 {
@@ -47,12 +47,66 @@ class ContratosFuncionario
             return null;
         }
 
-        $contratos = $this->mamore->contractsByCi(
+        return $this->tramosDeContratos($this->mamore->contractsByCi(
             trim($ci),
+            $desde->toDateString(),
+            $hasta->toDateString(),
+        ));
+    }
+
+    /**
+     * Lo mismo para **varias** personas, en una sola petición.
+     *
+     * Existe por el reporte por dirección: preguntar de a uno por una plantilla
+     * de cientos de personas son cientos de viajes en serie, y con la cuota de
+     * 60 pedidos por minuto de la API el reporte ni siquiera terminaría.
+     *
+     * `null` sigue siendo «no se sabe» y vale para todas: si Mamoré no está
+     * configurado no hay contratos que consultar para ninguna cédula.
+     *
+     * Una cédula que Mamoré no conoce vuelve con lista vacía, no ausente: para
+     * quien procesa, «no tuvo contrato» excluye sus días y «no vino en la
+     * respuesta» sería un dato sin verificar.
+     *
+     * @param  list<string>  $cis
+     * @return array<string, list<Tramo>>|null
+     *
+     * @throws MamoreException si la API está configurada pero no responde
+     */
+    public function tramosDeVarios(array $cis, Carbon $desde, Carbon $hasta): ?array
+    {
+        if (! $this->mamore->configurado()) {
+            return null;
+        }
+
+        $porCi = $this->mamore->contractsByCis(
+            $cis,
             $desde->toDateString(),
             $hasta->toDateString(),
         );
 
+        $tramos = [];
+
+        foreach ($cis as $ci) {
+            $ci = trim($ci);
+            $tramos[$ci] = $this->tramosDeContratos($porCi[$ci] ?? []);
+        }
+
+        return $tramos;
+    }
+
+    /**
+     * Traduce los contratos que devuelve la API a tramos ordenados.
+     *
+     * Cada tramo lleva la dirección y el cargo **de ese contrato**, no los de
+     * hoy: quien se movió de dirección a mitad de año tiene dos tramos y el
+     * reporte tiene que poder decir cuál fue cuál.
+     *
+     * @param  list<array<string, mixed>>  $contratos
+     * @return list<Tramo>
+     */
+    private function tramosDeContratos(array $contratos): array
+    {
         $tramos = [];
 
         foreach ($contratos as $contrato) {
@@ -64,10 +118,18 @@ class ContratosFuncionario
                 continue;
             }
 
+            $direccion = is_array($contrato['direccion_administrativa'] ?? null)
+                ? $contrato['direccion_administrativa']
+                : null;
+
             $tramos[] = [
                 'desde' => $inicio,
                 // Sin fecha de término el contrato sigue abierto.
                 'hasta' => $this->fecha($contrato['finish'] ?? null),
+                'direccion' => $direccion === null ? null : (trim((string) (
+                    $direccion['sigla'] ?? $direccion['nombre'] ?? ''
+                )) ?: null),
+                'cargo' => trim((string) ($contrato['job']['name'] ?? '')) ?: null,
             ];
         }
 

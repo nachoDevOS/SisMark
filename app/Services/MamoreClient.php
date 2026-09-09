@@ -48,10 +48,25 @@ class MamoreClient
      * El filtro `$contrato` («todos», «con» o «sin») lo resuelve la propia API
      * con el parámetro `?contrato=`, así que la paginación sigue siendo la suya.
      *
+     * `$direccion` filtra por dirección administrativa. Con `$desde`/`$hasta`
+     * ese filtro pasa a preguntar **quién estuvo ahí durante el rango** —cuenta
+     * también los contratos concluidos— en vez de quién está hoy; sin fechas,
+     * solo mira los firmados. Es la diferencia entre que el reporte por
+     * dirección de un mes pasado incluya a quien se fue a mitad de período o lo
+     * pierda en silencio.
+     *
      * @return array{data?: array<int, array<string, mixed>>, meta?: array<string, mixed>, links?: array<string, mixed>}
      */
-    public function people(int $page, int $limit, string $search = '', string $contrato = 'todos'): array
-    {
+    public function people(
+        int $page,
+        int $limit,
+        string $search = '',
+        string $contrato = 'todos',
+        ?int $direccion = null,
+        ?string $desde = null,
+        ?string $hasta = null,
+        ?int $unidad = null,
+    ): array {
         $parametros = ['page' => $page, 'limit' => $limit];
 
         if ($search !== '') {
@@ -62,7 +77,51 @@ class MamoreClient
             $parametros['contrato'] = $contrato;
         }
 
+        if ($direccion !== null) {
+            $parametros['direccion'] = $direccion;
+        }
+
+        if ($unidad !== null) {
+            $parametros['unidad'] = $unidad;
+        }
+
+        if ($desde !== null) {
+            $parametros['desde'] = $desde;
+        }
+
+        if ($hasta !== null) {
+            $parametros['hasta'] = $hasta;
+        }
+
         return $this->pedir('/people', $parametros);
+    }
+
+    /**
+     * Direcciones y unidades administrativas, para el combo del reporte por
+     * dirección. Son pocas filas (70 direcciones, 452 unidades) y vienen juntas
+     * en una sola petición.
+     *
+     * Con `$desde`/`$hasta` los conteos y el filtro `$conContratos` se calculan
+     * sobre los contratos que tocan el rango, así el «(47)» del combo coincide
+     * con las filas que después trae el reporte.
+     *
+     * @return array{direcciones: list<array<string, mixed>>, unidades: list<array<string, mixed>>}
+     */
+    public function catalogos(bool $activas = false, bool $conContratos = false, ?string $desde = null, ?string $hasta = null): array
+    {
+        $parametros = array_filter([
+            'activas' => $activas ? 1 : null,
+            'con_contratos' => $conContratos ? 1 : null,
+            'desde' => $desde,
+            'hasta' => $hasta,
+        ], fn (mixed $valor): bool => $valor !== null);
+
+        $respuesta = $this->pedir('/catalogos', $parametros);
+
+        return [
+            'direcciones' => $respuesta['data']['direcciones'] ?? [],
+            'unidades' => $respuesta['data']['unidades'] ?? [],
+        ];
     }
 
     /**
@@ -131,6 +190,70 @@ class MamoreClient
         }
 
         return $respuesta->json('data') ?? [];
+    }
+
+    /**
+     * Cédulas por pedido en el endpoint de a varios. Es el tope que impone
+     * Mamoré; una dirección de la Gobernación no llega, pero el reporte pagina
+     * igual para no depender de eso.
+     */
+    private const CIS_POR_LOTE = 500;
+
+    /**
+     * Los contratos de **varias** personas de una vez, agrupados por cédula.
+     *
+     * Misma forma que {@see contractsByCi} para cada persona, pero en una sola
+     * petición: el reporte por dirección necesita los contratos de toda la
+     * plantilla, y de a uno eran cientos de viajes en serie —medido del otro
+     * lado, cerca de cuatro minutos de red para milisegundos de cálculo—.
+     *
+     * Las cédulas que Mamoré no conoce vuelven con lista vacía, no omitidas: no
+     * es lo mismo «no tiene contratos» que «no vino en la respuesta».
+     *
+     * **No se cachea**, igual que el de a uno: de estos contratos depende que un
+     * día de asistencia se procese, y una renovación cargada hoy tiene que
+     * verse hoy.
+     *
+     * @param  list<string>  $cis
+     * @return array<string, list<array<string, mixed>>>
+     *
+     * @throws MamoreException
+     */
+    public function contractsByCis(array $cis, ?string $desde = null, ?string $hasta = null): array
+    {
+        $cis = array_values(array_unique(array_filter(array_map(
+            fn (string $ci): string => trim($ci),
+            $cis
+        ))));
+
+        if ($cis === []) {
+            return [];
+        }
+
+        $parametros = array_filter([
+            'desde' => $desde,
+            'hasta' => $hasta,
+        ], fn (?string $valor): bool => $valor !== null);
+
+        $porCi = [];
+
+        foreach (array_chunk($cis, self::CIS_POR_LOTE) as $lote) {
+            try {
+                $respuesta = $this->http()->post('/people/contracts?'.http_build_query($parametros), ['ci' => $lote]);
+            } catch (ConnectionException) {
+                throw new MamoreException('No se pudo conectar con la API de Mamoré.');
+            }
+
+            if ($respuesta->failed()) {
+                throw new MamoreException($this->motivo($respuesta->status()));
+            }
+
+            foreach ($respuesta->json('data') ?? [] as $ci => $contratos) {
+                $porCi[(string) $ci] = $contratos;
+            }
+        }
+
+        return $porCi;
     }
 
     /**
@@ -241,6 +364,23 @@ class MamoreClient
     }
 
     /**
+     * Intentos totales ante un corte de conexión, y la espera entre ellos.
+     *
+     * Un solo reintento alcanza para lo que se ve en la práctica: dos pedidos
+     * nuestros que se pisan —el catálogo del combo y el reporte, por ejemplo— y
+     * encuentran al servidor de Mamoré atendiendo el otro. El segundo vuelve
+     * como «no se pudo conectar» sin que haya nada roto, y a los 250 ms sale
+     * bien.
+     *
+     * **Solo se reintentan los cortes de conexión**, nunca una respuesta con
+     * error: un 429 reintentado gastaría cuota contra el límite que justamente
+     * acaba de avisar, y un 401 o un 403 van a fallar igual la segunda vez.
+     */
+    private const INTENTOS = 2;
+
+    private const ESPERA_ENTRE_INTENTOS_MS = 250;
+
+    /**
      * URL, clave y tiempo de espera de la API. Lo comparten el pedido suelto y
      * cada pedido del pool, que no puede salir del mismo `http()`.
      */
@@ -253,6 +393,16 @@ class MamoreClient
             // esta cabecera contesta 403 «origen_requerido».
             ->withHeaders(['Origin' => $this->origen()])
             ->acceptJson()
+            // `throw: false` es obligatorio: por defecto `retry()` convierte
+            // cualquier respuesta fallida en excepción, y acá los estados de
+            // error se leen con `failed()` para traducirlos a un mensaje propio
+            // —«la clave es inválida», «Mamoré no tiene la suya configurada»—.
+            ->retry(
+                self::INTENTOS,
+                self::ESPERA_ENTRE_INTENTOS_MS,
+                fn (\Throwable $e): bool => $e instanceof ConnectionException,
+                throw: false,
+            )
             ->timeout(10);
     }
 

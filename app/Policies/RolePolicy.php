@@ -45,6 +45,11 @@ class RolePolicy
         'Export' => 'Exportar',
         'Sync' => 'Sincronizar',
         'Clear' => 'Vaciar',
+        // Emitir la credencial con la que un sistema externo consume la API.
+        // Va aparte de `Update` porque no es editar la ficha: un token da
+        // acceso a la asistencia de los ~4.600 funcionarios, y quién puede
+        // entregar eso no tiene por qué ser quien corrige un nombre.
+        'Token' => 'Emitir token',
     ];
 
     /**
@@ -120,6 +125,14 @@ class RolePolicy
         'Role' => [
             'etiqueta' => 'Roles',
             'habilidades' => ['ViewAny', 'Create', 'Update', 'Delete'],
+        ],
+        'SistemaExterno' => [
+            'etiqueta' => 'Tokens de API',
+            // `Token` va aparte de `Update` a propósito: administrar la ficha de
+            // un consumidor —su nombre, sus observaciones, el interruptor— es
+            // una cosa, y entregarle la credencial que le abre la asistencia de
+            // todo el personal es otra. Se pueden dar por separado.
+            'habilidades' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Token'],
         ],
     ];
 

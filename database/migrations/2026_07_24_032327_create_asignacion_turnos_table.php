@@ -27,6 +27,27 @@ return new class extends Migration
             $table->dateTime('desde');
             $table->dateTime('hasta');
 
+            // El contrato de Mamoré que originó la asignación, cuando la creó él
+            // desde la API y no una carga a mano ni la copia del SIA.
+            //
+            // Es el vínculo que permite corregirla después. Un contrato se
+            // renueva por adenda, se concluye antes de tiempo o se le mueve la
+            // fecha de fin, y sin esta columna no había forma de saber cuáles de
+            // las asignaciones de un funcionario había que mover con él: la única
+            // referencia era el texto de `observacion`, que cualquiera puede
+            // editar desde la pantalla de Turnos.
+            //
+            // Guarda el **id** y no el código del contrato porque Mamoré
+            // regenera el código cuando cambia el año de inicio o la dirección
+            // administrativa; el id no cambia nunca.
+            //
+            // No lleva clave foránea: los contratos viven en la base de Mamoré,
+            // no acá. Y va nullable porque las ~14.000 filas que arrastra el SIA
+            // y todo lo que Recursos Humanos carga a mano no tienen contrato que
+            // apuntar.
+            $table->unsignedBigInteger('contrato_id')->nullable();
+            $table->index('contrato_id');
+
             $table->text('observacion')->nullable();
             $table->smallInteger('estado')->default(1);
 

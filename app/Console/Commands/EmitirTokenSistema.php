@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\SistemaExternoController;
 use App\Models\SistemaExterno;
+use App\Models\SistemaExternoAuditoria;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -10,10 +12,14 @@ use Illuminate\Console\Command;
 /**
  * Emite el token con el que un sistema externo consume la API de asistencia.
  *
- * Va por consola y no por pantalla a propósito: entregar un token es dar acceso
- * a la asistencia de los ~4.600 funcionarios, y quien lo hace tiene que tener
- * acceso al servidor. Cuando haya más de un consumidor y la emisión pase a
- * Recursos Humanos, esto se convierte en una pantalla con su permiso propio.
+ * La emisión de todos los días se hace por pantalla, en «Tokens de API»
+ * ({@see SistemaExternoController}), que pide su permiso
+ * propio, la contraseña de quien la hace y deja la fila en la bitácora.
+ *
+ * Este comando queda para cuando la pantalla no sirve: un despliegue nuevo, sin
+ * usuarios ni roles cargados todavía, o un servidor al que hay que devolverle el
+ * acceso sin poder entrar al sitio. Anota en la misma bitácora, sin usuario:
+ * quien lo corre tiene acceso al servidor, no una cuenta del sistema.
  *
  * El token se muestra **una sola vez**: la base guarda solo su hash, así que
  * perderlo obliga a emitir uno nuevo. Es la garantía de que un token filtrado no
@@ -62,6 +68,11 @@ class EmitirTokenSistema extends Command
         }
 
         $token = $sistema->createToken("servicio-{$sistema->slug}", $alcances);
+
+        // Sin usuario: lo emitió alguien con acceso al servidor, no una persona
+        // del sistema. La fila igual tiene que quedar —si no, un token entregado
+        // desde la consola no aparecería en ningún lado—.
+        $sistema->anotar(SistemaExternoAuditoria::ACCION_EMITIR, $token->accessToken->getKey(), $alcances);
 
         $this->newLine();
         $this->info("Token de «{$sistema->nombre}»:");

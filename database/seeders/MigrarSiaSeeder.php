@@ -67,6 +67,13 @@ class MigrarSiaSeeder extends Seeder
             $this->command->call($comando);
         }
 
+        // Va al final y no junto al DatabaseSeeder porque necesita los turnos ya
+        // copiados: marca el horario sugerido, y antes de `sia:migrar-horarios`
+        // la tabla está vacía. Fuera de producción deja además el token de
+        // desarrollo, para no tener que reemitirlo en cada corrida.
+        $this->command->getOutput()->writeln('<info>→ IntegracionMamoreSeeder (token de desarrollo y horario sugerido)</info>');
+        $this->call(IntegracionMamoreSeeder::class);
+
         $this->command->getOutput()->writeln('<info>Migración del SIA completa.</info>');
     }
 }
