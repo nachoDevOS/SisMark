@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\MamoreException;
+use App\Models\Turno;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -98,6 +99,7 @@ class ReporteDireccion
                     'persona' => $persona,
                     'tramos' => $tramos ?? [],
                     'totales' => $this->procesador->totales($dias),
+                    'meses' => $this->porMes($dias, $tramos),
                 ];
             })
             ->filter()
@@ -141,6 +143,90 @@ class ReporteDireccion
             'saldo' => $computado - $esperado,
             'porEstado' => $porEstado,
         ];
+    }
+
+    /**
+     * Los totales de cada mes calendario del rango, en orden.
+     *
+     * ---
+     * **Los minutos de atraso se acumulan por mes y no se suman entre meses.**
+     *
+     * Doce minutos en enero y diez en febrero no son veintidós: son doce y son
+     * diez. La tolerancia y la escala de sanciones se miden sobre el mes
+     * calendario, así que un total del rango no significa nada —y peor, se lee
+     * como si significara algo—.
+     *
+     * Los conteos de días (atrasos, faltas, abandonos) sí se pueden acumular:
+     * contar días no cambia de unidad al cruzar el mes. Por eso el subtotal de
+     * la persona los suma y deja los minutos con una raya.
+     * ---
+     *
+     * ---
+     * **Solo salen los meses que algún contrato cubre.** Quien trabajó de enero
+     * a abril no tiene mayo: no es que ese mes esté en cero, es que no existió
+     * para esa persona, y una fila vacía se lee como un mes sin novedad. Vale
+     * igual para el hueco entre dos contratos.
+     *
+     * Un mes en el que hubo contrato sí se muestra aunque no tenga nada que
+     * reportar: ahí el cero es información: estuvo y no tuvo incumplimientos.
+     * ---
+     *
+     * Se agrupan los días ya procesados en vez de volver a procesar mes por mes:
+     * el cálculo es el mismo y la vuelta extra costaría otro viaje a Mamoré por
+     * persona y por mes.
+     *
+     * @param  Collection<int, array{fecha: Carbon}>  $dias
+     * @param  list<array{desde: Carbon, hasta: ?Carbon}>|null  $tramos
+     * @return list<array{clave: string, etiqueta: string, totales: array<string, mixed>}>
+     */
+    private function porMes(Collection $dias, ?array $tramos): array
+    {
+        return $dias
+            ->groupBy(fn (array $dia): string => $dia['fecha']->format('Y-m'))
+            // Un mes en el que ningún día estuvo cubierto no existió para esta
+            // persona.
+            //
+            // Se le pregunta al contrato y no al estado del día: un día sin
+            // cubrir sale «sin contrato» solo si además tenía turno, y los
+            // sábados y domingos van «no laborable» estén cubiertos o no. Mirar
+            // los estados dejaba pasar cualquier mes que tuviera un fin de
+            // semana, que son todos.
+            //
+            // Con los tramos en `null` —Mamoré sin configurar— `cubierto()`
+            // responde que sí a todo, así que no se recorta nada.
+            ->reject(fn (Collection $delMes): bool => $delMes->every(
+                fn (array $dia): bool => ! $this->contratos->cubierto($tramos, $dia['fecha'])
+            ))
+            ->map(fn (Collection $delMes, string $clave): array => [
+                'clave' => $clave,
+                'etiqueta' => self::MESES[(int) substr($clave, 5, 2)].' '.substr($clave, 0, 4),
+                'totales' => $this->procesador->totales($delMes),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Nombre corto de cada mes, como los escribe el reporte impreso. Va acá y no
+     * por localización de Carbon porque el resto del sistema nombra sus períodos
+     * con arreglos propios ({@see Turno::DIAS}).
+     *
+     * @var array<int, string>
+     */
+    public const MESES = [
+        1 => 'Ene', 2 => 'Feb', 3 => 'Mar', 4 => 'Abr', 5 => 'May', 6 => 'Jun',
+        7 => 'Jul', 8 => 'Ago', 9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dic',
+    ];
+
+    /**
+     * ¿El rango pisa más de un mes calendario?
+     *
+     * Es lo que decide si la tabla se abre por mes: dentro de un mismo mes los
+     * totales del rango ya son mensuales y la fila por persona alcanza.
+     */
+    public static function cruzaMeses(Carbon $desde, Carbon $hasta): bool
+    {
+        return $desde->format('Y-m') !== $hasta->format('Y-m');
     }
 
     /**

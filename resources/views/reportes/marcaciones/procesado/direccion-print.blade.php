@@ -15,7 +15,7 @@
         @media print {
             thead { display: table-header-group; }
             tr { page-break-inside: avoid; }
-            .leyenda, .firmas, .resumen { page-break-inside: avoid; }
+            .firmas, .resumen { page-break-inside: avoid; }
         }
     </style>
 @endsection
@@ -25,10 +25,13 @@
     use App\Services\ReporteDireccion as R;
     use Illuminate\Support\Carbon;
 
-    $sinMarca = [P::SIN_ENTRADA, P::SIN_SALIDA, P::TURNO_INVALIDO];
+    // Todo lo que la columna «Faltas» cuenta como falta: además del día sin
+    // ninguna marca, el que tiene una sola punta y el de turno mal cargado.
+    $comoFalta = [P::FALTA, P::SIN_ENTRADA, P::SIN_SALIDA, P::TURNO_INVALIDO];
 
-    $conJornada = fn (array $porEstado, int $dias): int => $dias
-        - R::contar($porEstado, [P::NO_LABORABLE, P::SIN_CONTRATO]);
+    // El procesador cuenta el atraso en minutos completos y lo guarda en
+    // segundos, así que la división es exacta.
+    $minutosDeAtraso = fn (int $segundos): int => intdiv($segundos, 60);
 
     $desdeFmt = $desde ? Carbon::parse($desde)->format('j/n/Y') : '—';
     $hastaFmt = $hasta ? Carbon::parse($hasta)->format('j/n/Y') : '—';
@@ -45,7 +48,10 @@
         ."Unidad: {$nombreUnidad}\n"
         .'Funcionarios: '.$totales['funcionarios']."\n"
         ."Rango: {$desdeFmt} a {$hastaFmt}\n"
-        .'Computado: '.P::duracion($totales['computado']).' de '.P::duracion($totales['esperado'])."\n"
+        .'Atrasos: '.R::contar($totales['porEstado'], [P::ATRASO])
+        .($cruzaMeses ? '' : ' ('.$minutosDeAtraso($totales['atraso']).' min)')
+        .' | Faltas: '.R::contar($totales['porEstado'], $comoFalta)
+        .' | Abandonos: '.R::contar($totales['porEstado'], [P::ABANDONO])."\n"
         .'Impreso: '.now()->format('d/m/Y H:i:s');
     $qrSvg = preg_replace('/^<\?xml.*?\?>\s*/s', '', \SimpleSoftwareIO\QrCode\Facades\QrCode::format('svg')->encoding('UTF-8')->size(100)->margin(0)->generate($qrTexto));
 @endphp
@@ -91,15 +97,14 @@
                 <th style="text-align: center">Funcionario</th>
                 <th style="text-align: center">CI</th>
                 <th style="text-align: center">Contrato(s) en el rango</th>
-                <th style="text-align: center">Días</th>
-                <th style="text-align: center">Cumple</th>
+                @if ($cruzaMeses)
+                    <th style="text-align: center">Mes</th>
+                @endif
+                <th style="text-align: center">Minutos<br>acumulados</th>
                 <th style="text-align: center">Atrasos</th>
-                <th style="text-align: center">Faltas</th>
                 <th style="text-align: center">Abandonos</th>
-                <th style="text-align: center">Sin marca</th>
+                <th style="text-align: center">Faltas</th>
                 <th style="text-align: center">Licencia</th>
-                <th style="text-align: center">Computado</th>
-                <th style="text-align: center">Saldo</th>
             </tr>
         </thead>
         <tbody>
@@ -107,7 +112,6 @@
                 @php
                     $persona = $fila['persona'];
                     $porEstado = $fila['totales']['porEstado'];
-                    $saldo = $fila['totales']['saldo'];
                     $atrasos = R::contar($porEstado, [P::ATRASO]);
                 @endphp
                 <tr>
@@ -122,60 +126,69 @@
                             @if (! $loop->last)<br>@endif
                         @endforeach
                     </td>
-                    <td style="text-align: center">{{ $conJornada($porEstado, $fila['totales']['dias']) }}</td>
-                    <td style="text-align: center">{{ R::contar($porEstado, [P::CUMPLE]) }}</td>
+                    @if ($cruzaMeses)
+                        <td style="text-align: center"><b>Total</b></td>
+                    @endif
+                    {{-- Los minutos se acumulan por mes: cruzando meses el total de la
+                         persona va con raya y los números viven en su mes. --}}
                     <td style="text-align: center">
-                        {{ $atrasos ?: '' }}@if ($fila['totales']['atraso'] > 0) <br><small>{{ P::desvio($fila['totales']['atraso']) }}</small>@endif
+                        {{ $cruzaMeses ? '—' : ($minutosDeAtraso($fila['totales']['atraso']) ?: '') }}
                     </td>
-                    <td style="text-align: center"><b>{{ R::contar($porEstado, [P::FALTA]) ?: '' }}</b></td>
+                    <td style="text-align: center">{{ $atrasos ?: '' }}</td>
                     <td style="text-align: center"><b>{{ R::contar($porEstado, [P::ABANDONO]) ?: '' }}</b></td>
-                    <td style="text-align: center">{{ R::contar($porEstado, $sinMarca) ?: '' }}</td>
+                    <td style="text-align: center"><b>{{ R::contar($porEstado, $comoFalta) ?: '' }}</b></td>
                     <td style="text-align: center">{{ R::contar($porEstado, [P::LICENCIA]) ?: '' }}</td>
-                    <td style="text-align: center">{{ P::duracion($fila['totales']['computado']) }}</td>
-                    <td style="text-align: center">{{ $saldo > 0 ? '+' : '' }}{{ P::duracion($saldo) }}</td>
                 </tr>
+                @if ($cruzaMeses)
+                    @foreach ($fila['meses'] as $mes)
+                        @php
+                            $delMes = $mes['totales']['porEstado'];
+                            $atrasosMes = R::contar($delMes, [P::ATRASO]);
+                        @endphp
+                        <tr>
+                            <td colspan="4"></td>
+                            <td style="text-align: center">{{ $mes['etiqueta'] }}</td>
+                            <td style="text-align: center">{{ $minutosDeAtraso($mes['totales']['atraso']) ?: '' }}</td>
+                            <td style="text-align: center">{{ $atrasosMes ?: '' }}</td>
+                            <td style="text-align: center">{{ R::contar($delMes, [P::ABANDONO]) ?: '' }}</td>
+                            <td style="text-align: center">{{ R::contar($delMes, $comoFalta) ?: '' }}</td>
+                            <td style="text-align: center">{{ R::contar($delMes, [P::LICENCIA]) ?: '' }}</td>
+                        </tr>
+                    @endforeach
+                @endif
             @empty
                 <tr>
-                    <td colspan="13" style="text-align: center">
+                    <td colspan="{{ $cruzaMeses ? 10 : 9 }}" style="text-align: center">
                         Nadie de esta dirección tuvo contrato dentro del rango.
                     </td>
                 </tr>
             @endforelse
             <tr>
-                <th colspan="4" style="text-align: right">Totales de la dirección:</th>
-                <th style="text-align: center">{{ $conJornada($totales['porEstado'], $totales['dias']) }}</th>
-                <th style="text-align: center">{{ R::contar($totales['porEstado'], [P::CUMPLE]) }}</th>
-                <th style="text-align: center">
-                    {{ R::contar($totales['porEstado'], [P::ATRASO]) }}<br><small>{{ P::desvio($totales['atraso']) }}</small>
-                </th>
-                <th style="text-align: center">{{ R::contar($totales['porEstado'], [P::FALTA]) }}</th>
+                <th colspan="{{ $cruzaMeses ? 5 : 4 }}" style="text-align: right">Totales de la dirección:</th>
+                <th style="text-align: center">{{ $cruzaMeses ? '—' : $minutosDeAtraso($totales['atraso']) }}</th>
+                <th style="text-align: center">{{ R::contar($totales['porEstado'], [P::ATRASO]) }}</th>
                 <th style="text-align: center">{{ R::contar($totales['porEstado'], [P::ABANDONO]) }}</th>
-                <th style="text-align: center">{{ R::contar($totales['porEstado'], $sinMarca) }}</th>
+                <th style="text-align: center">{{ R::contar($totales['porEstado'], $comoFalta) }}</th>
                 <th style="text-align: center">{{ R::contar($totales['porEstado'], [P::LICENCIA]) }}</th>
-                <th style="text-align: center">{{ P::duracion($totales['computado']) }}</th>
-                <th style="text-align: center">{{ $totales['saldo'] > 0 ? '+' : '' }}{{ P::duracion($totales['saldo']) }}</th>
             </tr>
         </tbody>
     </table>
 
     <div class="resumen" style="font-size: 12px; margin-top: 10px;">
-        <b>Horas computadas:</b> {{ P::duracion($totales['computado']) }} de {{ P::duracion($totales['esperado']) }}
-        &nbsp;|&nbsp; <b>Saldo:</b> {{ $totales['saldo'] > 0 ? '+' : '' }}{{ P::duracion($totales['saldo']) }}
-        &nbsp;|&nbsp; <b>Salida anticipada:</b> {{ P::desvio($totales['anticipo']) }}
+        <b>Atrasos:</b> {{ R::contar($totales['porEstado'], [P::ATRASO]) }}
+        @unless ($cruzaMeses)({{ $minutosDeAtraso($totales['atraso']) }} min acumulados)@endunless
+        &nbsp;|&nbsp; <b>Abandonos:</b> {{ R::contar($totales['porEstado'], [P::ABANDONO]) }}
+        &nbsp;|&nbsp; <b>Faltas:</b> {{ R::contar($totales['porEstado'], $comoFalta) }}
         <br>
+        @if ($cruzaMeses)
+            <b>Los minutos se acumulan por mes calendario y no se suman entre meses</b>,
+            así que el rango se abre por mes y el total va con raya.
+            <br>
+        @endif
         <b>Días por estado:</b>
         @foreach ($totales['porEstado'] as $estado => $cantidad)
             {{ P::ETIQUETAS[$estado] ?? $estado }}: {{ $cantidad }}@if (! $loop->last) &nbsp;|&nbsp; @endif
         @endforeach
-    </div>
-
-    <div class="leyenda" style="font-size: 12px; margin-top: 10px;">
-        <b>Referencias:</b>
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Quién entra:</b> el que tuvo contrato dentro del rango, aunque hoy ya no esté en la dirección. Más de un contrato es una renovación o un pase, y el hueco entre dos no se controla.
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Días</b> = los que tenían jornada: no cuentan los no laborables ni los que ningún contrato cubría.
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Sin marca</b> = faltó la entrada, faltó la salida, o el turno está mal configurado.
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Abandono</b> = se retiró antes de la mínima hora de salida, o no marcó un tramo que la licencia no cubría.
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Computado</b> = horas acotadas al turno; <b>Saldo</b> = lo computado contra lo esperado.
     </div>
 
     <br><br><br>

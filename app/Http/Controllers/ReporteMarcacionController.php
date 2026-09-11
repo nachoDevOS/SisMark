@@ -313,6 +313,11 @@ class ReporteMarcacionController extends Controller
                 : ($nombreUnidad ?: 'Unidad'),
             'desde' => $desde->toDateString(),
             'hasta' => $hasta->toDateString(),
+            // Los minutos de atraso se acumulan por mes calendario y no se
+            // suman entre meses, así que un rango que cruza meses se abre en una
+            // fila por mes. Dentro de un solo mes el total del rango ya es
+            // mensual y la fila por persona alcanza.
+            'cruzaMeses' => ReporteDireccion::cruzaMeses($desde, $hasta),
         ];
 
         return $impresion === 1

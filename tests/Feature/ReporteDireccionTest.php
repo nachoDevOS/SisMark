@@ -61,6 +61,24 @@ function turnoDeOficina(int $dia): Turno
  */
 function conTurnoDeOficina(string $ci): void
 {
+    conTurnoDeOficinaHasta($ci, '2026-07-31');
+}
+
+/**
+ * Lo mismo, pero eligiendo hasta cuándo rige: los casos de corte mensual
+ * necesitan que el turno cubra más de un mes.
+ */
+function conTurnoDeOficinaHasta(string $ci, string $hasta): void
+{
+    conTurnoDeOficinaDesde($ci, '2026-07-01', $hasta);
+}
+
+/**
+ * Turno con las dos puntas elegidas, para los casos que necesitan cubrir varios
+ * meses y comprobar cuáles quedan afuera.
+ */
+function conTurnoDeOficinaDesde(string $ci, string $desde, string $hasta): void
+{
     Persona::factory()->create(['ci' => $ci]);
 
     // `dia` va de 2 (lunes) a 6 (viernes): el domingo es 1.
@@ -68,10 +86,19 @@ function conTurnoDeOficina(string $ci): void
         AsignacionTurno::factory()->create([
             'ci' => $ci,
             'turno_id' => turnoDeOficina($dia)->id,
-            'desde' => '2026-07-01 00:00:00',
-            'hasta' => '2026-07-31 00:00:00',
+            'desde' => $desde.' 00:00:00',
+            'hasta' => $hasta.' 00:00:00',
         ]);
     }
+}
+
+/**
+ * El HTML sin espacios, para poder afirmar sobre una celda sin depender de cómo
+ * quedó indentada la plantilla.
+ */
+function sinEspacios(string $html): string
+{
+    return (string) preg_replace('/\s+/', '', $html);
 }
 
 /**
@@ -225,6 +252,230 @@ test('la pantalla lista a los funcionarios de la dirección elegida', function (
         ->assertOk()
         ->assertSee('ARIAS LOPEZ JUAN')
         ->assertSee('RRHH — Recursos Humanos');
+});
+
+test('la tabla muestra los minutos acumulados de atraso y ya no horas ni saldo', function () {
+    // Lo que se mira de una dirección son los incumplimientos acumulados por
+    // persona. «Días» y «Cumple» decían cuántos días salieron bien, que es el
+    // caso normal y no el que se revisa; «Computado» y «Saldo» son lectura de
+    // una jornada, no de un mes de una dirección entera.
+    fakeMamore(['111' => [
+        'nombre' => 'ARIAS LOPEZ JUAN', 'cargo' => 'TECNICO',
+        'direccion' => 'RRHH', 'direccion_id' => DIRECCION,
+    ]]);
+
+    conTurnoDeOficina('111');
+
+    // Once y veinte minutos tarde: dos atrasos, treinta y un minutos.
+    marcaDe('111', '2026-07-01', '08:11', '16:05');
+    marcaDe('111', '2026-07-02', '08:20', '16:05');
+
+    $tabla = $this->actingAs(usuarioCon(['ViewAny:Reporte']))
+        ->get(route('reportes.marcaciones.direccion.generar', [
+            'direccion' => DIRECCION,
+            'nombre' => 'RRHH',
+            'desde' => '2026-07-01',
+            'hasta' => '2026-07-31',
+        ]))
+        ->assertOk()
+        ->assertSee('Minutos acumulados')
+        ->assertDontSee('Computado')
+        ->assertDontSee('Saldo')
+        ->assertDontSee('Cumple');
+
+    // El total de minutos sale como número, no como «31 min» ni como «0h 31m».
+    expect(sinEspacios($tabla->getContent()))->toContain('>31<');
+});
+
+test('los minutos no se suman entre meses: el rango se abre por mes', function () {
+    // La tolerancia y la escala se miden sobre el mes calendario. Doce minutos en
+    // julio y diez en agosto **no son veintidós**, así que un total del rango no
+    // significaría nada y encima se leería como si significara algo.
+    fakeMamore(['111' => [
+        'nombre' => 'ARIAS LOPEZ JUAN', 'cargo' => 'TECNICO',
+        'direccion' => 'RRHH', 'direccion_id' => DIRECCION,
+    ]]);
+
+    conTurnoDeOficinaHasta('111', '2026-08-31');
+
+    // Doce minutos en julio, quince en agosto. No sirve «08:10»: ese minuto es
+    // la tolerancia y queda entero adentro, así que no hay atraso.
+    marcaDe('111', '2026-07-01', '08:12', '16:05');
+    marcaDe('111', '2026-08-03', '08:15', '16:05');
+
+    $contenido = sinEspacios($this->actingAs(usuarioCon(['ViewAny:Reporte']))
+        ->get(route('reportes.marcaciones.direccion.generar', [
+            'direccion' => DIRECCION,
+            'nombre' => 'RRHH',
+            'desde' => '2026-07-01',
+            'hasta' => '2026-08-31',
+        ]))
+        ->assertOk()
+        ->assertSee('Jul 2026')
+        ->assertSee('Ago 2026')
+        ->getContent());
+
+    expect($contenido)
+        // Cada mes con lo suyo…
+        ->toContain('>12<')
+        ->toContain('>15<')
+        // …y en ningún lado la suma.
+        ->not->toContain('>27<');
+});
+
+test('solo salen los meses que algún contrato cubre', function () {
+    // Trabajó de enero a abril: mayo no está en cero, no existió para esa
+    // persona. Una fila vacía se lee como un mes sin novedad.
+    fakeMamore(['111' => [
+        'nombre' => 'BARBA NOE ANDONI', 'cargo' => 'TECNICO',
+        'direccion' => 'RRHH', 'direccion_id' => DIRECCION,
+        'contratos' => [['start' => '2026-01-12', 'finish' => '2026-04-30']],
+    ]]);
+
+    conTurnoDeOficinaDesde('111', '2026-01-01', '2026-09-30');
+
+    $meses = app(ReporteDireccion::class)->filas(
+        DIRECCION,
+        Carbon::parse('2026-01-01'),
+        Carbon::parse('2026-09-09'),
+    )->first()['meses'];
+
+    expect(collect($meses)->pluck('etiqueta')->all())
+        ->toBe(['Ene 2026', 'Feb 2026', 'Mar 2026', 'Abr 2026']);
+});
+
+test('el hueco entre dos contratos tampoco genera mes', function () {
+    // Dos contratos con mayo entero en el medio: ese mes no se controla, así que
+    // no tiene fila.
+    fakeMamore(['111' => [
+        'nombre' => 'GORIANZ GUTIERREZ MILTON', 'cargo' => 'TECNICO',
+        'direccion' => 'RRHH', 'direccion_id' => DIRECCION,
+        'contratos' => [
+            ['start' => '2026-03-01', 'finish' => '2026-04-30'],
+            ['start' => '2026-06-01', 'finish' => '2026-07-31'],
+        ],
+    ]]);
+
+    conTurnoDeOficinaDesde('111', '2026-01-01', '2026-09-30');
+
+    $meses = app(ReporteDireccion::class)->filas(
+        DIRECCION,
+        Carbon::parse('2026-01-01'),
+        Carbon::parse('2026-09-09'),
+    )->first()['meses'];
+
+    expect(collect($meses)->pluck('etiqueta')->all())
+        ->toBe(['Mar 2026', 'Abr 2026', 'Jun 2026', 'Jul 2026']);
+});
+
+test('un mes con contrato sale aunque no tenga nada que reportar', function () {
+    // Acá el cero sí es información: estuvo y no tuvo incumplimientos. Es lo que
+    // lo distingue del mes que no existió.
+    fakeMamore(['111' => [
+        'nombre' => 'ARIAS LOPEZ JUAN', 'cargo' => 'TECNICO',
+        'direccion' => 'RRHH', 'direccion_id' => DIRECCION,
+        'contratos' => [['start' => '2026-07-01', 'finish' => '2026-08-31']],
+    ]]);
+
+    conTurnoDeOficinaHasta('111', '2026-08-31');
+
+    $meses = app(ReporteDireccion::class)->filas(
+        DIRECCION,
+        Carbon::parse('2026-07-01'),
+        Carbon::parse('2026-08-31'),
+    )->first()['meses'];
+
+    expect(collect($meses)->pluck('etiqueta')->all())->toBe(['Jul 2026', 'Ago 2026']);
+});
+
+test('dentro de un mismo mes la tabla no se abre por mes', function () {
+    // El total del rango ya es mensual: una fila por persona alcanza y agregar
+    // una fila «Jul 2026» que repite los mismos números solo estorba.
+    fakeMamore(['111' => [
+        'nombre' => 'ARIAS LOPEZ JUAN', 'cargo' => 'TECNICO',
+        'direccion' => 'RRHH', 'direccion_id' => DIRECCION,
+    ]]);
+
+    conTurnoDeOficina('111');
+    marcaDe('111', '2026-07-01', '08:12', '16:05');
+
+    $this->actingAs(usuarioCon(['ViewAny:Reporte']))
+        ->get(route('reportes.marcaciones.direccion.generar', [
+            'direccion' => DIRECCION,
+            'nombre' => 'RRHH',
+            'desde' => '2026-07-01',
+            'hasta' => '2026-07-31',
+        ]))
+        ->assertOk()
+        ->assertDontSee('Jul 2026')
+        ->assertSee('Minutos acumulados');
+});
+
+test('el servicio devuelve los totales de cada mes por separado', function () {
+    fakeMamore(['111' => [
+        'nombre' => 'ARIAS LOPEZ JUAN', 'cargo' => 'TECNICO',
+        'direccion' => 'RRHH', 'direccion_id' => DIRECCION,
+    ]]);
+
+    conTurnoDeOficinaHasta('111', '2026-08-31');
+
+    marcaDe('111', '2026-07-01', '08:12', '16:05');
+    marcaDe('111', '2026-08-03', '08:15', '16:05');
+
+    $meses = app(ReporteDireccion::class)->filas(
+        DIRECCION,
+        Carbon::parse('2026-07-01'),
+        Carbon::parse('2026-08-31'),
+    )->first()['meses'];
+
+    expect($meses)->toHaveCount(2)
+        ->and($meses[0]['etiqueta'])->toBe('Jul 2026')
+        ->and($meses[0]['totales']['atraso'])->toBe(12 * 60)
+        ->and($meses[1]['etiqueta'])->toBe('Ago 2026')
+        ->and($meses[1]['totales']['atraso'])->toBe(15 * 60);
+});
+
+test('el día con una sola marca cuenta como falta y no tiene columna propia', function () {
+    // «Sin marca» se retiró a pedido: quien marcó una sola punta cuenta igual
+    // que quien no vino. Se deja fijado para que el día con media marca no se
+    // pierda de la tabla al no tener columna donde caer.
+    fakeMamore(['111' => [
+        'nombre' => 'ARIAS LOPEZ JUAN', 'cargo' => 'TECNICO',
+        'direccion' => 'RRHH', 'direccion_id' => DIRECCION,
+    ]]);
+
+    conTurnoDeOficina('111');
+
+    // Miércoles 1: entra y sale, cumple. Jueves 2: entra y nunca marca salida.
+    marcaDe('111', '2026-07-01', '08:00', '16:05');
+    Asistencia::factory()->create([
+        'ci' => '111', 'fecha' => '2026-07-02',
+        'hora' => '1899-12-30 08:00:00', 'tipo' => 'E',
+    ]);
+
+    $fila = filasDeJulio()->first();
+    $porEstado = $fila['totales']['porEstado'];
+
+    // El procesador los sigue distinguiendo: es la tabla la que los junta.
+    expect($porEstado[P::SIN_SALIDA] ?? 0)->toBe(1)
+        ->and($porEstado[P::CUMPLE] ?? 0)->toBe(1);
+
+    $this->actingAs(usuarioCon(['ViewAny:Reporte']))
+        ->get(route('reportes.marcaciones.direccion.generar', [
+            'direccion' => DIRECCION,
+            'nombre' => 'RRHH',
+            'desde' => '2026-07-01',
+            'hasta' => '2026-07-31',
+        ]))
+        ->assertOk()
+        ->assertDontSee('Sin marca')
+        // 21 días hábiles menos el que cumplió: 19 sin marcar nada más el de la
+        // media marca.
+        ->assertSee('Faltas');
+
+    expect(ReporteDireccion::contar($porEstado, [
+        P::FALTA, P::SIN_ENTRADA, P::SIN_SALIDA, P::TURNO_INVALIDO,
+    ]))->toBe(($porEstado[P::FALTA] ?? 0) + 1);
 });
 
 test('el imprimible sale con la hoja entera y el cierre de la dirección', function () {

@@ -13,19 +13,20 @@
         'hasta' => $hasta,
     ], fn ($valor): bool => $valor !== null);
 
-    // Los estados que se agrupan en la columna «Sin marca»: son la misma omisión
-    // mirada desde un borde distinto del turno, y darle columna propia a cada
-    // una ensanchaba la tabla sin decir nada nuevo.
-    $sinMarca = [P::SIN_ENTRADA, P::SIN_SALIDA, P::TURNO_INVALIDO];
+    // Todo lo que la columna «Faltas» cuenta como falta.
+    //
+    // Además del día sin ninguna marca van los que tienen una sola punta —marcó
+    // la entrada y no la salida, o al revés— y los que caen en un turno mal
+    // cargado. Tenían columna aparte porque no son lo mismo: en esos días la
+    // persona estuvo y hay una marca que lo prueba. Se unificaron a pedido,
+    // porque separados no cambiaban ninguna decisión.
+    $comoFalta = [P::FALTA, P::SIN_ENTRADA, P::SIN_SALIDA, P::TURNO_INVALIDO];
 
     /**
-     * Días con jornada que controlar: sacando los que no eran laborables y los
-     * que ningún contrato cubría. Es el denominador honesto de la fila —contra
-     * el total del rango, quien entró el día 20 parecería haber faltado 19
-     * veces—.
+     * El atraso del rango en minutos enteros. El procesador lo cuenta en minutos
+     * completos y lo guarda en segundos, así que la división es exacta.
      */
-    $conJornada = fn (array $porEstado, int $dias): int => $dias
-        - R::contar($porEstado, [P::NO_LABORABLE, P::SIN_CONTRATO]);
+    $minutosDeAtraso = fn (int $segundos): int => intdiv($segundos, 60);
 @endphp
 
 {{-- Partial: se inyecta bajo el filtro del reporte vía AJAX (no lleva layout). --}}
@@ -57,15 +58,14 @@
                     <tr>
                         <th>Funcionario</th>
                         <th>Contrato(s) en el rango</th>
-                        <th title="Días con jornada: sin los no laborables ni los que ningún contrato cubre">Días</th>
-                        <th>Cumple</th>
+                        @if ($cruzaMeses)
+                            <th>Mes</th>
+                        @endif
+                        <th title="Suma de los minutos de atraso del mes">Minutos acumulados</th>
                         <th>Atrasos</th>
-                        <th>Faltas</th>
                         <th>Abandonos</th>
-                        <th title="Sin entrada, sin salida o turno mal configurado">Sin marca</th>
+                        <th title="Sin ninguna marca, con una sola punta, o turno mal configurado">Faltas</th>
                         <th>Licencia</th>
-                        <th>Computado</th>
-                        <th>Saldo</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -78,8 +78,7 @@
                         $persona = $fila['persona'];
                         $porEstado = $fila['totales']['porEstado'];
                         $nombre = $persona['nombreFormal'] ?: $persona['nombre'];
-                        $saldo = $fila['totales']['saldo'];
-                        $faltas = R::contar($porEstado, [P::FALTA]);
+                        $faltas = R::contar($porEstado, $comoFalta);
                         $abandonos = R::contar($porEstado, [P::ABANDONO]);
                         $atrasos = R::contar($porEstado, [P::ATRASO]);
                         $detalle = 'detalle-'.$loop->index;
@@ -128,22 +127,23 @@
                                     </div>
                                 @endforeach
                             </td>
-                            <td>{{ $conJornada($porEstado, $fila['totales']['dias']) }}</td>
-                            <td>{{ R::contar($porEstado, [P::CUMPLE]) }}</td>
-                            <td @if ($atrasos > 0) style="color: #92400e; font-weight: 600;" @endif>
-                                {{ $atrasos ?: '' }}
-                                @if ($fila['totales']['atraso'] > 0)
-                                    <small>({{ P::desvio($fila['totales']['atraso']) }})</small>
+                            @if ($cruzaMeses)
+                                <td style="color: var(--muted);">Total</td>
+                            @endif
+                            {{-- Los minutos se acumulan por mes: doce en enero y diez en
+                                 febrero no son veintidós. Cruzando meses el subtotal de la
+                                 persona va con raya y los números viven en su mes. --}}
+                            <td @if ($atrasos > 0 && ! $cruzaMeses) style="color: #92400e; font-weight: 600;" @endif>
+                                @if ($cruzaMeses)
+                                    <span style="color: var(--muted);" title="Los minutos se acumulan por mes y no se suman entre meses">—</span>
+                                @else
+                                    {{ $minutosDeAtraso($fila['totales']['atraso']) ?: '' }}
                                 @endif
                             </td>
-                            <td @if ($faltas > 0) style="color: #991b1b; font-weight: 700;" @endif>{{ $faltas ?: '' }}</td>
+                            <td @if ($atrasos > 0) style="color: #92400e; font-weight: 600;" @endif>{{ $atrasos ?: '' }}</td>
                             <td @if ($abandonos > 0) style="color: #991b1b; font-weight: 700;" @endif>{{ $abandonos ?: '' }}</td>
-                            <td>{{ R::contar($porEstado, $sinMarca) ?: '' }}</td>
+                            <td @if ($faltas > 0) style="color: #991b1b; font-weight: 700;" @endif>{{ $faltas ?: '' }}</td>
                             <td>{{ R::contar($porEstado, [P::LICENCIA]) ?: '' }}</td>
-                            <td style="white-space: nowrap;">{{ P::duracion($fila['totales']['computado']) }}</td>
-                            <td style="white-space: nowrap;{{ $saldo < 0 ? ' color: #991b1b;' : '' }}">
-                                {{ $saldo > 0 ? '+' : '' }}{{ P::duracion($saldo) }}
-                            </td>
                             <td style="white-space: nowrap;">
                                 <button type="button" class="btn btn--gris" style="padding: .3rem .55rem;"
                                         x-on:click="alternar()" :aria-expanded="abierto" aria-controls="{{ $detalle }}">
@@ -154,8 +154,29 @@
                                    title="Imprimible individual"><x-heroicon-o-printer /></a>
                             </td>
                         </tr>
+                        @if ($cruzaMeses)
+                            @foreach ($fila['meses'] as $mes)
+                                @php
+                                    $delMes = $mes['totales']['porEstado'];
+                                    $atrasosMes = R::contar($delMes, [P::ATRASO]);
+                                @endphp
+                                <tr style="background: var(--bg);">
+                                    <td colspan="2"></td>
+                                    <td style="white-space: nowrap;">{{ $mes['etiqueta'] }}</td>
+                                    <td @if ($atrasosMes > 0) style="color: #92400e; font-weight: 600;" @endif>
+                                        {{ $minutosDeAtraso($mes['totales']['atraso']) ?: '' }}
+                                    </td>
+                                    <td @if ($atrasosMes > 0) style="color: #92400e; font-weight: 600;" @endif>{{ $atrasosMes ?: '' }}</td>
+                                    <td>{{ R::contar($delMes, [P::ABANDONO]) ?: '' }}</td>
+                                    <td>{{ R::contar($delMes, $comoFalta) ?: '' }}</td>
+                                    <td>{{ R::contar($delMes, [P::LICENCIA]) ?: '' }}</td>
+                                    <td></td>
+                                </tr>
+                            @endforeach
+                        @endif
+
                         <tr x-show="abierto" x-cloak id="{{ $detalle }}">
-                            <td colspan="12" style="background: var(--bg);">
+                            <td colspan="{{ $cruzaMeses ? 9 : 8 }}" style="background: var(--bg);">
                                 <div x-show="cargando" style="color: var(--muted); padding: .5rem;">Cargando el detalle…</div>
                                 <div x-html="html"></div>
                             </td>
@@ -165,19 +186,18 @@
 
                 <tfoot>
                     <tr>
-                        <th colspan="2" style="text-align: right;">Total de la dirección:</th>
-                        <th>{{ $conJornada($totales['porEstado'], $totales['dias']) }}</th>
-                        <th>{{ R::contar($totales['porEstado'], [P::CUMPLE]) }}</th>
+                        <th colspan="{{ $cruzaMeses ? 3 : 2 }}" style="text-align: right;">Total de la dirección:</th>
                         <th>
-                            {{ R::contar($totales['porEstado'], [P::ATRASO]) }}
-                            <small>({{ P::desvio($totales['atraso']) }})</small>
+                            @if ($cruzaMeses)
+                                <span style="font-weight: normal;" title="Los minutos se acumulan por mes y no se suman entre meses">—</span>
+                            @else
+                                {{ $minutosDeAtraso($totales['atraso']) }}
+                            @endif
                         </th>
-                        <th>{{ R::contar($totales['porEstado'], [P::FALTA]) }}</th>
+                        <th>{{ R::contar($totales['porEstado'], [P::ATRASO]) }}</th>
                         <th>{{ R::contar($totales['porEstado'], [P::ABANDONO]) }}</th>
-                        <th>{{ R::contar($totales['porEstado'], $sinMarca) }}</th>
+                        <th>{{ R::contar($totales['porEstado'], $comoFalta) }}</th>
                         <th>{{ R::contar($totales['porEstado'], [P::LICENCIA]) }}</th>
-                        <th style="white-space: nowrap;">{{ P::duracion($totales['computado']) }}</th>
-                        <th style="white-space: nowrap;">{{ $totales['saldo'] > 0 ? '+' : '' }}{{ P::duracion($totales['saldo']) }}</th>
                         <th></th>
                     </tr>
                 </tfoot>
@@ -185,11 +205,18 @@
         </div>
 
         <p style="color: var(--muted); font-size: .8rem; margin-bottom: 0;">
-            <strong>Días</strong> = los que tenían jornada: no cuentan los no laborables ni los que
-            ningún contrato cubría. <strong>Computado</strong> son horas acotadas al turno, y
-            <strong>Saldo</strong> es lo computado contra lo esperado.
-            <strong>Abandono</strong> = se retiró antes de la mínima hora de salida, o no marcó un
-            tramo que la licencia no cubría.
+            <strong>Minutos acumulados</strong> = la suma de los atrasos, medidos contra la hora
+            de entrada del turno, y <strong>Atrasos</strong> en cuántos días ocurrieron. <strong>Abandono</strong> = se retiró antes de la mínima hora de
+            salida, o no marcó un tramo que la licencia no cubría.
+            <strong>Faltas</strong> junta el día sin ninguna marca con el que tiene una sola
+            punta —marcó la entrada y no la salida, o al revés— y el que cae en un turno mal
+            cargado. Los días sin jornada —no laborables, o que ningún contrato cubría— no
+            cuentan en ninguna columna.
+            @if ($cruzaMeses)
+                <br><strong>Los minutos se acumulan por mes calendario y no se suman entre
+                meses</strong>: doce en un mes y diez en el siguiente no son veintidós. Por eso el
+                rango se abre por mes y el total va con raya.
+            @endif
         </p>
     @endif
 </div>
