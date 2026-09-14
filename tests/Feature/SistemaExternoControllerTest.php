@@ -74,7 +74,6 @@ test('sin permiso no se entra al listado', function () {
 test('el alta registra el sistema', function () {
     $this->actingAs(asSuperAdmin())
         ->post(route('tokens-api.store'), [
-            'slug' => 'sedag',
             'nombre' => 'SEDAG',
             'activo' => '1',
         ])
@@ -86,17 +85,50 @@ test('el alta registra el sistema', function () {
         ->and($sistema->activo)->toBeTrue();
 });
 
-test('el nombre corto no admite mayúsculas ni espacios', function () {
+test('el nombre corto sale del nombre: sin mayúsculas ni acentos y con guiones', function () {
     $this->actingAs(asSuperAdmin())
-        ->post(route('tokens-api.store'), ['slug' => 'Sistema Nuevo', 'nombre' => 'Sistema'])
+        ->post(route('tokens-api.store'), ['nombre' => 'Dirección de Recursos Humanos'])
+        ->assertSessionHasNoErrors();
+
+    expect(SistemaExterno::query()->value('slug'))->toBe('direccion-de-recursos-humanos');
+});
+
+test('el nombre corto que llegue en el formulario se ignora', function () {
+    // El campo va de solo lectura, así que un `slug` a mano es alguien mandando
+    // el formulario por fuera de la pantalla.
+    $this->actingAs(asSuperAdmin())
+        ->post(route('tokens-api.store'), ['slug' => 'otra-cosa', 'nombre' => 'SEDAG'])
+        ->assertSessionHasNoErrors();
+
+    expect(SistemaExterno::query()->value('slug'))->toBe('sedag');
+});
+
+test('un nombre sin letras ni números se rechaza en vez de quedarse sin nombre corto', function () {
+    $this->actingAs(asSuperAdmin())
+        ->post(route('tokens-api.store'), ['nombre' => '¿¡...!?'])
         ->assertSessionHasErrors('slug');
+
+    expect(SistemaExterno::query()->count())->toBe(0);
+});
+
+test('el nombre corto se recorta a lo que entra en la columna', function () {
+    // El nombre admite 100 caracteres y la columna del slug 50. Acá el corte cae
+    // justo sobre un espacio, que es donde el recorte dejaría el guión colgando.
+    $this->actingAs(asSuperAdmin())
+        ->post(route('tokens-api.store'), ['nombre' => 'aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk'])
+        ->assertSessionHasNoErrors();
+
+    expect(SistemaExterno::query()->value('slug'))
+        ->toBe('aaaa-bbbb-cccc-dddd-eeee-ffff-gggg-hhhh-iiii-jjjj');
 });
 
 test('no se puede repetir el nombre corto de un sistema en pie', function () {
     sistemaDePrueba();
 
+    // Otro nombre que da el mismo nombre corto: el índice único de la tabla no
+    // lo admite, y es lo que el alta tiene que explicar antes de llegar ahí.
     $this->actingAs(asSuperAdmin())
-        ->post(route('tokens-api.store'), ['slug' => 'mamore', 'nombre' => 'Otro'])
+        ->post(route('tokens-api.store'), ['nombre' => 'Mamoré'])
         ->assertSessionHasErrors('slug');
 });
 
@@ -110,8 +142,8 @@ test('dar de alta un nombre corto dado de baja lo reactiva', function () {
     // ninguna pantalla desde donde recuperarlo.
     $this->actingAs(asSuperAdmin())
         ->post(route('tokens-api.store'), [
-            'slug' => 'mamore',
-            'nombre' => 'Mamoré otra vez',
+            'nombre' => 'Mamoré',
+            'observaciones' => 'Lo vuelve a pedir otro equipo.',
             'activo' => '1',
         ])
         ->assertRedirect(route('tokens-api.show', $sistema))
@@ -120,7 +152,7 @@ test('dar de alta un nombre corto dado de baja lo reactiva', function () {
     $reactivado = SistemaExterno::query()->where('slug', 'mamore')->firstOrFail();
 
     expect($reactivado->id)->toBe($sistema->id)
-        ->and($reactivado->nombre)->toBe('Mamoré otra vez')
+        ->and($reactivado->observaciones)->toBe('Lo vuelve a pedir otro equipo.')
         ->and($reactivado->trashed())->toBeFalse();
 
     // Y no se duplicó la fila.
@@ -133,7 +165,7 @@ test('reactivar revoca el token que tenía antes de la baja', function () {
     $sistema->delete();
 
     $this->actingAs(asSuperAdmin())
-        ->post(route('tokens-api.store'), ['slug' => 'mamore', 'nombre' => 'Otro equipo', 'activo' => '1']);
+        ->post(route('tokens-api.store'), ['nombre' => 'Mamoré', 'activo' => '1']);
 
     // Quien da de alta puede ser otro equipo que eligió el mismo nombre corto:
     // heredar la credencial de un consumidor ajeno sería darle acceso sin que

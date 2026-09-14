@@ -16,11 +16,16 @@
         <div class="campo">
             <label for="slug">Nombre corto <span class="req">*</span></label>
             @if ($esNuevo)
-                <input type="text" id="slug" name="slug" maxlength="50" pattern="[a-z0-9\-]+"
-                       value="{{ old('slug') }}" placeholder="mamore" required>
+                {{-- De solo lectura: sale del nombre. Escribirlo a mano era pedir dos
+                     veces lo mismo y dejaba que se separaran del nombre, y es el corto
+                     el que se ve en la consola y en el nombre del token. --}}
+                <input type="text" id="slug" name="slug" maxlength="50"
+                       value="{{ old('slug') }}" placeholder="mamore" readonly
+                       style="background: #f3f4f6; color: #4b5563;">
                 <small class="ayuda">
-                    Minúsculas, números y guiones. Es el nombre con el que se lo llama desde la
-                    consola y con el que queda bautizado el token. No se puede cambiar después.
+                    Sale solo del nombre: minúsculas, sin acentos y con guiones en lugar de
+                    espacios. Es el nombre con el que se lo llama desde la consola y con el que
+                    queda bautizado el token. No se escribe ni se cambia después.
                 </small>
             @else
                 {{-- No se edita: el token entregado quedó bautizado con este nombre,
@@ -54,3 +59,32 @@
         </div>
     </div>
 </div>
+
+@if ($esNuevo)
+    <script>
+        (function () {
+            // El nombre corto se arma mientras se tipea el nombre, para que no haya
+            // que mandar el formulario para verlo. Es un espejo de lo que hace
+            // `StoreSistemaExternoRequest::slugDelNombre()`, que es quien manda: el
+            // campo va de solo lectura y el servidor ignora lo que llegue en él.
+            const nombre = document.getElementById('nombre');
+            const corto = document.getElementById('slug');
+
+            const aNombreCorto = (texto) => texto
+                .normalize('NFD').replace(/[̀-ͯ]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 50)
+                .replace(/-+$/, '');
+
+            const sincronizar = () => { corto.value = aNombreCorto(nombre.value); };
+
+            nombre.addEventListener('input', sincronizar);
+
+            // Al volver de un error de validación el nombre ya viene cargado y el
+            // corto tiene que acompañarlo.
+            sincronizar();
+        })();
+    </script>
+@endif

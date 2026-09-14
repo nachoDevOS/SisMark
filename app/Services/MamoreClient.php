@@ -403,7 +403,18 @@ class MamoreClient
                 fn (\Throwable $e): bool => $e instanceof ConnectionException,
                 throw: false,
             )
-            ->timeout(10);
+            // 8 y no 10 por el presupuesto de tiempo: con dos intentos el peor
+            // caso era 20,25 s, y el cliente de SisMark **dentro de Mamoré**
+            // corta a los 20 s. O sea que nuestro peor caso caía justo afuera de
+            // la paciencia de quien nos llama: el consumidor se rendía primero y
+            // mostraba «no se pudo conectar con SisMark» —que es falso: SisMark
+            // contestaba, y lo que no respondía era Mamoré—. Con 8 s el peor
+            // caso es 16,25 s y el motivo verdadero llega a la pantalla.
+            //
+            // Un servicio tiene que fallar antes de que su consumidor se canse;
+            // si no, el error que se ve es el del consumidor y apunta al lado
+            // equivocado.
+            ->timeout(8);
     }
 
     /**

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\TurnoAsignadoResource;
 use App\Models\AsignacionTurno;
 use App\Models\Turno;
+use App\Services\ProcesadorAsistencia;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -48,6 +50,45 @@ use Illuminate\Support\Facades\DB;
  */
 class AsignacionTurnoApiController extends Controller
 {
+    /**
+     * El horario asignado al funcionario, agrupado por período de vigencia.
+     *
+     * Es el único método de lectura del controlador y va con `turnos:read`, no
+     * con `turnos:write`: mostrarle a alguien su propio horario no es asignarlo.
+     *
+     * **No recibe rango de fechas**, a diferencia del resto de la API. Una
+     * asignación no es un dato de un día sino un período propio, y recortarla
+     * contra un mes le mostraría al funcionario «desde el 1 hasta el 31» cuando
+     * su turno rige todo el año. Se devuelve lo que está en pie y lo que todavía
+     * no empezó; lo ya vencido solo si lo piden con `vencidas=1`, porque es
+     * historial y en una carrera larga tapa lo que la persona viene a mirar.
+     *
+     * Lista vacía no es un error: un funcionario sin turno asignado es
+     * exactamente lo que hay que poder ver —sin turno,
+     * {@see ProcesadorAsistencia} resuelve todos sus días como «no
+     * laborable» y esa persona queda sin control de asistencia—.
+     */
+    public function index(Request $request, string $ci): JsonResponse
+    {
+        $request->validate([
+            'vencidas' => ['nullable', 'boolean'],
+        ]);
+
+        $ci = trim($ci);
+
+        if ($ci === '') {
+            return response()->json(['message' => 'La cédula es obligatoria.'], 422);
+        }
+
+        $asignaciones = AsignacionTurno::query()
+            ->delFuncionario($ci, $request->boolean('vencidas'))
+            ->get();
+
+        return response()->json([
+            'data' => TurnoAsignadoResource::agrupar($asignaciones)->map->toArray($request)->all(),
+        ]);
+    }
+
     /**
      * Asigna al funcionario los turnos indicados durante el rango del contrato.
      *

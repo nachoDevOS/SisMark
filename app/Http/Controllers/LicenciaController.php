@@ -257,12 +257,121 @@ class LicenciaController extends Controller
     }
 
     /**
-     * Anota las licencias del rango, para un funcionario, varios o todos los que
-     * tengan turno dentro del rango. La expansión (un registro por funcionario,
-     * día y turno) la hace el servicio; la validación, el Request.
+     * Direcciones y unidades administrativas para los combos del alcance «por
+     * dirección», con cuánta gente tuvo cada una en el rango.
+     *
+     * Es el mismo catálogo que usa el reporte por dirección, pero con su propia
+     * ruta: aquella exige el permiso de reportes, y quien anota licencias no
+     * tiene por qué tenerlo.
+     *
+     * Las dos viajan juntas porque salen del mismo pedido: la unidad se elige
+     * recién después de la dirección, y pedirlas por separado gastaría un segundo
+     * viaje de una cuota de 60 por minuto.
      */
-    public function store(StoreLicenciaRequest $request, RegistroLicencia $registro, RespaldoDocumento $respaldos): RedirectResponse
+    public function direcciones(Request $request, DirectorioMamore $directorio): JsonResponse
     {
+        $this->authorize('create', Licencia::class);
+
+        if (! $directorio->configurado()) {
+            return response()->json(['error' => 'La API de Mamoré no está configurada, así que no hay direcciones que listar.'], 503);
+        }
+
+        try {
+            $estructura = $directorio->estructura(
+                (string) $request->query('desde', '') ?: null,
+                (string) $request->query('hasta', '') ?: null,
+            );
+        } catch (MamoreException $e) {
+            return response()->json(['error' => 'No se pudieron traer las direcciones: '.$e->getMessage()], 502);
+        }
+
+        return response()->json([
+            'direcciones' => $estructura['direcciones']
+                ->map(fn (array $fila): array => $this->opcionDelCombo($fila))
+                ->values(),
+            'unidades' => $estructura['unidades']
+                ->map(fn (array $fila): array => $this->opcionDelCombo($fila) + [
+                    'direccionId' => $fila['direccionId'],
+                ])
+                ->values(),
+        ]);
+    }
+
+    /**
+     * Una dirección o una unidad como la pinta el combo: «SIGLA — Nombre».
+     *
+     * @param  array{id: int, nombre: string, sigla: string, funcionarios: int}  $fila
+     * @return array{id: int, texto: string, funcionarios: int}
+     */
+    private function opcionDelCombo(array $fila): array
+    {
+        return [
+            'id' => $fila['id'],
+            'texto' => ($fila['sigla'] !== '' ? $fila['sigla'].' — ' : '').$fila['nombre'],
+            'funcionarios' => $fila['funcionarios'],
+        ];
+    }
+
+    /**
+     * El personal **con contrato firmado** de la dirección (o unidad) elegida,
+     * para mostrarlo antes de anotar.
+     *
+     * Se muestra la lista y no solo un número porque el alcance «por dirección»
+     * anota sin que nadie elija uno por uno: quien firma el permiso tiene que
+     * poder ver a quiénes va a alcanzar antes de darle a guardar.
+     *
+     * La lista es informativa; quién termina licenciado lo vuelve a resolver el
+     * `store` contra Mamoré, así que un envío manipulado no puede ampliarla.
+     */
+    public function funcionariosDeDireccion(Request $request, DirectorioMamore $directorio): JsonResponse
+    {
+        $this->authorize('create', Licencia::class);
+
+        $direccion = (int) $request->query('direccion', 0);
+
+        if ($direccion <= 0) {
+            return response()->json(['error' => 'Elegí una dirección.'], 422);
+        }
+
+        if (! $directorio->configurado()) {
+            return response()->json(['error' => 'La API de Mamoré no está configurada.'], 503);
+        }
+
+        $desde = (string) $request->query('desde', '') ?: now()->toDateString();
+        $hasta = (string) $request->query('hasta', '') ?: $desde;
+
+        try {
+            $personas = $directorio->porDireccion(
+                $direccion,
+                $desde,
+                $hasta,
+                (int) $request->query('unidad', 0) ?: null,
+                soloConContrato: true,
+            );
+        } catch (MamoreException $e) {
+            return response()->json(['error' => 'No se pudo traer el personal: '.$e->getMessage()], 502);
+        }
+
+        return response()->json([
+            'funcionarios' => $personas->map(fn (array $persona): array => [
+                'ci' => $persona['ci'],
+                'nombre' => $persona['nombreFormal'] ?: $persona['nombre'],
+                'cargo' => $persona['cargo'] ?: '—',
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * Anota las licencias del rango, para un funcionario, varios, o la dirección
+     * (o unidad) elegida. La expansión (un registro por funcionario, día y turno)
+     * la hace el servicio; la validación, el Request.
+     */
+    public function store(
+        StoreLicenciaRequest $request,
+        RegistroLicencia $registro,
+        RespaldoDocumento $respaldos,
+        DirectorioMamore $directorio,
+    ): RedirectResponse {
         $datos = $request->validated();
 
         $modo = $datos['modo'];
@@ -271,13 +380,31 @@ class LicenciaController extends Controller
         // Los turnos elegidos a mano solo aplican al alta de un funcionario.
         $elegidas = $modo === 'uno' ? ($datos['asignaciones'] ?? []) : [];
 
-        $cis = match ($modo) {
-            'uno' => [trim((string) $datos['ci'])],
-            'varios' => array_map(trim(...), $datos['cis']),
-            // «Todos» no acota por carnet: el propio rango define a quiénes
-            // alcanza (los que tengan un turno vigente en esas fechas).
-            default => [],
-        };
+        try {
+            $cis = match ($modo) {
+                'uno' => [trim((string) $datos['ci'])],
+                'varios' => array_map(trim(...), $datos['cis']),
+                // La dirección se resuelve a carnets antes de tocar los turnos:
+                // quién la integra lo sabe Mamoré, y acá solo se licencia a quien
+                // además tenga turno asignado en el rango.
+                default => $this->cisDeLaDireccion($directorio, $datos, $desde, $hasta),
+            };
+        } catch (MamoreException $e) {
+            return back()
+                ->withInput()
+                ->with('error', 'No se pudo traer el personal de la dirección desde Mamoré: '.$e->getMessage());
+        }
+
+        // Una dirección sin nadie con contrato no llega siquiera a buscar turnos:
+        // con la lista vacía, `turnosDelRango` no acota por carnet y licenciaría
+        // a toda la Gobernación.
+        if ($modo === 'direccion' && $cis === []) {
+            return back()
+                ->withInput()
+                ->with('error', ($datos['cis'] ?? []) === []
+                    ? 'Ningún funcionario de esa dirección tiene contrato firmado dentro del rango.'
+                    : 'Los funcionarios elegidos no pertenecen a esa dirección, o no tienen contrato firmado en el rango.');
+        }
 
         $asignacionesPorCi = $this->turnosDelRango($cis, $desde, $hasta, $elegidas);
 
@@ -345,6 +472,53 @@ class LicenciaController extends Controller
     }
 
     /**
+     * Los carnets de la dirección (o de una de sus unidades) que tienen contrato
+     * firmado dentro del rango.
+     *
+     * Solo los contratados: a quien no tiene contrato no hay jornada que
+     * licenciarle, y meterlo en la lista anotaría permisos sobre turnos que
+     * quedaron de una asignación vieja.
+     *
+     * ---
+     * **La selección de la pantalla acota, nunca amplía.** Quien marca de a uno
+     * manda esos carnets en `cis`, y acá se cruzan contra los que Mamoré dice que
+     * integran la dirección: un envío manipulado que agregue a un tercero lo
+     * pierde en el cruce. Sin `cis` entra la dirección entera, que es lo que el
+     * alcance significa.
+     * ---
+     *
+     * @param  array<string, mixed>  $datos
+     * @return list<string>
+     *
+     * @throws MamoreException
+     */
+    private function cisDeLaDireccion(DirectorioMamore $directorio, array $datos, Carbon $desde, Carbon $hasta): array
+    {
+        $deLaDireccion = $directorio
+            ->porDireccion(
+                (int) $datos['direccion'],
+                $desde->toDateString(),
+                $hasta->toDateString(),
+                isset($datos['unidad']) ? ((int) $datos['unidad'] ?: null) : null,
+                soloConContrato: true,
+            )
+            ->pluck('ci')
+            ->map(fn (string $ci): string => trim($ci))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $elegidos = collect($datos['cis'] ?? [])
+            ->map(fn ($ci): string => trim((string) $ci))
+            ->filter()
+            ->unique();
+
+        return $elegidos->isEmpty()
+            ? $deLaDireccion->all()
+            : $deLaDireccion->intersect($elegidos)->values()->all();
+    }
+
+    /**
      * Por qué no hubo ningún turno que licenciar, según el alcance pedido.
      *
      * @param  list<int>  $elegidas
@@ -355,8 +529,8 @@ class LicenciaController extends Controller
             return 'Los turnos elegidos no pertenecen a ese funcionario.';
         }
 
-        return $modo === 'todos'
-            ? 'Ningún funcionario tiene turnos asignados dentro de ese rango de fechas.'
+        return $modo === 'direccion'
+            ? 'Ningún funcionario con contrato de esa dirección tiene turnos asignados dentro de ese rango de fechas.'
             : 'El funcionario no tiene ningún turno asignado dentro de ese rango de fechas.';
     }
 

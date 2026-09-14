@@ -520,3 +520,86 @@ it('no revive la asignación dada de baja de otro contrato', function (): void {
     expect(AsignacionTurno::query()->delContrato(16600)->count())->toBe(0)
         ->and(AsignacionTurno::onlyTrashed()->delContrato(16599)->count())->toBe(5);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Consultar el horario asignado
+|--------------------------------------------------------------------------
+|
+| Lo lee Mamoré para mostrarle a cada funcionario su propio horario desde su
+| perfil, sin darle cuenta en SisMark.
+*/
+
+function pedirTurnosComoMamore(string $ci, array $parametros = []): TestResponse
+{
+    $consulta = $parametros === [] ? '' : '?'.http_build_query($parametros);
+
+    return test()->getJson("/api/v1/funcionarios/{$ci}/turnos{$consulta}", cabecerasApi());
+}
+
+it('entrega el horario asignado agrupado por vigencia', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    $respuesta = pedirTurnosComoMamore('7633685');
+
+    // Uno y no cinco: las cinco filas del horario semanal comparten período, y
+    // sueltas le mostrarían al funcionario cinco «turnos» donde tiene uno.
+    $respuesta->assertOk()->assertJsonCount(1, 'data');
+
+    $periodo = $respuesta->json('data.0');
+
+    expect($periodo['desde'])->toBe('2026-01-05')
+        ->and($periodo['hasta'])->toBe('2026-12-31')
+        ->and($periodo['dias'])->toHaveCount(5)
+        ->and(array_column($periodo['dias'], 'dia'))->toBe([2, 3, 4, 5, 6])
+        ->and($periodo['dias'][0]['hEntrada'])->toBe('08:00')
+        ->and($periodo['dias'][0]['hSalida'])->toBe('16:00')
+        // La pregunta que se hace todo el mundo: hasta qué hora puedo llegar.
+        ->and($periodo['dias'][0]['hTolerancia'])->toBe('08:10')
+        ->and($periodo['dias'][0]['eMinima'])->toBe('07:00')
+        ->and($periodo['dias'][0]['sMaxima'])->toBe('23:59');
+});
+
+it('separa en bloques distintos dos vigencias del mismo funcionario', function (): void {
+    asignarContrato('7633685', 16599, '2020-01-06', '2020-12-31');
+    asignarContrato('7633685', 16600, '2026-01-05', '2026-12-31');
+
+    // El contrato viejo es historial: quien entra a ver su horario viene a mirar
+    // el que rige, y en una carrera larga lo vencido tapa lo vigente.
+    pedirTurnosComoMamore('7633685')->assertOk()->assertJsonCount(1, 'data');
+
+    $todas = pedirTurnosComoMamore('7633685', ['vencidas' => 1])->assertOk();
+
+    $todas->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.situacion', 'vigente')
+        ->assertJsonPath('data.1.situacion', 'vencida');
+});
+
+it('avisa que el horario todavía no empezó', function (): void {
+    asignarContrato('7633685', 16599, now()->addMonth()->toDateString(), now()->addYear()->toDateString());
+
+    // «Futura» y no «vigente»: el funcionario tiene que poder distinguir el
+    // horario que ya le corre del que empieza el mes que viene.
+    pedirTurnosComoMamore('7633685')->assertOk()->assertJsonPath('data.0.situacion', 'futura');
+});
+
+it('devuelve la lista vacía para quien no tiene horario asignado', function (): void {
+    horarioGeneralSugerido();
+
+    // No es un error: sin turno, el procesador resuelve todos sus días como «no
+    // laborable» y esa persona queda sin control de asistencia. Verlo vacío es
+    // justamente lo que hace falta.
+    pedirTurnosComoMamore('7633685')->assertOk()->assertExactJson(['data' => []]);
+});
+
+it('no le muestra a un funcionario el horario de otro', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    pedirTurnosComoMamore('9999999')->assertOk()->assertExactJson(['data' => []]);
+});
+
+it('exige el token para consultar el horario', function (): void {
+    asignarContrato('7633685', 16599, '2026-01-05', '2026-12-31');
+
+    test()->getJson('/api/v1/funcionarios/7633685/turnos')->assertStatus(401);
+});

@@ -11,18 +11,24 @@ use Illuminate\Validation\Rule;
 
 /**
  * Reglas para anotar licencia(s). Un envío cubre un rango de fechas y uno de
- * los tres alcances: un funcionario, varios elegidos a mano, o todos los que
- * tengan turno dentro del rango (feriados y tolerancias generales). El servicio
- * expande eso a una fila de `licencias` por funcionario, día y turno.
+ * los tres alcances: un funcionario, varios elegidos a mano, o una dirección
+ * administrativa —o una de sus unidades—, que es como se anota un feriado o una
+ * tolerancia general. El servicio expande eso a una fila de `licencias` por
+ * funcionario, día y turno.
  */
 class StoreLicenciaRequest extends FormRequest
 {
     /**
      * Alcances posibles del alta.
      *
+     * Ya no existe «todos»: alcanzaba a cualquiera que tuviera un turno asignado
+     * en el rango, sin mirar si seguía contratado, y no había forma de acotarlo a
+     * una parte de la Gobernación. Lo reemplaza «direccion», que parte del
+     * personal con contrato firmado de esa dirección o unidad.
+     *
      * @var list<string>
      */
-    public const MODOS = ['uno', 'varios', 'todos'];
+    public const MODOS = ['uno', 'varios', 'direccion'];
 
     public function authorize(): bool
     {
@@ -42,6 +48,11 @@ class StoreLicenciaRequest extends FormRequest
             'ci' => ['required_if:modo,uno', 'nullable', 'string', 'max:12'],
             'cis' => ['required_if:modo,varios', 'nullable', 'array'],
             'cis.*' => ['string', 'max:12'],
+            // La dirección y la unidad son ids de Mamoré, así que no se validan
+            // contra ninguna tabla local: que existan y tengan gente con contrato
+            // lo resuelve el controlador cuando pide el personal.
+            'direccion' => ['required_if:modo,direccion', 'nullable', 'integer', 'min:1'],
+            'unidad' => ['nullable', 'integer', 'min:1'],
             // Opcional y solo en modo «uno»: sin turnos elegidos se licencian
             // todos los que el funcionario tenga asignados dentro del rango.
             'asignaciones' => ['nullable', 'array'],
@@ -102,6 +113,7 @@ class StoreLicenciaRequest extends FormRequest
         return [
             'ci.required_if' => 'Elegí el funcionario que requiere la licencia.',
             'cis.required_if' => 'Agregá al menos un funcionario a la lista.',
+            'direccion.required_if' => 'Elegí la dirección administrativa que se licencia.',
             'hasta.after_or_equal' => 'La fecha «Hasta» no puede ser anterior a «Desde».',
             'lEntra.required_if' => 'Indicá la hora de entrada o marcá «Turno completo».',
             'lSale.required_if' => 'Indicá la hora de salida o marcá «Turno completo».',

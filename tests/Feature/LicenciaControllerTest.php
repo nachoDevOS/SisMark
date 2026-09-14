@@ -13,6 +13,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Js;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 
@@ -32,6 +33,40 @@ beforeEach(function () {
 function respaldoDePrueba(): UploadedFile
 {
     return UploadedFile::fake()->create('respaldo.pdf', 40, 'application/pdf');
+}
+
+/** Dirección administrativa que usan las pruebas del alcance «por dirección». */
+const DIRECCION_LIC = 7;
+
+/** Unidad administrativa colgada de esa dirección. */
+const UNIDAD_LIC = 21;
+
+/**
+ * Padrón de Mamoré para un plantel ya creado: todos con contrato firmado en la
+ * misma dirección, y opcionalmente en la misma unidad.
+ *
+ * @param  list<Persona>  $personas
+ * @param  array<string, mixed>  $extra  lo que cambie por funcionario, por CI
+ */
+function padronDeLaDireccion(array $personas, ?int $unidad = null, array $extra = []): void
+{
+    $padron = [];
+
+    foreach ($personas as $persona) {
+        $ci = trim((string) $persona->ci);
+
+        $padron[$ci] = ($extra[$ci] ?? []) + [
+            'nombre' => 'FUNCIONARIO '.$ci,
+            'cargo' => 'TECNICO',
+            'direccion' => 'RRHH',
+            'direccion_id' => DIRECCION_LIC,
+            'unidad' => $unidad === null ? null : 'UNI',
+            'unidad_id' => $unidad,
+            'contratos' => [['start' => '2026-01-01', 'finish' => '2026-12-31']],
+        ];
+    }
+
+    fakeMamore($padron);
 }
 
 /**
@@ -975,19 +1010,27 @@ test('licencia grupal: anota a los funcionarios elegidos y deja fuera al resto',
         ->and(Licencia::query()->where('ci', $tres->ci)->exists())->toBeFalse();
 });
 
-test('licencia grupal: el modo «todos» alcanza a quien tenga turno en el rango', function () {
-    plantelDeLunesAViernes(3);
+test('licencia grupal: el alcance por dirección llega a su personal con contrato', function () {
+    $plantel = plantelDeLunesAViernes(3);
 
-    // Este no trabaja en 2026: no tiene que recibir la licencia.
-    $antiguo = Persona::factory()->create(['ci' => '9999999']);
-    $turnoViejo = Turno::factory()->create(['idTurno' => 'OLD', 'dia' => '2']);
+    // Tiene turno vigente igual que el resto, pero su contrato terminó en 2025:
+    // el alcance parte del contrato, así que no puede recibir la licencia.
+    $sinContrato = Persona::factory()->create(['ci' => '9999999']);
+    $turno = Turno::factory()->create(['idTurno' => 'OLD', 'dia' => '2']);
     AsignacionTurno::factory()->create([
-        'ci' => $antiguo->ci, 'turno_id' => $turnoViejo->id, 'idTurno' => $turnoViejo->idTurno,
-        'desde' => '2019-01-01 00:00:00', 'hasta' => '2019-12-31 00:00:00',
+        'ci' => $sinContrato->ci, 'turno_id' => $turno->id, 'idTurno' => $turno->idTurno,
+        'desde' => '2020-01-01 00:00:00', 'hasta' => '2030-12-31 00:00:00',
+    ]);
+
+    padronDeLaDireccion([...$plantel, $sinContrato], extra: [
+        trim((string) $sinContrato->ci) => [
+            'contratos' => [['start' => '2025-01-01', 'finish' => '2025-12-31']],
+        ],
     ]);
 
     $this->post(route('licencias.store'), [
-        'modo' => 'todos',
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
         'desde' => '2026-07-27',
         'hasta' => '2026-07-27',
         'tCompleto' => '1',
@@ -997,15 +1040,64 @@ test('licencia grupal: el modo «todos» alcanza a quien tenga turno en el rango
     ])->assertSessionHas('estado');
 
     expect(Licencia::query()->count())->toBe(3)
-        ->and(Licencia::query()->where('ci', $antiguo->ci)->exists())->toBeFalse();
+        ->and(Licencia::query()->where('ci', $sinContrato->ci)->exists())->toBeFalse();
+});
+
+test('licencia grupal: el alcance por dirección deja fuera a las demás direcciones', function () {
+    $plantel = plantelDeLunesAViernes(3);
+    $ajeno = $plantel[2];
+
+    padronDeLaDireccion($plantel, extra: [
+        // Mismo turno y mismo contrato, pero en otra dirección.
+        trim((string) $ajeno->ci) => ['direccion' => 'FIN', 'direccion_id' => 99],
+    ]);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-27',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'FERIADO',
+        'respaldo' => respaldoDePrueba(),
+    ])->assertSessionHas('estado');
+
+    expect(Licencia::query()->count())->toBe(2)
+        ->and(Licencia::query()->where('ci', $ajeno->ci)->exists())->toBeFalse();
+});
+
+test('licencia grupal: la unidad acota el alcance dentro de la dirección', function () {
+    $plantel = plantelDeLunesAViernes(3);
+    $deLaUnidad = $plantel[0];
+
+    padronDeLaDireccion($plantel, extra: [
+        trim((string) $deLaUnidad->ci) => ['unidad' => 'UNI', 'unidad_id' => UNIDAD_LIC],
+    ]);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
+        'unidad' => UNIDAD_LIC,
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-27',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'TOLERANCIA DE LA UNIDAD',
+        'respaldo' => respaldoDePrueba(),
+    ])->assertSessionHas('estado');
+
+    expect(Licencia::query()->count())->toBe(1)
+        ->and(trim((string) Licencia::query()->value('ci')))->toBe(trim((string) $deLaUnidad->ci));
 });
 
 test('licencia grupal: expande el rango completo por cada funcionario', function () {
-    plantelDeLunesAViernes(3);
+    padronDeLaDireccion(plantelDeLunesAViernes(3));
 
     // Lunes a viernes × 3 funcionarios = 15 licencias.
     $this->post(route('licencias.store'), [
-        'modo' => 'todos',
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
         'desde' => '2026-07-27',
         'hasta' => '2026-07-31',
         'tCompleto' => '1',
@@ -1044,12 +1136,13 @@ test('licencia grupal: no duplica lo ya registrado y lo informa', function () {
 test('licencia grupal: guarda el autor y la fecha de pedido en cada fila', function () {
     $admin = asSuperAdmin();
     $this->actingAs($admin);
-    plantelDeLunesAViernes(2);
+    padronDeLaDireccion(plantelDeLunesAViernes(2));
 
     Carbon::setTestNow(Carbon::create(2026, 7, 26, 9, 15, 0, config('app.timezone')));
 
     $this->post(route('licencias.store'), [
-        'modo' => 'todos',
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
         'desde' => '2026-07-27',
         'hasta' => '2026-07-27',
         'tCompleto' => '1',
@@ -1071,7 +1164,7 @@ test('licencia grupal: guarda el autor y la fecha de pedido en cada fila', funct
 });
 
 test('licencia grupal: resuelve el alta masiva en pocas consultas', function () {
-    plantelDeLunesAViernes(20);
+    padronDeLaDireccion(plantelDeLunesAViernes(20));
 
     $consultas = 0;
     DB::listen(function () use (&$consultas): void {
@@ -1081,7 +1174,8 @@ test('licencia grupal: resuelve el alta masiva en pocas consultas', function () 
     // 20 funcionarios × 5 días hábiles = 100 licencias. El costo no puede crecer
     // con la cantidad de filas: una consulta de existencia y inserts por bloque.
     $this->post(route('licencias.store'), [
-        'modo' => 'todos',
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
         'desde' => '2026-07-27',
         'hasta' => '2026-07-31',
         'tCompleto' => '1',
@@ -1094,11 +1188,14 @@ test('licencia grupal: resuelve el alta masiva en pocas consultas', function () 
         ->and($consultas)->toBeLessThan(20);
 });
 
-test('licencia grupal: avisa si nadie tiene turno en el rango', function () {
-    Persona::factory()->create(['ci' => '7633685']);
+test('licencia grupal: avisa si nadie de la dirección tiene turno en el rango', function () {
+    // Está en la dirección y con contrato, pero sin ningún turno asignado.
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+    padronDeLaDireccion([$persona]);
 
     $this->post(route('licencias.store'), [
-        'modo' => 'todos',
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
         'desde' => '2026-07-27',
         'hasta' => '2026-07-27',
         'tCompleto' => '1',
@@ -1106,6 +1203,214 @@ test('licencia grupal: avisa si nadie tiene turno en el rango', function () {
         'motivo' => 'FERIADO',
         'respaldo' => respaldoDePrueba(),
     ])->assertSessionHas('error');
+
+    expect(Licencia::query()->count())->toBe(0);
+});
+
+test('licencia grupal: una dirección sin nadie con contrato no licencia a la Gobernación entera', function () {
+    // La trampa que hace falta cubrir: con la lista de carnets vacía,
+    // `turnosDelRango` no acota por funcionario y alcanzaría a todo el mundo.
+    $plantel = plantelDeLunesAViernes(3);
+
+    padronDeLaDireccion($plantel, extra: array_reduce(
+        $plantel,
+        fn (array $acumulado, Persona $persona): array => $acumulado + [
+            trim((string) $persona->ci) => ['direccion' => 'FIN', 'direccion_id' => 99],
+        ],
+        [],
+    ));
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-27',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'FERIADO',
+        'respaldo' => respaldoDePrueba(),
+    ])->assertSessionHas('error');
+
+    expect(Licencia::query()->count())->toBe(0);
+});
+
+test('licencia grupal: se puede licenciar a algunos de la dirección y no a todos', function () {
+    $plantel = plantelDeLunesAViernes(3);
+    padronDeLaDireccion($plantel);
+
+    $elegidos = [trim((string) $plantel[0]->ci), trim((string) $plantel[2]->ci)];
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
+        'cis' => $elegidos,
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-27',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'PERMISO',
+        'respaldo' => respaldoDePrueba(),
+    ])->assertSessionHas('estado');
+
+    expect(Licencia::query()->pluck('ci')->map(fn ($ci) => trim((string) $ci))->sort()->values()->all())
+        ->toBe(collect($elegidos)->sort()->values()->all())
+        ->and(Licencia::query()->where('ci', $plantel[1]->ci)->exists())->toBeFalse();
+});
+
+test('licencia grupal: sin marcar a nadie entra la dirección entera', function () {
+    padronDeLaDireccion(plantelDeLunesAViernes(3));
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-27',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'FERIADO',
+        'respaldo' => respaldoDePrueba(),
+    ])->assertSessionHas('estado');
+
+    expect(Licencia::query()->count())->toBe(3);
+});
+
+test('licencia grupal: la selección acota pero no puede sumar a alguien de otra dirección', function () {
+    // La marca de la pantalla es un filtro, no una lista de altas: un envío
+    // manipulado que agregue un carnet ajeno tiene que perderlo en el cruce.
+    $plantel = plantelDeLunesAViernes(3);
+    $ajeno = $plantel[2];
+
+    padronDeLaDireccion($plantel, extra: [
+        trim((string) $ajeno->ci) => ['direccion' => 'FIN', 'direccion_id' => 99],
+    ]);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
+        'cis' => [trim((string) $plantel[0]->ci), trim((string) $ajeno->ci)],
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-27',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'PERMISO',
+        'respaldo' => respaldoDePrueba(),
+    ])->assertSessionHas('estado');
+
+    expect(Licencia::query()->count())->toBe(1)
+        ->and(Licencia::query()->where('ci', $ajeno->ci)->exists())->toBeFalse();
+});
+
+test('licencia grupal: si lo elegido no es de la dirección no se anota nada', function () {
+    $plantel = plantelDeLunesAViernes(2);
+    padronDeLaDireccion($plantel, extra: [
+        trim((string) $plantel[1]->ci) => ['direccion' => 'FIN', 'direccion_id' => 99],
+    ]);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'direccion',
+        'direccion' => DIRECCION_LIC,
+        'cis' => [trim((string) $plantel[1]->ci)],
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-27',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'PERMISO',
+        'respaldo' => respaldoDePrueba(),
+    ])->assertSessionHas('error');
+
+    expect(Licencia::query()->count())->toBe(0);
+});
+
+test('la dirección y la unidad se eligen con un combo de búsqueda, no con un select', function () {
+    // Son setenta direcciones largas: un <select> obliga a recorrerlas de a una.
+    $pantalla = $this->get(route('licencias.create'))->assertOk();
+
+    $pantalla->assertSee('id="combo-direccion"', escape: false)
+        ->assertSee('id="combo-unidad"', escape: false)
+        ->assertSee('Escribí para buscar la dirección…', escape: false)
+        // Filtra sobre el catálogo ya traído: escribir no gasta cuota de la API.
+        ->assertSee('direccionesFiltradas', escape: false)
+        ->assertSee('unidadesFiltradas', escape: false);
+
+    // El valor sigue viajando por los hidden, no por el campo de texto.
+    $pantalla->assertSee('name="direccion"', escape: false)
+        ->assertSee('name="unidad"', escape: false);
+});
+
+test('un error de validación no vuelve a marcar a todo el personal de la dirección', function () {
+    // Quien desmarcó a medio plantel y se olvidó el motivo tiene que encontrar su
+    // selección como la dejó: remarcarlos a todos licenciaría de más sin avisar.
+    $plantel = plantelDeLunesAViernes(3);
+    padronDeLaDireccion($plantel);
+
+    $elegidos = [trim((string) $plantel[0]->ci)];
+
+    $pantalla = $this->from(route('licencias.create'))
+        ->post(route('licencias.store'), [
+            'modo' => 'direccion',
+            'direccion' => DIRECCION_LIC,
+            'cis' => $elegidos,
+            'desde' => '2026-07-27',
+            'hasta' => '2026-07-27',
+            'tCompleto' => '1',
+            'goceHaberes' => '1',
+            // Sin motivo: vuelve al formulario con los datos cargados.
+            'respaldo' => respaldoDePrueba(),
+        ])
+        ->assertSessionHasErrors('motivo')
+        ->assertRedirect(route('licencias.create'));
+
+    // La pantalla se rearma con lo que estaba marcado, no con todos. Se compara
+    // contra `Js::from`, que es lo que emite `@js()`: la comilla va escapada.
+    $this->followRedirects($pantalla)
+        ->assertOk()
+        ->assertSee('seleccionPrevia: '.Js::from($elegidos), escape: false);
+
+    expect(Licencia::query()->count())->toBe(0);
+});
+
+test('la selección previa no se arrastra desde el alcance «varios»', function () {
+    // Los carnets de «varios» son otra lista: si se reusaran como selección de una
+    // dirección, el cruce los descartaría y no quedaría nadie marcado.
+    $plantel = plantelDeLunesAViernes(2);
+    padronDeLaDireccion($plantel);
+
+    $pantalla = $this->from(route('licencias.create'))
+        ->post(route('licencias.store'), [
+            'modo' => 'varios',
+            'cis' => [trim((string) $plantel[0]->ci)],
+            'desde' => '2026-07-27',
+            'hasta' => '2026-07-27',
+            'tCompleto' => '1',
+            'goceHaberes' => '1',
+            'respaldo' => respaldoDePrueba(),
+        ])
+        ->assertSessionHasErrors('motivo');
+
+    $this->followRedirects($pantalla)
+        ->assertOk()
+        ->assertSee('seleccionPrevia: null', escape: false);
+});
+
+test('la pantalla deja marcar y desmarcar al personal de la dirección', function () {
+    $this->get(route('licencias.create'))
+        ->assertOk()
+        ->assertSee('Marcar todos')
+        // Cada fila viaja como `cis[]`, que es lo que el servidor cruza.
+        ->assertSee('name="cis[]"', escape: false)
+        ->assertSee('x-model="seleccionados"', escape: false);
+});
+
+test('licencia grupal: exige la dirección en el modo «direccion»', function () {
+    $this->post(route('licencias.store'), [
+        'modo' => 'direccion',
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-27',
+        'tCompleto' => '1',
+        'goceHaberes' => '1',
+        'motivo' => 'FERIADO',
+        'respaldo' => respaldoDePrueba(),
+    ])->assertSessionHasErrors('direccion');
 
     expect(Licencia::query()->count())->toBe(0);
 });
@@ -1129,7 +1434,57 @@ test('la pantalla de licenciar ofrece los tres alcances', function () {
         ->assertOk()
         ->assertSee('Un funcionario')
         ->assertSee('Varios funcionarios')
-        ->assertSee('Todos los que trabajen en el rango');
+        ->assertSee('Por dirección o unidad')
+        // El alcance viejo alcanzaba a cualquiera con turno asignado, sin mirar
+        // si seguía contratado ni de qué dirección era.
+        ->assertDontSee('Todos los que trabajen en el rango');
+});
+
+test('los combos de dirección y unidad salen de Mamoré con su gente', function () {
+    padronDeLaDireccion(plantelDeLunesAViernes(2), unidad: UNIDAD_LIC);
+
+    $this->getJson(route('licencias.direcciones', ['desde' => '2026-07-27', 'hasta' => '2026-07-31']))
+        ->assertOk()
+        ->assertJsonPath('direcciones.0.id', DIRECCION_LIC)
+        ->assertJsonPath('direcciones.0.funcionarios', 2)
+        ->assertJsonPath('unidades.0.id', UNIDAD_LIC)
+        // De qué dirección cuelga, para filtrar el segundo combo sin otro viaje.
+        ->assertJsonPath('unidades.0.direccionId', DIRECCION_LIC);
+});
+
+test('la vista previa lista al personal con contrato de la dirección', function () {
+    $plantel = plantelDeLunesAViernes(2);
+    $sinContrato = Persona::factory()->create(['ci' => '9999999']);
+
+    padronDeLaDireccion([...$plantel, $sinContrato], extra: [
+        trim((string) $sinContrato->ci) => [
+            'contratos' => [['start' => '2025-01-01', 'finish' => '2025-12-31']],
+        ],
+    ]);
+
+    $respuesta = $this->getJson(route('licencias.direccion.funcionarios', [
+        'direccion' => DIRECCION_LIC,
+        'desde' => '2026-07-27',
+        'hasta' => '2026-07-31',
+    ]))->assertOk();
+
+    // Quien firma el permiso tiene que ver a quiénes alcanza antes de guardar.
+    expect($respuesta->json('funcionarios'))->toHaveCount(2)
+        ->and(collect($respuesta->json('funcionarios'))->pluck('ci'))
+        ->not->toContain(trim((string) $sinContrato->ci))
+        ->and($respuesta->json('funcionarios.0.cargo'))->toBe('TECNICO');
+});
+
+test('la vista previa exige una dirección', function () {
+    $this->getJson(route('licencias.direccion.funcionarios'))->assertStatus(422);
+});
+
+test('sin permiso de alta no se puede ver el personal de una dirección', function () {
+    $this->actingAs(usuarioCon(['ViewAny:Licencia']));
+
+    $this->getJson(route('licencias.direcciones'))->assertForbidden();
+    $this->getJson(route('licencias.direccion.funcionarios', ['direccion' => DIRECCION_LIC]))
+        ->assertForbidden();
 });
 
 test('elimina una licencia de forma lógica y registra quién la borró', function () {

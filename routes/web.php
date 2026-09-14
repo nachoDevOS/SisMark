@@ -112,6 +112,12 @@ Route::middleware('auth')->group(function (): void {
     Route::get('licencias/ajax/list', [LicenciaController::class, 'list'])->name('licencias.list');
     // Búsqueda JSON de funcionarios para el combo de la pantalla «Licenciar».
     Route::get('licencias/ajax/funcionarios', [LicenciaController::class, 'buscarFuncionarios'])->name('licencias.funcionarios');
+    // Alcance «por dirección»: el catálogo de direcciones y unidades, y el
+    // personal con contrato de la elegida, para verlo antes de anotar. Tienen
+    // ruta propia y no la del reporte porque aquella exige el permiso de
+    // reportes, que quien anota licencias no tiene por qué tener.
+    Route::get('licencias/ajax/direcciones', [LicenciaController::class, 'direcciones'])->name('licencias.direcciones');
+    Route::get('licencias/ajax/direccion-funcionarios', [LicenciaController::class, 'funcionariosDeDireccion'])->name('licencias.direccion.funcionarios');
     // Respaldo de la licencia (certificado, memorándum). Va contra el bucket
     // con un enlace firmado de vida corta: el archivo nunca es público.
     Route::get('licencias/{licencia}/respaldo', [LicenciaController::class, 'respaldo'])->name('licencias.respaldo');

@@ -8,6 +8,7 @@ use App\Http\Resources\LicenciaApiResource;
 use App\Http\Resources\MarcacionApiResource;
 use App\Models\Asistencia;
 use App\Models\Licencia;
+use App\Services\ContratosFuncionario;
 use App\Services\ProcesadorAsistencia;
 use App\Services\ResolutorNombres;
 use App\Services\RespaldoDocumento;
@@ -70,7 +71,7 @@ class AsistenciaFuncionarioController extends Controller
             ->get();
 
         return MarcacionApiResource::collection($marcaciones)
-            ->additional($this->meta($ci, $desde, $hasta));
+            ->additional($this->meta($request, $ci, $desde, $hasta));
     }
 
     /**
@@ -86,7 +87,28 @@ class AsistenciaFuncionarioController extends Controller
     {
         [$ci, $desde, $hasta] = $this->parametros($request, $ci);
 
-        $dias = $procesador->procesar($ci, $desde, $hasta);
+        // Con `contratos` en el pedido, el cálculo usa esos tramos y **no sale a
+        // la red**. Sin ellos, se le preguntan a Mamoré como siempre.
+        //
+        // Existe porque ese viaje era el punto frágil de todo el endpoint: el
+        // consumidor de hoy es Mamoré, que **es el sistema donde viven los
+        // contratos**, así que SisMark le estaba pidiendo de vuelta un dato que
+        // el que preguntaba ya tenía en la mano. Cuando ese salto falla —o se
+        // traba, porque vuelve sobre el servidor que está esperando la
+        // respuesta— la pantalla del funcionario muere por algo que nadie
+        // necesitaba consultar.
+        //
+        // **Quién afirma el contrato cambia, y hay que decirlo.** Al mandarlos,
+        // el consumidor pasa a declarar en qué fechas esa persona estuvo
+        // contratada, y con eso puede excluir días del control. No es una puerta
+        // nueva: el token ya identifica a un sistema registrado, y ese sistema
+        // es justamente la autoridad sobre los contratos —hasta ahora se los
+        // preguntábamos a él—. Lo que cambia es la dirección del dato, no de
+        // quién sale.
+        $dias = $request->has('contratos')
+            ? $procesador->procesarConTramos($ci, $desde, $hasta, $this->tramosDelPedido($request))
+            : $procesador->procesar($ci, $desde, $hasta);
+
         $totales = $procesador->totales($dias);
 
         return response()->json([
@@ -118,7 +140,7 @@ class AsistenciaFuncionarioController extends Controller
                     ->values()
                     ->all(),
             ],
-            ...$this->meta($ci, $desde, $hasta),
+            ...$this->meta($request, $ci, $desde, $hasta),
         ]);
     }
 
@@ -179,7 +201,7 @@ class AsistenciaFuncionarioController extends Controller
         });
 
         return LicenciaApiResource::collection($licencias)
-            ->additional($this->meta($ci, $desde, $hasta));
+            ->additional($this->meta($request, $ci, $desde, $hasta));
     }
 
     /**
@@ -268,6 +290,32 @@ class AsistenciaFuncionarioController extends Controller
     }
 
     /**
+     * Los tramos de contrato que mandó el consumidor, con la misma forma que
+     * devuelve {@see ContratosFuncionario::tramos()}.
+     *
+     * **La lista vacía no es lo mismo que no mandar nada.** Vacía significa «no
+     * tuvo contrato en el rango» y excluye todos sus días —salen «sin
+     * contrato»—; no mandar `contratos` significa «no sé» y ahí se le pregunta a
+     * Mamoré. La diferencia la resuelve `$request->has()` en
+     * {@see self::asistencia()}, no este método.
+     *
+     * @return list<array{desde: Carbon, hasta: ?Carbon}>
+     */
+    private function tramosDelPedido(Request $request): array
+    {
+        return collect($request->input('contratos') ?? [])
+            ->map(fn (array $tramo): array => [
+                'desde' => Carbon::parse($tramo['desde'])->startOfDay(),
+                'hasta' => ($tramo['hasta'] ?? null) === null || $tramo['hasta'] === ''
+                    ? null
+                    : Carbon::parse($tramo['hasta'])->startOfDay(),
+            ])
+            ->sortBy(fn (array $tramo): int => $tramo['desde']->getTimestamp())
+            ->values()
+            ->all();
+    }
+
+    /**
      * Valida y normaliza lo que llega: la cédula de la ruta y el rango.
      *
      * Sin rango se toma el mes actual hasta hoy, igual que las pantallas del
@@ -283,6 +331,15 @@ class AsistenciaFuncionarioController extends Controller
         $validado = $request->validate([
             'desde' => ['nullable', 'date'],
             'hasta' => ['nullable', 'date'],
+            // Si viaja la ficha del funcionario en `meta`. Apagarla le ahorra al
+            // pedido el salto de red a Mamoré; ver {@see self::meta()}.
+            'funcionario' => ['nullable', 'boolean'],
+            // Los tramos de contrato que manda el consumidor. Ver la nota de
+            // {@see self::asistencia()}: mandarlos evita el viaje a Mamoré.
+            'contratos' => ['nullable', 'array'],
+            'contratos.*.desde' => ['required', 'date'],
+            // Sin fecha de término el contrato sigue abierto.
+            'contratos.*.hasta' => ['nullable', 'date'],
         ]);
 
         $ci = trim($ci);
@@ -318,13 +375,25 @@ class AsistenciaFuncionarioController extends Controller
      *
      * @return array{meta: array<string, mixed>}
      */
-    private function meta(string $ci, Carbon $desde, Carbon $hasta): array
+    private function meta(Request $request, string $ci, Carbon $desde, Carbon $hasta): array
     {
-        $ficha = app(ResolutorNombres::class)->fichaPorCi($ci);
+        // La ficha del funcionario **sale por la red**: `ResolutorNombres`
+        // pregunta primero a Mamoré. Para un consumidor que ya sabe de quién
+        // está preguntando —porque la cédula la sacó de su propia sesión— eso
+        // es un viaje de ida y vuelta a su propio servidor para recuperar un
+        // dato que ya tenía, y encima es el tramo que hace lento y frágil todo
+        // el pedido: si ese salto tarda, la respuesta entera llega tarde.
+        //
+        // Por eso se puede pedir sin ella, con `funcionario=0`. El bloque
+        // entonces no viaja, en vez de viajar en null: quien lo apagó sabe que
+        // lo apagó, y un null se leería como «esta cédula no existe».
+        $ficha = $request->boolean('funcionario', true)
+            ? app(ResolutorNombres::class)->fichaPorCi($ci)
+            : false;
 
         return [
             'meta' => [
-                'funcionario' => [
+                ...($ficha === false ? [] : ['funcionario' => [
                     'ci' => $ci,
                     'nombre' => $ficha['nombre'] ?? null,
                     // «Apellidos Nombres», que es como rotula el reporte
@@ -333,7 +402,7 @@ class AsistenciaFuncionarioController extends Controller
                     'pinReloj' => $ficha['pinReloj'] ?? null,
                     'cargo' => $ficha['cargo'] ?? null,
                     'direccion' => $ficha['direccion'] ?? null,
-                ],
+                ]]),
                 'rango' => [
                     'desde' => $desde->toDateString(),
                     'hasta' => $hasta->toDateString(),

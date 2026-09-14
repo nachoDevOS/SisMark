@@ -8,6 +8,7 @@ use App\Models\SistemaExterno;
 use App\Models\Turno;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -518,4 +519,152 @@ test('no se puede abrir la ficha de la licencia de otro funcionario', function (
     comoMamore('/api/v1/funcionarios/7633685/licencias/'.$ajena->id)
         ->assertNotFound()
         ->assertJsonMissing(['motivo' => 'RESERVADO']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| La ficha del funcionario se puede apagar
+|--------------------------------------------------------------------------
+|
+| Resolverla cuesta un salto de red a Mamoré, y el consumidor que pregunta por
+| la cédula de su propia sesión ya sabe de quién se trata.
+*/
+
+test('con funcionario=0 no se va a buscar la ficha a Mamoré', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => 'IGNACIO MOLINA GUZMAN']);
+
+    $respuesta = comoMamore('/api/v1/funcionarios/7633685/marcaciones?desde=2026-08-03&hasta=2026-08-03&funcionario=0');
+
+    // Lo que importa no es que falte la clave, sino que no haya salido el
+    // pedido: es ese salto el que hace lento y frágil todo lo demás.
+    Http::assertNothingSent();
+
+    $respuesta->assertOk()
+        ->assertJsonMissingPath('meta.funcionario')
+        // El resto de `meta` sigue viajando: no cuesta una consulta a nadie.
+        ->assertJsonPath('meta.rango.desde', '2026-08-03');
+});
+
+test('sin el parámetro la ficha sigue viniendo', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => 'IGNACIO MOLINA GUZMAN']);
+
+    // Apagarla es una decisión del consumidor, no el comportamiento nuevo por
+    // omisión: los reportes que muestran una columna «Funcionario» a partir de
+    // un CI suelto la siguen necesitando.
+    comoMamore('/api/v1/funcionarios/7633685/marcaciones?desde=2026-08-03&hasta=2026-08-03')
+        ->assertOk()
+        ->assertJsonPath('meta.funcionario.nombre', 'IGNACIO MOLINA GUZMAN');
+});
+
+test('en licencias el parámetro también evita el salto de red', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => 'IGNACIO MOLINA GUZMAN']);
+
+    comoMamore('/api/v1/funcionarios/7633685/licencias?desde=2026-08-03&hasta=2026-08-03&funcionario=0')
+        ->assertOk()
+        ->assertJsonMissingPath('meta.funcionario');
+
+    Http::assertNothingSent();
+});
+
+test('en asistencia apaga la ficha, pero el contrato se sigue consultando', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => 'IGNACIO MOLINA GUZMAN']);
+
+    comoMamore('/api/v1/funcionarios/7633685/asistencia?desde=2026-08-03&hasta=2026-08-03&funcionario=0')
+        ->assertOk()
+        ->assertJsonMissingPath('meta.funcionario');
+
+    // Acá el parámetro ahorra menos, y la prueba lo deja escrito para que nadie
+    // lo lea como «asistencia no habla con Mamoré»: `ProcesadorAsistencia`
+    // pregunta por el contrato, que es la primera puerta del cálculo —sin
+    // contrato vigente no hay día que controlar—. Ese salto no es de adorno y
+    // no se puede apagar.
+    Http::assertSentCount(1);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Los contratos los puede mandar el consumidor
+|--------------------------------------------------------------------------
+|
+| Mamoré es donde viven los contratos, así que pedírselos de vuelta era un viaje
+| a su propio servidor para recuperar un dato que ya tenía en la mano.
+*/
+
+test('con los contratos en el pedido no se le pregunta nada a Mamoré', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => 'IGNACIO MOLINA GUZMAN']);
+
+    $respuesta = comoMamore('/api/v1/funcionarios/7633685/asistencia'
+        .'?desde=2026-08-03&hasta=2026-08-03&funcionario=0'
+        .'&contratos[0][desde]=2026-01-01&contratos[0][hasta]=2026-12-31');
+
+    // Lo que importa no es el número: es que no salió ningún pedido. Ese salto
+    // era el único punto del endpoint que dependía de que el consumidor
+    // estuviera disponible para contestarse a sí mismo.
+    Http::assertNothingSent();
+
+    $respuesta->assertOk()
+        ->assertJsonPath('data.0.estado', 'atraso')
+        ->assertJsonPath('totales.atraso', '12 min');
+});
+
+test('un contrato que no cubre el día lo deja sin controlar', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => 'IGNACIO MOLINA GUZMAN']);
+
+    // El contrato terminó en julio y el día es de agosto: tiene turno asignado,
+    // así que no es «no laborable» —eso taparía el problema—, es «sin contrato».
+    comoMamore('/api/v1/funcionarios/7633685/asistencia'
+        .'?desde=2026-08-03&hasta=2026-08-03&funcionario=0'
+        .'&contratos[0][desde]=2026-01-01&contratos[0][hasta]=2026-07-31')
+        ->assertOk()
+        ->assertJsonPath('data.0.estado', 'sin_contrato');
+});
+
+test('el contrato sin fecha de fin sigue abierto', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => 'IGNACIO MOLINA GUZMAN']);
+
+    comoMamore('/api/v1/funcionarios/7633685/asistencia'
+        .'?desde=2026-08-03&hasta=2026-08-03&funcionario=0'
+        .'&contratos[0][desde]=2026-01-01')
+        ->assertOk()
+        ->assertJsonPath('data.0.estado', 'atraso');
+});
+
+test('la lista vacía de contratos no es lo mismo que no mandarla', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => 'IGNACIO MOLINA GUZMAN']);
+
+    // Vacía significa «no tuvo contrato», y eso excluye el día. Es distinto de
+    // no mandar nada, que significa «no sé» y manda a preguntar.
+    comoMamore('/api/v1/funcionarios/7633685/asistencia?desde=2026-08-03&hasta=2026-08-03&funcionario=0&contratos=')
+        ->assertOk()
+        ->assertJsonPath('data.0.estado', 'sin_contrato');
+
+    Http::assertNothingSent();
+});
+
+test('sin contratos en el pedido se le siguen preguntando a Mamoré', function () {
+    funcionarioConAsistencia();
+    fakeMamore(['7633685' => ['nombre' => 'IGNACIO MOLINA GUZMAN', 'cargo' => 'DESARROLLADOR']]);
+
+    // El comportamiento viejo no se toca: los consumidores que no los tengan
+    // —y los reportes de acá— siguen andando igual.
+    comoMamore('/api/v1/funcionarios/7633685/asistencia?desde=2026-08-03&hasta=2026-08-03&funcionario=0')
+        ->assertOk();
+
+    Http::assertSentCount(1);
+});
+
+test('un contrato con fecha inválida se rechaza', function () {
+    funcionarioConAsistencia();
+
+    comoMamore('/api/v1/funcionarios/7633685/asistencia?desde=2026-08-03&hasta=2026-08-03&contratos[0][desde]=ayer')
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('contratos.0.desde');
 });

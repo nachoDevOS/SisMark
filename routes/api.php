@@ -98,6 +98,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])
             ->middleware('abilities:licencias:write')
             ->name('api.funcionarios.licencias.destroy');
 
+        // El horario que ya tiene asignado el funcionario, para que lo vea desde
+        // el sistema del consumidor. Va con `turnos:read` y no con `write`:
+        // mostrarle a alguien su horario no es asignárselo.
+        Route::get('funcionarios/{ci}/turnos', [AsignacionTurnoApiController::class, 'index'])
+            ->middleware('abilities:turnos:read')
+            ->name('api.funcionarios.turnos.index');
+
         // Asigna el horario al dar de alta un contrato en Mamoré, con el rango
         // del contrato. A diferencia de la licencia, esta escritura sí surte
         // efecto sola: un turno crea la obligación de marcar, no la borra. El

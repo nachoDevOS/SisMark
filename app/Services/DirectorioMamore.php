@@ -164,18 +164,30 @@ class DirectorioMamore
      * Con `$unidad` se acota a una unidad administrativa de esa dirección; en
      * `null` salen todas, que es el caso normal.
      *
+     * `$soloConContrato` deja fuera a quien no tiene contrato firmado. Va apagado
+     * por defecto porque el reporte de asistencia necesita a todo el que estuvo en
+     * la dirección durante el rango —incluido el que ya se fue—; la pantalla de
+     * licenciar sí lo pide, porque a quien no tiene contrato no hay nada que
+     * licenciarle.
+     *
      * @return Collection<int, array<string, mixed>>
      *
      * @throws MamoreException
      */
-    public function porDireccion(int $direccion, string $desde, string $hasta, ?int $unidad = null): Collection
-    {
+    public function porDireccion(
+        int $direccion,
+        string $desde,
+        string $hasta,
+        ?int $unidad = null,
+        bool $soloConContrato = false,
+    ): Collection {
         $personas = collect();
 
         for ($pagina = 1; $pagina <= self::PAGINAS_MAXIMAS; $pagina++) {
             $respuesta = $this->mamore->people(
                 page: $pagina,
                 limit: self::POR_PAGINA,
+                contrato: $soloConContrato ? 'con' : 'todos',
                 direccion: $direccion,
                 desde: $desde,
                 hasta: $hasta,
@@ -197,7 +209,16 @@ class DirectorioMamore
 
         // Sin cédula no hay con qué cruzar las marcaciones: la tabla local de
         // asistencia se indexa por CI y nada más.
-        return $personas->filter(fn (array $persona): bool => $persona['ci'] !== '')->values();
+        //
+        // El contrato se vuelve a comprobar acá aunque ya se haya pedido
+        // `contrato=con`: una API vieja que no conozca el parámetro lo ignora y
+        // devolvería el padrón entero, y el alta de licencias terminaría
+        // alcanzando a gente sin contrato. `conContrato` en `null` es «la API no
+        // lo informó», y ahí no se descarta a nadie.
+        return $personas
+            ->filter(fn (array $persona): bool => $persona['ci'] !== ''
+                && (! $soloConContrato || $persona['conContrato'] !== false))
+            ->values();
     }
 
     /**
