@@ -2,6 +2,8 @@
 
 use App\Models\AsignacionTurno;
 use App\Models\Asistencia;
+use App\Models\DiaExcepcional;
+use App\Models\Licencia;
 use App\Models\Persona;
 use App\Models\Turno;
 use App\Services\ProcesadorAsistencia as P;
@@ -233,6 +235,211 @@ test('el cierre de la dirección suma las filas', function () {
         ->and($totales['atraso'])->toBe((11 + 20) * 60)
         ->and($totales['dias'])->toBe($filas->sum(fn (array $fila): int => $fila['totales']['dias']));
 });
+
+/**
+ * Padrón de una sola persona dentro de la dirección que se reporta. `$extra`
+ * pisa lo que haga falta —los contratos, sobre todo—.
+ *
+ * @param  array<string, mixed>  $extra
+ */
+function padronDeRrhh(array $extra = []): void
+{
+    fakeMamore(['111' => $extra + [
+        'nombre' => 'ARIAS LOPEZ JUAN',
+        'cargo' => 'TECNICO',
+        'direccion' => 'RRHH',
+        'direccion_id' => DIRECCION,
+    ]]);
+}
+
+/**
+ * El turno que le toca a una cédula ese día de la semana (1 = domingo), para
+ * colgarle una licencia: la columna `turno_id` no acepta nulos.
+ */
+function turnoDelDia(string $ci, int $dia): Turno
+{
+    return AsignacionTurno::query()
+        ->with('turno')
+        ->where('ci', $ci)
+        ->get()
+        ->pluck('turno')
+        ->first(fn (Turno $turno): bool => (int) $turno->dia === $dia);
+}
+
+/**
+ * Los totales de la misma persona por los dos caminos: la fila del reporte por
+ * dirección y el reporte individual.
+ *
+ * @return array{0: ?array<string, mixed>, 1: array<string, mixed>}
+ */
+function losDosCaminos(string $ci, string $desde, string $hasta): array
+{
+    $fila = app(ReporteDireccion::class)
+        ->filas(DIRECCION, Carbon::parse($desde), Carbon::parse($hasta))
+        ->firstWhere('persona.ci', $ci);
+
+    $procesador = app(P::class);
+
+    return [
+        $fila === null ? null : $fila['totales'],
+        $procesador->totales($procesador->procesar($ci, Carbon::parse($desde), Carbon::parse($hasta))),
+    ];
+}
+
+test('la fila de la dirección dice lo mismo que el reporte individual de esa persona', function (Closure $escenario) {
+    // Es la pregunta de fondo del reporte: mirar la dirección entera no puede dar
+    // un número distinto que mirar a esa persona sola. Los dos caminos consultan
+    // los contratos por endpoints distintos —uno por cédula, el otro por lote—,
+    // así que la coincidencia hay que probarla caso por caso y no suponerla del
+    // hecho de que abajo compartan el procesador.
+    [$desde, $hasta] = $escenario();
+
+    [$porDireccion, $individual] = losDosCaminos('111', $desde, $hasta);
+
+    expect($porDireccion)->toBe($individual);
+})->with([
+    'sin ninguna marca en todo el mes' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'cumple, atraso y salida anticipada' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+        marcaDe('111', '2026-07-01', '08:09', '16:05');
+        marcaDe('111', '2026-07-02', '08:11', '16:05');
+        marcaDe('111', '2026-07-03', '08:05', '15:30');
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'una sola punta: marcó la entrada y no la salida' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+        Asistencia::factory()->create([
+            'ci' => '111', 'fecha' => '2026-07-01', 'hora' => '1899-12-30 08:02:00', 'tipo' => 'E',
+        ]);
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'rebotes del reloj: la misma marca repetida' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+
+        foreach ([['08:11:00', 'E'], ['08:11:30', 'E'], ['08:12:10', 'E'], ['16:05:00', 'S']] as [$hora, $tipo]) {
+            Asistencia::factory()->create([
+                'ci' => '111', 'fecha' => '2026-07-01', 'hora' => "1899-12-30 {$hora}", 'tipo' => $tipo,
+            ]);
+        }
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'licencia de turno completo' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+        Licencia::factory()->create([
+            'ci' => '111', 'fecha' => '2026-07-06 00:00:00',
+            'turno_id' => turnoDelDia('111', 2)->id,
+            'tCompleto' => true, 'motivo' => 'VACACIÓN',
+        ]);
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'licencia por horas que tapa la entrada' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+        Licencia::factory()->porHoras('08:00', '11:00')->create([
+            'ci' => '111', 'fecha' => '2026-07-06 00:00:00',
+            'turno_id' => turnoDelDia('111', 2)->id,
+        ]);
+        marcaDe('111', '2026-07-06', '11:05', '16:05');
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'licencia por horas que deja un hueco sin marcar' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+        Licencia::factory()->porHoras('08:05', '11:00')->create([
+            'ci' => '111', 'fecha' => '2026-07-06 00:00:00',
+            'turno_id' => turnoDelDia('111', 2)->id,
+        ]);
+        Asistencia::factory()->create([
+            'ci' => '111', 'fecha' => '2026-07-06', 'hora' => '1899-12-30 16:25:00', 'tipo' => 'S',
+        ]);
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'día excepcional en medio del mes' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+        DiaExcepcional::factory()->create([
+            'fecha' => '2026-07-07 00:00:00', 'motivoInasistencia' => 'CARNAVAL',
+        ]);
+        marcaDe('111', '2026-07-07', '08:30', '16:05');
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'dos contratos con un hueco en el medio' => [function (): array {
+        padronDeRrhh(['contratos' => [
+            ['start' => '2026-07-01', 'finish' => '2026-07-12'],
+            ['start' => '2026-07-18', 'finish' => '2026-12-31'],
+        ]]);
+        conTurnoDeOficina('111');
+        marcaDe('111', '2026-07-15', '08:30', '16:05');
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'contrato que empieza después del inicio del rango' => [function (): array {
+        padronDeRrhh(['contratos' => [['start' => '2026-07-15', 'finish' => '2026-12-31']]]);
+        conTurnoDeOficina('111');
+        marcaDe('111', '2026-07-20', '08:11', '16:05');
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+
+    'rango que cruza dos meses' => [function (): array {
+        padronDeRrhh(['contratos' => [['start' => '2026-01-01', 'finish' => '2026-12-31']]]);
+        conTurnoDeOficinaHasta('111', '2026-08-31');
+        marcaDe('111', '2026-07-02', '08:11', '16:05');
+        marcaDe('111', '2026-08-04', '08:20', '16:05');
+
+        return ['2026-07-01', '2026-08-31'];
+    }],
+
+    'dos turnos el mismo día, uno cumplido y el otro no' => [function (): array {
+        padronDeRrhh();
+        conTurnoDeOficina('111');
+
+        // Turno de la tarde pegado al de oficina: el lunes queda partido.
+        $hora = fn (string $hm): string => "1899-12-30 {$hm}:00";
+        $tarde = Turno::factory()->create([
+            'dia' => '2', 'nombreTurno' => '18:00 - 22:00',
+            'hEntrada' => $hora('18:00'), 'hTolerancia' => $hora('18:05'),
+            'eMinima' => $hora('17:30'), 'eMaxima' => $hora('19:00'),
+            'hSalida' => $hora('22:00'), 'sTolerancia' => $hora('22:00'),
+            'sMinima' => $hora('22:00'), 'sMaxima' => $hora('23:30'),
+            'hTrabajadas' => 4, 'siguienteDia' => false,
+        ]);
+        AsignacionTurno::factory()->create([
+            'ci' => '111', 'turno_id' => $tarde->id,
+            'desde' => '2026-07-01 00:00:00', 'hasta' => '2026-07-31 00:00:00',
+        ]);
+
+        // Llega tarde a la mañana y no marca nada del turno de la tarde.
+        marcaDe('111', '2026-07-06', '08:15', '16:05');
+
+        return ['2026-07-01', '2026-07-31'];
+    }],
+]);
 
 test('la pantalla lista a los funcionarios de la dirección elegida', function () {
     fakeMamore(['111' => [

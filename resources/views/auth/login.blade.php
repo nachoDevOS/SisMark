@@ -17,6 +17,7 @@
         body { margin: 0; min-height: 100vh; font-size: .9rem; line-height: 1.45;
             font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
         svg { display: block; }
+        [hidden] { display: none !important; }
 
         /* Dos mitades: la marca institucional a la izquierda, el ingreso a la
            derecha. Debajo de 900px la marca se retira y queda solo la tarjeta. */
@@ -82,6 +83,17 @@
             font-size: .85rem; font-family: inherit; background: #fff; color: var(--fg); }
         .campo input:focus { outline: none; border-color: var(--verde); box-shadow: 0 0 0 3px rgba(0,166,90,.25); }
         .campo .error { color: var(--danger); font-size: .78rem; margin-top: .25rem; }
+
+        /* La contraseña lleva el ojo adentro del recuadro: el campo reserva
+           el espacio a la derecha para que el texto no pase por debajo. */
+        .clave { position: relative; }
+        .clave input { padding-right: 2.6rem; }
+        .clave__ojo { position: absolute; top: 0; right: 0; height: 100%; width: 2.6rem;
+            display: flex; align-items: center; justify-content: center;
+            border: 0; padding: 0; background: none; cursor: pointer; color: var(--muted); }
+        .clave__ojo:hover { color: var(--fg); }
+        .clave__ojo:focus-visible { outline: 2px solid var(--verde); outline-offset: -2px; border-radius: .5rem; }
+        .clave__ojo svg { width: 1.1rem; height: 1.1rem; }
         .check { display: flex; align-items: center; gap: .5rem; margin-bottom: 1.25rem; font-size: .82rem; }
         .btn { width: 100%; border: 0; cursor: pointer; background: var(--verde); color: #fff;
             padding: .65rem .85rem; border-radius: .5rem; font-size: .875rem; font-weight: 700;
@@ -130,6 +142,8 @@
             ['nombre' => 'Mamoré', 'que' => 'Personal, contratos y planillas', 'url' => 'https://mamore.beni.gob.bo/'],
             ['nombre' => 'SisCor', 'que' => 'Correspondencia y trámites', 'url' => 'https://siscor.beni.gob.bo/'],
             ['nombre' => 'Almacenes', 'que' => 'Existencias y activos', 'url' => 'https://almacen.beni.gob.bo/'],
+            ['nombre' => 'Minería', 'que' => 'Operadores mineros y sus certificados', 'url' => 'https://mineria.beni.gob.bo/'],
+            ['nombre' => 'Auditoría', 'que' => 'Control interno y auditoría gubernamental', 'url' => 'https://auditoria.beni.gob.bo/'],
             ['nombre' => 'Gaceta', 'que' => 'Normativa departamental publicada', 'url' => 'https://gaceta.beni.gob.bo/'],
         ];
     @endphp
@@ -202,8 +216,27 @@
 
                     <div class="campo">
                         <label for="password">Contraseña</label>
-                        <input type="password" id="password" name="password"
-                               autocomplete="current-password" required>
+                        <div class="clave">
+                            <input type="password" id="password" name="password"
+                                   autocomplete="current-password" required>
+                            <button type="button" class="clave__ojo" id="verClave"
+                                    aria-controls="password" aria-pressed="false"
+                                    aria-label="Mostrar la contraseña" title="Mostrar la contraseña">
+                                <svg data-ojo="mostrar" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                                {{-- El mismo ojo, pero tachado: la raja cruzada se lee de
+                                     un vistazo como «apagar», cosa que el ojo partido no. --}}
+                                <svg data-ojo="ocultar" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                                    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                    <line x1="3.5" y1="3.5" x2="20.5" y2="20.5"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
 
                     <label class="check">
@@ -221,5 +254,49 @@
             </div>
         </main>
     </div>
+
+    <script>
+        /* El ojo solo cambia el tipo del campo: nada sale del navegador y el
+           foco vuelve a la contraseña para no cortar el tecleo. */
+        (function () {
+            var campo = document.getElementById('password');
+            var boton = document.getElementById('verClave');
+
+            if (!campo || !boton) {
+                return;
+            }
+
+            var iconoMostrar = boton.querySelector('[data-ojo="mostrar"]');
+            var iconoOcultar = boton.querySelector('[data-ojo="ocultar"]');
+
+            boton.addEventListener('click', function () {
+                var visible = campo.type === 'text';
+                var posicion = campo.selectionStart;
+
+                campo.type = visible ? 'password' : 'text';
+                boton.setAttribute('aria-pressed', String(!visible));
+
+                var rotulo = visible ? 'Mostrar la contraseña' : 'Ocultar la contraseña';
+                boton.setAttribute('aria-label', rotulo);
+                boton.title = rotulo;
+
+                /* Va por atributo y no por `.hidden`: los <svg> son SVGElement y
+                   no heredan esa propiedad de HTMLElement, así que asignarla no
+                   escribe nada en el DOM y el icono se quedaba congelado. */
+                iconoMostrar.toggleAttribute('hidden', !visible);
+                iconoOcultar.toggleAttribute('hidden', visible);
+
+                campo.focus();
+
+                if (posicion !== null) {
+                    try {
+                        campo.setSelectionRange(posicion, posicion);
+                    } catch (e) {
+                        /* Algunos navegadores no permiten mover el cursor recién cambiado el tipo. */
+                    }
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
