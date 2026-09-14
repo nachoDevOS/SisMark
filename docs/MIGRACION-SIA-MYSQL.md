@@ -76,18 +76,57 @@ php -m | grep sqlsrv        # debe imprimir: pdo_sqlsrv  y  sqlsrv
 php artisan migrate
 ```
 
-### Copiar los datos — todo de una (recomendado)
+### Copiar los datos — todo de una
 
 ```bash
 php artisan db:seed --class=MigrarSiaSeeder
 ```
 
-**Este seeder primero corre `migrate:fresh --seed`** (⚠️ BORRA todas las tablas y
-recrea el esquema + usuario/roles base), y luego corre los comandos de copia en el
-orden correcto. Es una migración limpia completa cada vez. En entorno de tests no
-hace el `migrate:fresh` (la BD ya viene fresca).
+> ⚠️ **Este seeder arranca con `migrate:fresh --force`: BORRA todas las tablas.**
+> Se lleva usuarios, roles, tokens de API, turnos asignados a mano, días
+> excepcionales y **las licencias que pidieron los funcionarios desde Mamoré** —
+> todo lo que no venga del SIA—. Es para **armar la base la primera vez**, no
+> para actualizar una que ya está en uso. Ahí va la versión paso a paso de abajo.
 
-### Copiar los datos — comando por comando
+En entorno de tests no hace el `migrate:fresh` (la BD ya viene fresca por
+`RefreshDatabase`).
+
+### Copiar los datos — paso a paso
+
+El seeder no es solo los siete comandos de copia: hace cuatro cosas. Corridas por
+separado, se puede **saltear la primera**, que es la destructiva, y dejar la base
+como está.
+
+#### 1. Recrear el esquema — opcional, y es el paso que borra
+
+```bash
+php artisan migrate:fresh     # ⚠️ BORRA TODO. Solo para una base nueva o de cero.
+php artisan migrate           # Base ya en uso: solo aplica lo que falte.
+```
+
+**Sobre una base en uso va `migrate`, nunca `migrate:fresh`.** Los comandos de
+copia son `upsert` idempotente, así que actualizan lo del SIA sin tocar el resto.
+
+#### 2. Permisos, roles y usuario administrador
+
+```bash
+php artisan db:seed --class=DatabaseSeeder
+```
+
+Sin este paso la base queda con todos los datos del SIA y **sin nadie que pueda
+entrar a verlos**. Crea el usuario de `auth.seed_admin.email` (`admin@admin.com`
+por defecto) y le asigna `super_admin`.
+
+La clave sale de `SEED_ADMIN_PASSWORD` del `.env`. Si esa variable no está:
+fuera de producción queda `password`; **en producción se genera una aleatoria y
+se imprime una sola vez** — anotala de la salida del comando, no se vuelve a
+mostrar. Es a propósito: así nunca queda un «admin/password» publicado por
+olvidar la variable.
+
+Se puede reejecutar: no duplica el usuario, y con clave fija se la vuelve a
+escribir.
+
+#### 3. Los siete comandos de copia
 
 ```bash
 php artisan sia:migrar-profesiones        # catálogo (rápido)
@@ -99,15 +138,49 @@ php artisan sia:migrar-asignacion-turnos  # asignaciones (resuelve turno_id)
 php artisan sia:migrar-dias-excepcionales # feriados/tolerancias (Calendario)
 ```
 
-Cada comando acepta `--chunk=N` (filas por lote). Si algo falla, se reejecuta
-sin duplicar. El **orden importa**: `asignacion_turnos` resuelve su FK `turno_id`
-cruzando `idTurno` contra `turnos`, así que los horarios van antes.
+Cada uno acepta `--chunk=N` (filas por lote, 500 por defecto). Si algo falla, se
+reejecuta sin duplicar.
+
+El **orden importa**: `licencias` y `asignacion_turnos` resuelven su FK
+`turno_id` cruzando `idTurno` contra `turnos`, así que los horarios van antes o
+esa columna queda en null.
+
+Se pueden correr de a uno y en días distintos. Para traer solo lo nuevo de una
+tabla, se corre nada más el comando de esa tabla; no hace falta el resto.
+
+> **Sobre una base en uso:** el `upsert` pisa con lo del SIA las filas que
+> existen **en el SIA**. Lo que nació en SisMark —los pedidos de licencia que
+> llegan de Mamoré, los turnos asignados a mano— no tiene contraparte allá y
+> queda intacto. Lo que sí se pierde es una fila del SIA editada a mano de este
+> lado: vuelve al valor de origen.
+
+#### 4. Integración con Mamoré — solo desarrollo
+
+```bash
+php artisan db:seed --class=IntegracionMamoreSeeder
+```
+
+Deja el consumidor «Mamoré» con un token de texto fijo y marca como sugerido el
+horario de lunes a viernes 08:00–16:00. Va al final porque necesita los turnos ya
+copiados: antes de `sia:migrar-horarios` la tabla está vacía.
+
+**En producción no corre**: se planta con un mensaje y no hace nada, porque
+sembraría una credencial conocida y escrita en el repositorio. Allá el token se
+emite una vez desde «Tokens de API» o con `php artisan sismark:token`, y el
+horario sugerido se marca desde la pantalla de Turnos.
 
 ### Verificar
 
 ```bash
-php artisan tinker --execute 'echo DB::table("personas")->count()." personas, ".DB::table("asistencias")->count()." marcaciones\n";'
+php artisan tinker --execute '
+foreach (["personas","asistencias","profesiones","turnos","licencias","asignacion_turnos","dias_excepcionales"] as $t) {
+    echo str_pad($t, 20).DB::table($t)->count()."\n";
+}'
 ```
+
+Una tabla en cero es un comando que no se corrió o que falló. Si `licencias` o
+`asignacion_turnos` tienen filas pero con `turno_id` en null, faltó correr
+`sia:migrar-horarios` antes; se arregla corriéndolo y reejecutando esos dos.
 
 ---
 
@@ -198,7 +271,10 @@ otra dirección no se escribe nada: el servicio que lo hacía,
 `RegistroAsistenciaSia`, se eliminó al confirmarse que ningún otro sistema de la
 institución espera recibir las marcaciones nuevas por ahí.
 
-Consecuencia práctica: si hay que reconstruir la base local, se corre
-`migrate:fresh` y después `db:seed --class=MigrarSiaSeeder`, que vuelve a traer
-personas, marcaciones, licencias, turnos, asignaciones y días excepcionales. El
-SQL Server queda intacto, pase lo que pase de este lado.
+Consecuencia práctica: si hay que reconstruir la base local de cero,
+`db:seed --class=MigrarSiaSeeder` la deja entera —él mismo hace el
+`migrate:fresh`— con personas, marcaciones, licencias, turnos, asignaciones y
+días excepcionales. Para **actualizar** una base que ya está en uso, en cambio, va
+el paso a paso de la sección 2: el seeder completo la borraría primero.
+
+El SQL Server queda intacto en los dos casos, pase lo que pase de este lado.
