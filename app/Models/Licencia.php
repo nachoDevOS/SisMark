@@ -308,7 +308,10 @@ class Licencia extends Model
         $pagina = max(1, (int) Paginator::resolveCurrentPage());
         $desde = ($pagina - 1) * $porPagina;
 
-        $pedidos = static::pedidosAgrupados($filtrada);
+        // Solo los pedidos que esta página puede llegar a necesitar. Traerlos
+        // todos sería cargar la tabla entera en memoria si `solicitud` estuviera
+        // llena, que es exactamente el caso que esta clase no puede suponer.
+        $pedidos = static::pedidosAgrupados($filtrada, $desde + $porPagina);
 
         $claves = static::clavesDeLaPagina($filtrada, $pedidos, $desde, $porPagina);
 
@@ -327,7 +330,7 @@ class Licencia extends Model
             ->filter()
             ->values();
 
-        return new Paginador($filas, static::cuantasSolicitudes($filtrada, $pedidos), $porPagina, $pagina, [
+        return new Paginador($filas, static::cuantasSolicitudes($filtrada), $porPagina, $pagina, [
             'path' => Paginator::resolveCurrentPath(),
             'pageName' => 'page',
         ]);
@@ -398,21 +401,36 @@ class Licencia extends Model
 
     /**
      * Las solicitudes de verdad —las que nacieron de un pedido— con su día más
-     * reciente, ya ordenadas.
+     * reciente, ordenadas y **acotadas a las que esta página puede necesitar**.
      *
-     * Se traen **enteras** y no de a una página: son las únicas que abarcan
-     * varios días, salen por el índice `(solicitud, fecha)` y hoy son un puñado
-     * contra el millón de filas migradas. Mezclarlas después en PHP es lo que
-     * permite que la otra rama, la grande, no tenga que agruparse nunca.
+     * El tope es lo que hace que esto no dependa de cómo estén repartidos los
+     * datos. En la base de desarrollo `solicitud` viene en null en 1.112.273 de
+     * 1.112.274 filas, así que traerlas todas era gratis; si en otra instalación
+     * la columna estuviera llena, traerlas todas sería cargar la tabla entera en
+     * memoria una vez por carga de pantalla. Una clase de modelo no puede
+     * suponer la forma de los datos de producción.
+     *
+     * Cortar de más no cambia el resultado: más allá del lugar `desde +
+     * porPagina` ningún pedido puede entrar en esta página, y el corrimiento de
+     * la ventana que calcula {@see self::clavesDeLaPagina()} da lo mismo con el
+     * total de pedidos que con este tope —si son más que `desde`, la ventana
+     * arranca en cero con los dos números—.
+     *
+     * El orden y el desempate los pone la base con el mismo criterio que
+     * {@see self::ordenDe()}: si el corte cayera en medio de un empate, el
+     * pedido que queda afuera tiene que ser el mismo que PHP dejaría afuera, o
+     * la página siguiente lo repite.
      *
      * @return Collection<int, static>
      */
-    private static function pedidosAgrupados(Builder $filtrada): Collection
+    private static function pedidosAgrupados(Builder $filtrada, int $tope): Collection
     {
         return (clone $filtrada)
             ->whereNotNull('solicitud')
             ->selectRaw('solicitud as clave, MAX(fecha) as ultima')
             ->groupBy('solicitud')
+            ->orderByRaw('MAX(fecha) DESC, solicitud DESC')
+            ->limit($tope)
             ->get()
             ->sortByDesc(static fn (self $fila): string => static::ordenDe($fila))
             ->values();
@@ -440,12 +458,13 @@ class Licencia extends Model
      * cachear el resultado de este método entero, nunca una de sus partes.
      * ---
      */
-    private static function cuantasSolicitudes(Builder $filtrada, Collection $pedidos): int
+    private static function cuantasSolicitudes(Builder $filtrada): int
     {
         $filas = (clone $filtrada)->count();
         $deLosPedidos = (clone $filtrada)->whereNotNull('solicitud')->count();
+        $pedidos = (clone $filtrada)->whereNotNull('solicitud')->distinct()->count('solicitud');
 
-        return $filas - $deLosPedidos + $pedidos->count();
+        return $filas - $deLosPedidos + $pedidos;
     }
 
     /**
