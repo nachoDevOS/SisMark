@@ -2171,3 +2171,152 @@ test('la ficha de la solicitud muestra el alcance de cada día alcanzado', funct
         // Las dos tarjetas ocupan la fila entera.
         ->assertSee('form-grid form-grid--apilado', escape: false);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Paginación por solicitud
+|--------------------------------------------------------------------------
+|
+| El listado pagina por solicitud y no por fila, y para poder hacerlo sobre un
+| millón de registros no agrupa la tabla: los pedidos se agrupan aparte, las
+| filas del SIA salen por el índice de `fecha` pidiendo solo la ventana de la
+| página, y las dos ramas se mezclan en PHP. Ver `Licencia::paginarPorSolicitud`.
+|
+| Esa mezcla es aritmética de posiciones, y equivocarla no rompe nada a la vista:
+| devuelve diez filas igual, pero repitiendo una o salteando otra. Lo que sigue
+| recorre el listado entero y comprueba que no pase.
+|
+*/
+
+/**
+ * Plantel mezclado: filas sueltas del SIA y pedidos de varios días, con fechas
+ * que se repiten a propósito.
+ *
+ * Los empates son donde una paginación por posiciones pierde o duplica filas: si
+ * cada licencia cayera en un día distinto, cualquier implementación pasaría.
+ *
+ * @return Collection<int, string> las claves que el listado tiene que mostrar
+ */
+function planteLicenciasMezcladas(int $sueltas = 17, int $pedidos = 8): Collection
+{
+    $dias = ['2026-03-01', '2026-03-02', '2026-03-03'];
+
+    foreach (range(1, $sueltas) as $i) {
+        Licencia::factory()->delSia()->create([
+            'ci' => '700'.str_pad((string) $i, 4, '0', STR_PAD_LEFT),
+            'fecha' => $dias[$i % 3],
+        ]);
+    }
+
+    foreach (range(1, $pedidos) as $i) {
+        $solicitud = (string) Str::ulid();
+
+        foreach (range(0, 2) as $dia) {
+            Licencia::factory()->create([
+                'solicitud' => $solicitud,
+                'ci' => '800'.str_pad((string) $i, 4, '0', STR_PAD_LEFT),
+                'fecha' => Carbon::parse($dias[$i % 3])->addDays($dia)->toDateString(),
+            ]);
+        }
+    }
+
+    return Licencia::all()->map->clave_agrupadora->unique()->values();
+}
+
+/**
+ * Recorre el listado página por página y devuelve las claves en el orden en que
+ * aparecieron.
+ *
+ * @return Collection<int, string>
+ */
+function recorrerListado(int $porPagina, array $filtros = []): Collection
+{
+    $vistas = collect();
+    $pagina = 1;
+
+    do {
+        $respuesta = test()->get(route('licencias.list', $filtros + ['page' => $pagina, 'por_pagina' => $porPagina]));
+        $respuesta->assertOk();
+
+        $paginador = $respuesta->viewData('licencias');
+        $vistas = $vistas->concat($paginador->getCollection()->map->clave_agrupadora);
+
+        $pagina++;
+    } while ($pagina <= $paginador->lastPage());
+
+    return $vistas;
+}
+
+test('el listado recorrido entero no repite ni saltea ninguna solicitud', function () {
+    $esperadas = planteLicenciasMezcladas();
+
+    $vistas = recorrerListado(porPagina: 4);
+
+    expect($vistas->duplicates())->toBeEmpty()
+        ->and($vistas->sort()->values()->all())->toBe($esperadas->sort()->values()->all());
+});
+
+test('el recorrido sale completo con cualquier tamaño de página', function (int $porPagina) {
+    $esperadas = planteLicenciasMezcladas();
+
+    $vistas = recorrerListado($porPagina);
+
+    expect($vistas->duplicates())->toBeEmpty()
+        ->and($vistas)->toHaveCount($esperadas->count());
+})->with([1, 2, 3, 7, 10, 25, 100]);
+
+test('el listado va del día más reciente al más viejo, sin importar de qué rama salga cada fila', function () {
+    planteLicenciasMezcladas();
+
+    // La fila que se muestra es la que **abre** el pedido, pero el orden lo pone
+    // su día más reciente: un pedido del 1 al 3 va con los del 3.
+    $ultimos = Licencia::all()
+        ->groupBy(fn (Licencia $licencia): string => $licencia->clave_agrupadora)
+        ->map(fn (Collection $dias): string => (string) $dias->max('fecha')?->toDateString());
+
+    $enPantalla = recorrerListado(porPagina: 4)->map(fn (string $clave): string => $ultimos[$clave]);
+
+    expect($enPantalla->all())->toBe($enPantalla->sortDesc()->values()->all());
+});
+
+test('el total cuenta solicitudes y no filas', function () {
+    $esperadas = planteLicenciasMezcladas();
+
+    // 17 sueltas + 8 pedidos de tres días son 41 filas, pero 25 solicitudes.
+    expect(Licencia::count())->toBe(41);
+
+    $this->get(route('licencias.list'))
+        ->assertOk()
+        ->assertViewHas('licencias', fn ($licencias): bool => $licencias->total() === $esperadas->count());
+});
+
+test('con más de una página, el pie de la tabla trae la paginación', function () {
+    planteLicenciasMezcladas();
+
+    // El total es lo único que decide si `links()` dibuja algo: con total cero
+    // devuelve una cadena vacía y la paginación desaparece del pie sin que nada
+    // falle. Pasó en producción con el total cacheado, así que se fija acá.
+    $respuesta = $this->get(route('licencias.list', ['por_pagina' => 10]))->assertOk();
+
+    expect($respuesta->viewData('licencias')->hasPages())->toBeTrue();
+
+    $respuesta->assertSee('page=2', escape: false);
+});
+
+test('el filtro por estado también pagina completo', function () {
+    planteLicenciasMezcladas();
+    Licencia::query()->whereNotNull('solicitud')->update(['estado' => Licencia::PENDIENTE]);
+
+    $vistas = recorrerListado(porPagina: 3, filtros: ['estado' => Licencia::PENDIENTE]);
+
+    expect($vistas->duplicates())->toBeEmpty()
+        ->and($vistas)->toHaveCount(8);
+});
+
+test('una página más allá del final sale vacía y no rompe', function () {
+    planteLicenciasMezcladas();
+
+    $this->get(route('licencias.list', ['page' => 500, 'por_pagina' => 10]))
+        ->assertOk()
+        ->assertViewHas('licencias', fn ($licencias): bool => $licencias->isEmpty());
+});

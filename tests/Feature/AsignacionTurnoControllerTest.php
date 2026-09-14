@@ -433,3 +433,121 @@ test('un usuario sin permiso no puede ver los turnos asignados', function () {
     $this->get(route('turnos-asignados.index'))->assertForbidden();
     $this->get(route('turnos-asignados.list'))->assertForbidden();
 });
+
+/*
+|--------------------------------------------------------------------------
+| Los bordes del día
+|--------------------------------------------------------------------------
+|
+| `desde` y `hasta` son `datetime`, y el filtro por situación las compara por
+| rango y no con `whereDate()`: envolver la columna en `DATE()` anula el índice
+| `(hasta, desde)` y manda a recorrer las 420.721 filas de la tabla.
+|
+| La trampa del rango es la hora. Una asignación que arranca hoy a las 18:00
+| está vigente hoy —el día es el que manda, no la hora—, pero un `desde <= hoy`
+| escrito de la forma obvia la deja afuera, porque «hoy» como `datetime` es hoy a
+| las cero. Lo mismo del otro lado con `hasta`.
+|
+| Estas pruebas fijan las cuatro esquinas. Sin ellas, el error no se ve: la
+| pantalla sigue andando y solo pierde las asignaciones que empiezan o terminan
+| justo hoy.
+|
+*/
+
+/**
+ * Asignación con vigencia puesta a mano, para parar las fechas sobre el borde.
+ */
+function asignacionVigente(string $ci, string $desde, string $hasta): AsignacionTurno
+{
+    return AsignacionTurno::factory()->create([
+        'ci' => $ci,
+        'turno_id' => Turno::factory()->create()->id,
+        'desde' => $desde,
+        'hasta' => $hasta,
+    ]);
+}
+
+test('sigue vigente la asignación que empieza hoy, aunque arranque pasado el mediodía', function () {
+    asignacionVigente('1111111', today()->setTime(18, 30)->toDateTimeString(), today()->addYear()->toDateTimeString());
+
+    $this->get(route('turnos-asignados.list', ['situacion' => 'vigentes']))
+        ->assertOk()
+        ->assertSee('1111111');
+});
+
+test('sigue vigente la asignación que termina hoy, tanto a las cero como al filo de la medianoche', function () {
+    asignacionVigente('1111111', today()->subYear()->toDateTimeString(), today()->toDateTimeString());
+    asignacionVigente('2222222', today()->subYear()->toDateTimeString(), today()->setTime(23, 59, 59)->toDateTimeString());
+
+    $this->get(route('turnos-asignados.list', ['situacion' => 'vigentes']))
+        ->assertOk()
+        ->assertSee('1111111')
+        ->assertSee('2222222');
+});
+
+test('la que terminó ayer ya no está vigente y cuenta como vencida', function () {
+    asignacionVigente('1111111', today()->subYear()->toDateTimeString(), today()->subDay()->setTime(23, 59, 59)->toDateTimeString());
+
+    $this->get(route('turnos-asignados.list', ['situacion' => 'vigentes']))
+        ->assertOk()
+        ->assertDontSee('1111111');
+
+    $this->get(route('turnos-asignados.list', ['situacion' => 'vencidas']))
+        ->assertOk()
+        ->assertSee('1111111');
+});
+
+test('la que empieza mañana es futura y no vigente, ni siquiera arrancando a las cero', function () {
+    asignacionVigente('1111111', today()->addDay()->toDateTimeString(), today()->addYear()->toDateTimeString());
+
+    $this->get(route('turnos-asignados.list', ['situacion' => 'futuras']))
+        ->assertOk()
+        ->assertSee('1111111');
+
+    $this->get(route('turnos-asignados.list', ['situacion' => 'vigentes']))
+        ->assertOk()
+        ->assertDontSee('1111111');
+});
+
+test('la que empieza hoy no cuenta como futura', function () {
+    asignacionVigente('1111111', today()->setTime(9, 0)->toDateTimeString(), today()->addYear()->toDateTimeString());
+
+    $this->get(route('turnos-asignados.list', ['situacion' => 'futuras']))
+        ->assertOk()
+        ->assertDontSee('1111111');
+});
+
+test('la búsqueda por nombre no trae a los demás funcionarios ni pierde a los suyos', function () {
+    // Dos apellidos que comparten prefijo: el término tiene que cruzar por
+    // coincidencia parcial, que es lo que hacía el `whereHas` que se reemplazó.
+    Persona::factory()->create(['ci' => '1111111', 'paterno' => 'MOLINA', 'nombres' => 'IGNACIO']);
+    Persona::factory()->create(['ci' => '2222222', 'paterno' => 'MOLINAS', 'nombres' => 'ROSA']);
+    Persona::factory()->create(['ci' => '3333333', 'paterno' => 'PEREZ', 'nombres' => 'JUANA']);
+
+    foreach (['1111111', '2222222', '3333333'] as $ci) {
+        AsignacionTurno::factory()->create(['ci' => $ci, 'turno_id' => Turno::factory()->create()->id]);
+    }
+
+    $this->get(route('turnos-asignados.list', ['q' => 'MOLINA']))
+        ->assertOk()
+        ->assertSee('1111111')
+        ->assertSee('2222222')
+        ->assertDontSee('3333333');
+});
+
+test('la búsqueda de dos palabras exige las dos, cada una donde sea', function () {
+    Persona::factory()->create(['ci' => '1111111', 'paterno' => 'MOLINA', 'nombres' => 'IGNACIO']);
+    Persona::factory()->create(['ci' => '2222222', 'paterno' => 'MOLINA', 'nombres' => 'ROSA']);
+
+    $turno = Turno::factory()->create(['nombreTurno' => 'LUN: 08:00 - 16:00']);
+
+    AsignacionTurno::factory()->create(['ci' => '1111111', 'turno_id' => $turno->id]);
+    AsignacionTurno::factory()->create(['ci' => '2222222', 'turno_id' => $turno->id]);
+
+    // «MOLINA» cruza por el apellido de las dos; «IGNACIO» solo por el nombre de
+    // una. Con las dos palabras tiene que quedar una sola.
+    $this->get(route('turnos-asignados.list', ['q' => 'MOLINA IGNACIO']))
+        ->assertOk()
+        ->assertSee('1111111')
+        ->assertDontSee('2222222');
+});

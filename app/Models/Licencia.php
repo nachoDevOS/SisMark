@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Services\RegistroLicencia;
-use App\Services\ResumenEscritorio;
 use App\Traits\ManejaHorasDelDia;
 use App\Traits\RegistersUserEvents;
 use Database\Factories\LicenciaFactory;
@@ -17,7 +16,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Pagination\LengthAwarePaginator as Paginador;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -224,17 +222,6 @@ class Licencia extends Model
     public const CLAVE_AGRUPADORA = 'COALESCE(solicitud, id)';
 
     /**
-     * Minutos que se cachea el total de filas del listado.
-     *
-     * Es largo a propósito: lo cacheado es **el número de páginas**, no las
-     * filas, y el listado sale de la base en cada carga. Un TTL corto haría que
-     * casi toda visita pagara el conteo entero —la pantalla no se mira cada
-     * cinco minutos—, que es justo lo que se quiere evitar. Mismo criterio que
-     * {@see ResumenEscritorio} con el panel de calidad de datos.
-     */
-    private const CACHE_CONTEO_MINUTOS = 60;
-
-    /**
      * La misma clave, resuelta sobre una fila ya cargada.
      */
     public function getClaveAgrupadoraAttribute(): string
@@ -432,22 +419,33 @@ class Licencia extends Model
     }
 
     /**
-     * Cuántas filas del SIA cruzan el filtro, que son las que valen una
-     * solicitud cada una.
+     * Cuántas solicitudes cruzan el filtro: las filas del SIA, que valen una
+     * cada una, más los pedidos, que valen una por más días que abarquen.
      *
-     * Se calcula **restando**, y no preguntando por `solicitud IS NULL`: ese
-     * predicado manda al optimizador al índice `(solicitud, fecha)`, que guarda
-     * un `char(26)` por fila, y contar el millón por ahí tarda 1,8 s. Contar la
-     * tabla filtrada entera va por un índice angosto —250 ms— y lo que hay que
-     * descontarle son las filas con pedido, que se cuentan por rango sobre ese
-     * mismo índice y son cuatro.
+     * Las sueltas se cuentan **restando**, y no preguntando por `solicitud IS
+     * NULL`: ese predicado manda al optimizador al índice `(solicitud, fecha)`,
+     * que guarda un `char(26)` por fila, y contar el millón por ahí tarda 1,8 s.
+     * Contar la tabla filtrada entera va por un índice angosto —250 ms— y lo que
+     * hay que descontarle son las filas con pedido, que se cuentan por rango
+     * sobre ese mismo índice y son un puñado.
+     *
+     * ---
+     * **Los tres números salen de la misma lectura, y no hay que cachear
+     * ninguno.** Se probó guardar el conteo grande una hora, porque 250 ms por
+     * carga es plata. El problema no fue el número viejo: es que acá se le resta
+     * uno leído en vivo, y un conteo de hace una hora menos uno de recién no da
+     * un total viejo, da **cualquier cosa**. Dio cero, y con total cero
+     * `links()` no dibuja nada: la paginación desapareció entera del pie de la
+     * tabla sin que nada avisara. Si hace falta volver a cachear, hay que
+     * cachear el resultado de este método entero, nunca una de sus partes.
+     * ---
      */
     private static function cuantasSolicitudes(Builder $filtrada, Collection $pedidos): int
     {
-        $sueltas = static::cuantasFilas($filtrada)
-            - (clone $filtrada)->whereNotNull('solicitud')->count();
+        $filas = (clone $filtrada)->count();
+        $deLosPedidos = (clone $filtrada)->whereNotNull('solicitud')->count();
 
-        return max(0, $sueltas) + $pedidos->count();
+        return $filas - $deLosPedidos + $pedidos->count();
     }
 
     /**
@@ -472,35 +470,6 @@ class Licencia extends Model
             ->toBase();
 
         return DB::query()->fromSub($acotada, 'acotada')->count();
-    }
-
-    /**
-     * Cuántas filas cruzan el filtro, cacheado unos minutos.
-     *
-     * Contar un millón de filas cuesta lo que cuesta y no hay índice que lo
-     * evite: 250 ms sin filtro, y 1,9 s filtrando por estado, donde el
-     * optimizador se va al índice `(estado, fecha)` —un `varchar(12)` por
-     * entrada— porque hay una igualdad, aunque ese estado sea el de casi todas
-     * las filas.
-     *
-     * Lo que se cachea es **el total, no las filas**: el listado sigue saliendo
-     * de la base en cada carga y lo único que puede quedar unos minutos viejo es
-     * la cantidad de páginas. Por eso el TTL es corto y no hace falta invalidarlo
-     * al anotar una licencia: el pedido nuevo se ve igual, arriba de todo.
-     *
-     * La clave sale de la consulta ya armada, así que cada combinación de
-     * filtros y de búsqueda cuenta la suya.
-     */
-    private static function cuantasFilas(Builder $filtrada): int
-    {
-        $consulta = clone $filtrada;
-        $clave = 'licencias.conteo.'.sha1($consulta->toSql().'|'.serialize($consulta->getBindings()));
-
-        return Cache::remember(
-            $clave,
-            now()->addMinutes(self::CACHE_CONTEO_MINUTOS),
-            fn (): int => (clone $filtrada)->count(),
-        );
     }
 
     /**
@@ -744,11 +713,19 @@ class Licencia extends Model
     public function scopeBuscar(Builder $query, string $texto): Builder
     {
         foreach (Persona::terminos($texto) as $termino) {
+            // Los carnets que cruzan por nombre se resuelven **antes**, contra
+            // `personas` (5.469 filas), en vez de ir como `whereHas`. Un
+            // `whereHas` es un `EXISTS` correlacionado: MySQL lo evalúa una vez
+            // por cada fila de esta tabla, y son 1.112.274. Medido, el conteo de
+            // la búsqueda tardaba 3,1 s y traer la página otros 3,8 s.
+            $cis = Persona::query()
+                ->where(fn (Builder $nombre) => $nombre->coincideNombre($termino))
+                ->pluck('ci');
+
             $query->where(fn (Builder $sub) => $sub
                 ->where('ci', 'like', "%{$termino}%")
                 ->orWhere('motivo', 'like', "%{$termino}%")
-                ->orWhereHas('persona', fn (Builder $persona) => $persona
-                    ->where(fn (Builder $nombre) => $nombre->coincideNombre($termino))));
+                ->orWhereIn('ci', $cis));
         }
 
         return $query;
