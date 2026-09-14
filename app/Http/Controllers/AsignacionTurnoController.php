@@ -69,9 +69,13 @@ class AsignacionTurnoController extends Controller
             ->with('turno')
             ->when($buscar !== '', fn (Builder $query) => $query->buscar($buscar))
             ->when($dia !== '', fn (Builder $query) => $query->whereHas('turno', fn (Builder $turno) => $turno->where('dia', $dia)))
+            // Los tres van por rango y no con `whereDate()`: `DATE(columna)`
+            // anula el índice `(hasta, desde)` y manda a recorrer las 420.721
+            // filas. `desde` y `hasta` son `datetime`, así que «después de hoy»
+            // es «desde mañana a las cero».
             ->when($situacion === 'vigentes', fn (Builder $query) => $query->vigenteEn(today()))
-            ->when($situacion === 'futuras', fn (Builder $query) => $query->whereDate('desde', '>', today()))
-            ->when($situacion === 'vencidas', fn (Builder $query) => $query->whereDate('hasta', '<', today()))
+            ->when($situacion === 'futuras', fn (Builder $query) => $query->where('desde', '>=', today()->addDay()))
+            ->when($situacion === 'vencidas', fn (Builder $query) => $query->where('hasta', '<', today()))
             ->orderByDesc('desde')
             ->orderBy('ci')
             ->paginate($porPagina)

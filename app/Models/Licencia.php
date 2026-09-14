@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\RegistroLicencia;
+use App\Services\ResumenEscritorio;
 use App\Traits\ManejaHorasDelDia;
 use App\Traits\RegistersUserEvents;
 use Database\Factories\LicenciaFactory;
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Pagination\LengthAwarePaginator as Paginador;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Licencia/permiso en la base local (MySQL), migrada desde «Licencias» del SIA.
@@ -221,6 +224,17 @@ class Licencia extends Model
     public const CLAVE_AGRUPADORA = 'COALESCE(solicitud, id)';
 
     /**
+     * Minutos que se cachea el total de filas del listado.
+     *
+     * Es largo a propósito: lo cacheado es **el número de páginas**, no las
+     * filas, y el listado sale de la base en cada carga. Un TTL corto haría que
+     * casi toda visita pagara el conteo entero —la pantalla no se mira cada
+     * cinco minutos—, que es justo lo que se quiere evitar. Mismo criterio que
+     * {@see ResumenEscritorio} con el panel de calidad de datos.
+     */
+    private const CACHE_CONTEO_MINUTOS = 60;
+
+    /**
      * La misma clave, resuelta sobre una fila ya cargada.
      */
     public function getClaveAgrupadoraAttribute(): string
@@ -270,55 +284,53 @@ class Licencia extends Model
      * Pagina una consulta **por solicitud** y no por fila: una licencia de cinco
      * días cuenta como una, y lo que sale en pantalla es la fila que la abre.
      *
-     * Va en dos pasos:
+     * ---
+     * **No se agrupa la tabla entera, y esa es la razón de todo lo que sigue.**
      *
-     * 1. Qué solicitudes cruzan el filtro, con su fecha más reciente, agrupando
-     *    solo lo filtrado. Eso es lo que se cuenta y lo que se pagina.
-     * 2. La fila que abre cada una de las diez, ya acotada con un `whereIn`.
+     * Agrupar por `COALESCE(solicitud, id)` es agrupar por una *expresión*, y
+     * ninguna expresión puede resolverse por índice: MySQL leía el millón de
+     * filas, armaba un millón de grupos en una tabla temporal y los ordenaba
+     * para devolver diez. Medido sobre la base de desarrollo, 6,9 s esa consulta
+     * y 7,6 s el `COUNT` que la paginación arma encima —**catorce segundos de
+     * SQL por cada carga del listado**—.
      *
-     * El segundo paso **tiene que ir acotado**: la subconsulta de
+     * Lo que lo hace evitable es la forma de los datos: de 1.112.274 filas, solo
+     * las que nacieron de un pedido tienen `solicitud`. El resto es la copia del
+     * SIA, donde cada fila **es** su propia solicitud y no hay nada que agrupar.
+     * Así que las dos ramas van por caminos distintos:
+     *
+     * 1. **Los pedidos** se agrupan por `solicitud` —índice `(solicitud, fecha)`,
+     *    y son un puñado—, y se traen enteros.
+     * 2. **Las sueltas** salen ordenadas por el índice de `fecha`, sin agrupar y
+     *    sin tabla temporal, pidiendo nada más que la ventana de esta página.
+     * 3. Las dos se mezclan acá, en PHP.
+     * 4. Recién entonces se busca la fila que abre cada clave de la página, con
+     *    un `whereIn` acotado.
+     *
+     * El último paso **tiene que ir acotado**: la subconsulta de
      * `iniciosDeSolicitud()` suelta sobre la tabla entera se evalúa fila por fila
      * y con una búsqueda poco frecuente no vuelve. Ver la migración
      * `agregar_solicitud_a_licencias`.
+     * ---
      *
      * @param  Builder  $filtrada  la consulta ya filtrada, sin ordenar ni paginar
      * @return LengthAwarePaginator<int, static>
      */
     public static function paginarPorSolicitud(Builder $filtrada, int $porPagina): LengthAwarePaginator
     {
-        $solicitudes = (clone $filtrada)
-            ->selectRaw(self::CLAVE_AGRUPADORA.' as clave, MAX(fecha) as ultima')
-            ->groupByRaw(self::CLAVE_AGRUPADORA)
-            ->orderByDesc('ultima')
-            ->paginate($porPagina);
+        $pagina = max(1, (int) Paginator::resolveCurrentPage());
+        $desde = ($pagina - 1) * $porPagina;
 
-        $claves = $solicitudes->pluck('clave')->all();
-        [$conSolicitud, $delSia] = static::separarClaves($claves);
+        $pedidos = static::pedidosAgrupados($filtrada);
 
-        // Dos consultas por índice en vez de una por expresión: las que son un
-        // pedido salen por `(solicitud, fecha)`; las del SIA, por su id.
-        $encontradas = collect();
+        $claves = static::clavesDeLaPagina($filtrada, $pedidos, $desde, $porPagina);
 
-        if ($conSolicitud !== []) {
-            $encontradas = static::query()
-                ->with('turno')
-                ->whereIn('solicitud', $conSolicitud)
-                ->iniciosDeSolicitud()
-                ->get();
-        }
-
-        if ($delSia !== []) {
-            $encontradas = $encontradas->concat(
-                static::query()->with('turno')->whereKey($delSia)->get()
-            );
-        }
-
-        // Se juntan las filas y recién después se indexan. Juntar dos
-        // colecciones **ya indexadas** con `merge()` no sirve acá: por debajo es
-        // `array_merge`, que renumera las claves enteras, y la clave de una
-        // licencia del SIA es su `id`. Las del SIA quedaban bajo 0, 1, 2… y
-        // ninguna aparecía en pantalla, aunque el total las siguiera contando.
-        $inicios = $encontradas->keyBy(
+        // Las filas se indexan **después** de juntarlas. Juntar dos colecciones
+        // ya indexadas con `merge()` no sirve acá: por debajo es `array_merge`,
+        // que renumera las claves enteras, y la clave de una licencia del SIA es
+        // su `id`. Las del SIA quedaban bajo 0, 1, 2… y ninguna aparecía en
+        // pantalla, aunque el total las siguiera contando.
+        $inicios = static::aperturasDe($claves)->keyBy(
             fn (self $licencia): string => $licencia->clave_agrupadora
         );
 
@@ -328,10 +340,260 @@ class Licencia extends Model
             ->filter()
             ->values();
 
-        return new Paginador($filas, $solicitudes->total(), $solicitudes->perPage(), $solicitudes->currentPage(), [
+        return new Paginador($filas, static::cuantasSolicitudes($filtrada, $pedidos), $porPagina, $pagina, [
             'path' => Paginator::resolveCurrentPath(),
             'pageName' => 'page',
         ]);
+    }
+
+    /**
+     * La fila que abre cada clave, con el turno ya cargado: el día más temprano
+     * de cada pedido, y la fila misma en lo migrado del SIA, donde cada fila
+     * **es** su propia licencia.
+     *
+     * Son dos consultas por índice en vez de una por expresión: los pedidos
+     * salen por `(solicitud, fecha)` y las del SIA por su clave primaria.
+     * Buscarlas todas juntas con un `COALESCE` obligaría a recorrer la tabla.
+     *
+     * @param  list<mixed>  $claves
+     * @return Collection<int, static>
+     */
+    public static function aperturasDe(array $claves): Collection
+    {
+        [$conSolicitud, $delSia] = static::separarClaves($claves);
+
+        $filas = collect();
+
+        if ($conSolicitud !== []) {
+            $filas = static::iniciosDe($conSolicitud);
+        }
+
+        if ($delSia !== []) {
+            $filas = $filas->concat(static::query()->with('turno')->whereKey($delSia)->get());
+        }
+
+        return $filas;
+    }
+
+    /**
+     * La fila que abre cada una de las solicitudes dadas: su día más temprano,
+     * con el turno ya cargado.
+     *
+     * No usa `iniciosDeSolicitud()`, y la razón está medida. Ese scope compara
+     * el `id` de la fila contra un subquery correlacionado que termina en
+     * `ORDER BY s.fecha, s.id LIMIT 1`, y MySQL lo resuelve **recorriendo el
+     * índice de `fecha` entero** —1.112.274 entradas, 1,7 s— en vez de ir por
+     * `(solicitud, fecha)`: cree que caminando por fecha va a toparse con la
+     * fila enseguida y así se ahorra el orden, pero las solicitudes son lo
+     * último que se cargó y aparecen recién al final del recorrido.
+     *
+     * Traer los días de un puñado de solicitudes y quedarse con el primero de
+     * cada una es un rango sobre `(solicitud, fecha)`: 1 ms. Son pocas filas
+     * —los días de las diez solicitudes de la página— y el orden lo pone el
+     * mismo índice.
+     *
+     * @param  list<string>  $solicitudes
+     * @return Collection<int, static>
+     */
+    private static function iniciosDe(array $solicitudes): Collection
+    {
+        return static::query()
+            ->with('turno')
+            ->whereIn('solicitud', $solicitudes)
+            ->orderBy('solicitud')
+            ->orderBy('fecha')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('solicitud')
+            ->map(fn (Collection $dias): self => $dias->first())
+            ->values();
+    }
+
+    /**
+     * Las solicitudes de verdad —las que nacieron de un pedido— con su día más
+     * reciente, ya ordenadas.
+     *
+     * Se traen **enteras** y no de a una página: son las únicas que abarcan
+     * varios días, salen por el índice `(solicitud, fecha)` y hoy son un puñado
+     * contra el millón de filas migradas. Mezclarlas después en PHP es lo que
+     * permite que la otra rama, la grande, no tenga que agruparse nunca.
+     *
+     * @return Collection<int, static>
+     */
+    private static function pedidosAgrupados(Builder $filtrada): Collection
+    {
+        return (clone $filtrada)
+            ->whereNotNull('solicitud')
+            ->selectRaw('solicitud as clave, MAX(fecha) as ultima')
+            ->groupBy('solicitud')
+            ->get()
+            ->sortByDesc(static fn (self $fila): string => static::ordenDe($fila))
+            ->values();
+    }
+
+    /**
+     * Cuántas filas del SIA cruzan el filtro, que son las que valen una
+     * solicitud cada una.
+     *
+     * Se calcula **restando**, y no preguntando por `solicitud IS NULL`: ese
+     * predicado manda al optimizador al índice `(solicitud, fecha)`, que guarda
+     * un `char(26)` por fila, y contar el millón por ahí tarda 1,8 s. Contar la
+     * tabla filtrada entera va por un índice angosto —250 ms— y lo que hay que
+     * descontarle son las filas con pedido, que se cuentan por rango sobre ese
+     * mismo índice y son cuatro.
+     */
+    private static function cuantasSolicitudes(Builder $filtrada, Collection $pedidos): int
+    {
+        $sueltas = static::cuantasFilas($filtrada)
+            - (clone $filtrada)->whereNotNull('solicitud')->count();
+
+        return max(0, $sueltas) + $pedidos->count();
+    }
+
+    /**
+     * Cuántas filas sueltas hay **hasta donde importa**, no en toda la tabla.
+     *
+     * El `LIMIT` es lo que la hace barata: contar cuesta lo que la página
+     * necesita y no lo que mide la tabla. El número exacto solo hace falta
+     * cuando las sueltas se acabaron antes de esta página, y en ese caso son
+     * menos que el tope y el conteo acotado da el número entero igual.
+     *
+     * No se reusa el conteo cacheado de {@see self::cuantasFilas()}: ese puede
+     * venir de hace unos minutos y acá se lo restaría contra una cantidad de
+     * pedidos recién leída, y dos números de momentos distintos dan un
+     * corrimiento que saltea o repite filas.
+     */
+    private static function sueltasHasta(Builder $filtrada, int $tope): int
+    {
+        $acotada = (clone $filtrada)
+            ->whereNull('solicitud')
+            ->select(DB::raw('1'))
+            ->limit($tope)
+            ->toBase();
+
+        return DB::query()->fromSub($acotada, 'acotada')->count();
+    }
+
+    /**
+     * Cuántas filas cruzan el filtro, cacheado unos minutos.
+     *
+     * Contar un millón de filas cuesta lo que cuesta y no hay índice que lo
+     * evite: 250 ms sin filtro, y 1,9 s filtrando por estado, donde el
+     * optimizador se va al índice `(estado, fecha)` —un `varchar(12)` por
+     * entrada— porque hay una igualdad, aunque ese estado sea el de casi todas
+     * las filas.
+     *
+     * Lo que se cachea es **el total, no las filas**: el listado sigue saliendo
+     * de la base en cada carga y lo único que puede quedar unos minutos viejo es
+     * la cantidad de páginas. Por eso el TTL es corto y no hace falta invalidarlo
+     * al anotar una licencia: el pedido nuevo se ve igual, arriba de todo.
+     *
+     * La clave sale de la consulta ya armada, así que cada combinación de
+     * filtros y de búsqueda cuenta la suya.
+     */
+    private static function cuantasFilas(Builder $filtrada): int
+    {
+        $consulta = clone $filtrada;
+        $clave = 'licencias.conteo.'.sha1($consulta->toSql().'|'.serialize($consulta->getBindings()));
+
+        return Cache::remember(
+            $clave,
+            now()->addMinutes(self::CACHE_CONTEO_MINUTOS),
+            fn (): int => (clone $filtrada)->count(),
+        );
+    }
+
+    /**
+     * Las claves de esta página, mezclando las dos ramas.
+     *
+     * De la rama suelta se pide **solo la ventana necesaria**. Traer todo hasta
+     * la página pedida sería cargar el millón de filas en memoria cuando alguien
+     * hace clic en el último número de la paginación.
+     *
+     * La ventana se corre `$pedidos` lugares hacia atrás porque esa es la
+     * cantidad máxima de filas que la otra rama puede intercalar por delante:
+     * más atrás que eso, ningún pedido puede empujar a una suelta.
+     *
+     * @param  Collection<int, static>  $pedidos
+     * @return list<mixed>
+     */
+    private static function clavesDeLaPagina(Builder $filtrada, Collection $pedidos, int $desde, int $porPagina): array
+    {
+        $cuantosPedidos = $pedidos->count();
+        $ventanaDesde = max(0, $desde - $cuantosPedidos);
+
+        $deLaVentana = (clone $filtrada)
+            ->whereNull('solicitud')
+            ->selectRaw('id as clave, fecha as ultima')
+            ->orderByDesc('fecha')
+            ->orderByDesc('id')
+            ->offset($ventanaDesde)
+            ->limit($desde + $porPagina - $ventanaDesde)
+            ->get();
+
+        // La página empieza después de la última fila suelta: lo que queda son
+        // pedidos, y son los últimos de la lista ya ordenada.
+        if ($deLaVentana->isEmpty()) {
+            $sueltas = static::sueltasHasta($filtrada, $desde + $porPagina);
+
+            return $pedidos->slice(max(0, $desde - $sueltas), $porPagina)->pluck('clave')->all();
+        }
+
+        // Ventana desde cero: no falta ninguna fila por delante, así que la
+        // mezcla **es** el listado y se corta en el lugar pedido. Descartar acá
+        // los pedidos que van arriba de la primera suelta —como sí hay que
+        // hacer más adelante— los borraría de la página uno.
+        if ($ventanaDesde === 0) {
+            return static::mezclar($pedidos, $deLaVentana)
+                ->slice($desde, $porPagina)
+                ->pluck('clave')
+                ->all();
+        }
+
+        // De acá en más sí falta lo de antes de la ventana: las sueltas que se
+        // saltearon y los pedidos que van por delante de ellas. Esos pedidos ya
+        // salieron en páginas anteriores, así que no se mezclan, pero sí se
+        // cuentan: son los lugares que corren a la ventana dentro del listado
+        // completo, y sin ese corrimiento la página repetiría filas.
+        $corte = static::ordenDe($deLaVentana->first());
+        $porDelante = $pedidos->filter(fn (self $p): bool => static::ordenDe($p) > $corte)->count();
+
+        return static::mezclar($pedidos->reject(fn (self $p): bool => static::ordenDe($p) > $corte), $deLaVentana)
+            ->slice($desde - $ventanaDesde - $porDelante, $porPagina)
+            ->pluck('clave')
+            ->all();
+    }
+
+    /**
+     * Las dos ramas en una sola lista, en el orden del listado.
+     *
+     * @param  Collection<int, static>  $pedidos
+     * @param  Collection<int, static>  $sueltas
+     * @return Collection<int, static>
+     */
+    private static function mezclar(Collection $pedidos, Collection $sueltas): Collection
+    {
+        return $pedidos
+            ->concat($sueltas)
+            ->sortByDesc(static fn (self $fila): string => static::ordenDe($fila))
+            ->values();
+    }
+
+    /**
+     * Cómo se ordena una fila del listado: el día más reciente primero y, a
+     * igualdad de día, la clave.
+     *
+     * El desempate no es un detalle: sin él, dos filas del mismo día quedan en
+     * el orden que devuelva MySQL, que puede cambiar entre una página y la
+     * siguiente y hacer que una licencia aparezca dos veces o ninguna.
+     *
+     * El `id` se rellena a los 26 caracteres de una `solicitud` para que
+     * comparar los dos como texto dé el mismo orden que compararlos como
+     * números, que es el que pidió la consulta.
+     */
+    private static function ordenDe(self $fila): string
+    {
+        return ((string) $fila->ultima).'|'.str_pad((string) $fila->clave, 26, '0', STR_PAD_LEFT);
     }
 
     /**

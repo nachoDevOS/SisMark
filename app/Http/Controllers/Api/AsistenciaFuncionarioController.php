@@ -172,21 +172,18 @@ class AsistenciaFuncionarioController extends Controller
             ->get(['id', 'solicitud']);
 
         $solicitudes = $delRango->map->clave_agrupadora->unique()->values();
-        $conSolicitud = $delRango->pluck('solicitud')->filter()->unique()->values();
-        $delSia = $delRango->whereNull('solicitud')->pluck('id')->all();
 
-        $licencias = Licencia::query()
-            ->with('turno')
-            ->where(fn ($q) => $q
-                // Los pedidos salen por su fila de inicio; los del SIA son
-                // una fila cada uno y entran por su id.
-                ->where(fn ($p) => $p->whereIn('solicitud', $conSolicitud)->iniciosDeSolicitud())
-                ->orWhereIn('id', $delSia))
-            // Lo más reciente primero, igual que el listado de Recursos
-            // Humanos: lo que el funcionario acaba de pedir es lo que viene a
-            // mirar, y en un rango largo quedaba al fondo de la tabla.
-            ->orderByDesc('fecha')
-            ->get();
+        // Los pedidos salen por su fila de inicio y los del SIA por su id, cada
+        // uno por su índice. El orden se pone acá y no en la consulta porque son
+        // las licencias de un funcionario en un rango: un puñado de filas ya
+        // traídas, y ordenarlas de nuevo en la base sería un viaje de más.
+        //
+        // Lo más reciente primero, igual que el listado de Recursos Humanos: lo
+        // que el funcionario acaba de pedir es lo que viene a mirar, y en un
+        // rango largo quedaba al fondo de la tabla.
+        $licencias = Licencia::aperturasDe($solicitudes->all())
+            ->sortByDesc(fn (Licencia $licencia): string => (string) $licencia->fecha?->toDateString())
+            ->values();
 
         // Hasta qué día llega cada pedido y cuántos días abarca. Se cuelga de
         // cada modelo para que el recurso lo encuentre sin recibir un mapa.
