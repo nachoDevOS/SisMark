@@ -85,7 +85,9 @@
                         @if ($turnos->isEmpty())
                             <div class="aviso aviso--advertencia">
                                 No hay turnos cargados todavía.
-                                <a href="{{ route('horarios.create') }}">Creá uno primero</a>.
+                                @can('create', \App\Models\Turno::class)
+                                    <a href="{{ route('horarios.create') }}">Creá uno primero</a>.
+                                @endcan
                             </div>
                         @else
                             <div class="turno-picker" role="radiogroup" aria-labelledby="turno-etiqueta-{{ $sufijo }}">

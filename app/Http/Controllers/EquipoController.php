@@ -291,8 +291,8 @@ class EquipoController extends Controller
      * Vacía el buffer de marcaciones del equipo.
      *
      * El protocolo ZK solo permite borrar TODO el historial del reloj: no hay
-     * borrado por rango. Es irreversible, por eso se pide el permiso de borrado
-     * de equipos y la vista exige confirmación escrita antes de enviar.
+     * borrado por rango. Es irreversible, por eso tiene su propio permiso
+     * (`Clear:Equipo`) y la vista exige confirmación escrita antes de enviar.
      *
      * Solo se borran las marcaciones: usuarios y huellas quedan intactos, y lo
      * que ya se sincronizó a la tabla local `asistencias` tampoco se toca.

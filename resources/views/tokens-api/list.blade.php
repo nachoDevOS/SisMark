@@ -36,7 +36,9 @@
                     </td>
                     <td>
                         <div class="acciones">
-                            <a href="{{ route('tokens-api.show', $sistema) }}" class="btn-icon btn-icon--gris" title="Ver" aria-label="Ver"><x-heroicon-o-eye /></a>
+                            @can('view', $sistema)
+                                <a href="{{ route('tokens-api.show', $sistema) }}" class="btn-icon btn-icon--gris" title="Ver" aria-label="Ver"><x-heroicon-o-eye /></a>
+                            @endcan
                             @can('update', $sistema)
                                 <a href="{{ route('tokens-api.edit', $sistema) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
                             @endcan

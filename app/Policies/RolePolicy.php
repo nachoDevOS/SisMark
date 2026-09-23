@@ -33,7 +33,7 @@ class RolePolicy
      */
     public const HABILIDADES = [
         'ViewAny' => 'Ver listado',
-        'View' => 'Ver ficha',
+        'View' => 'Ver',
         'Create' => 'Crear',
         'Update' => 'Editar',
         'Delete' => 'Eliminar',
@@ -44,7 +44,7 @@ class RolePolicy
         'Approve' => 'Aprobar',
         'Export' => 'Exportar',
         'Sync' => 'Sincronizar',
-        'Clear' => 'Vaciar',
+        'Clear' => 'Limpiar biométrico',
         // Emitir la credencial con la que un sistema externo consume la API.
         // Va aparte de `Update` porque no es editar la ficha: un token da
         // acceso a la asistencia de los ~4.600 funcionarios, y quién puede
@@ -73,8 +73,9 @@ class RolePolicy
         ],
         'Asistencia' => [
             'etiqueta' => 'Marcaciones',
-            // `Create` cubre las tres formas de que entre una marcación:
-            // registro manual, importación de CSV y sincronización del reloj.
+            // `Create` cubre las dos formas manuales de que entre una marcación:
+            // registro manual e importación de CSV. Bajarlas del reloj es
+            // `Sync:Equipo`, en Biométricos.
             'habilidades' => ['ViewAny', 'Create'],
         ],
         'Reporte' => [

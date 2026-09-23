@@ -132,7 +132,9 @@
                 @if ($turnos->isEmpty())
                     <div class="ayuda">
                         No hay turnos cargados todavía.
-                        <a href="{{ route('horarios.create') }}">Creá uno primero</a>.
+                        @can('create', \App\Models\Turno::class)
+                            <a href="{{ route('horarios.create') }}">Creá uno primero</a>.
+                        @endcan
                     </div>
                 @endif
                 @error('turno_id') <div class="error">{{ $message }}</div> @enderror
