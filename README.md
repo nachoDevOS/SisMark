@@ -240,8 +240,8 @@ configurar por separado.
 
 ### Variables de entorno
 
-Están todas explicadas, una por una, en
-[.env.docker.example](.env.docker.example). Las que no pueden faltar:
+Se cargan en Coolify, en la solapa «Environment Variables» del recurso. Las que
+no pueden faltar:
 
 | Variable | Para qué |
 |---|---|
@@ -252,7 +252,7 @@ Están todas explicadas, una por una, en
 | `MAMORE_URL` · `MAMORE_TOKEN` · `MAMORE_ORIGIN` | Nombres, cargos y contratos de los funcionarios. El token lo emite Mamoré. |
 
 > `--env-file` de Docker **no quita las comillas**: `APP_NAME="X"` entra con las
-> comillas incluidas. En ese archivo los valores van sin comillas.
+> comillas incluidas. En el `.env.docker` los valores van sin comillas.
 
 ### Construir y correr
 
@@ -282,7 +282,7 @@ docker run -d --name sismark-devices --restart unless-stopped \
    alguna, se detiene diciendo cuál.
 2. Espera a que MySQL acepte conexiones (hasta 2 minutos).
 3. Corre `migrate --force`.
-4. Siembra los permisos y el rol `super_admin` si `SISMARK_SEED=true`.
+4. Siembra los permisos que falten y el rol `super_admin` (se saltea con `SISMARK_SEED=false`).
 5. Cachea configuración, rutas y vistas.
 6. Le cede el control a NGINX Unit.
 
@@ -294,8 +294,8 @@ En Coolify, la ruta de salud es `/up` y el puerto a exponer es el 8000.
 
 ### Primer usuario
 
-Con `SISMARK_SEED=true` en el primer despliegue quedan creados los permisos y el
-rol `super_admin`. El usuario se crea a mano:
+El primer arranque deja creados los permisos y el rol `super_admin`. El usuario
+se crea a mano:
 
 ```bash
 docker exec -it sismark-app php artisan tinker

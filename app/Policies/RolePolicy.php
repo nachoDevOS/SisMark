@@ -64,7 +64,7 @@ class RolePolicy
     public const MODULOS = [
         'Escritorio' => [
             'etiqueta' => 'Escritorio',
-            'habilidades' => ['ViewAny'],
+            'habilidades' => ['ViewAny', 'View'],
         ],
         'Persona' => [
             'etiqueta' => 'Funcionarios',

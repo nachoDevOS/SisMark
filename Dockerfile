@@ -11,13 +11,13 @@
 # SIA: trabaja siempre contra MySQL.
 #
 # La base MySQL es un recurso aparte (en Coolify: «+ New» → «Database» → MySQL)
-# y se apunta con las variables de entorno. Ver .env.docker.example.
+# y se apunta con las variables de entorno. Ver README, «Variables de entorno».
 #
 # El microservicio de biométricos tiene su propio Dockerfile, en
 # `device-service/`, y se despliega como un segundo recurso. Esta imagen
 # igual lo trae adentro: con SISMARK_DEVICE_SERVICE=true el entrypoint lo
 # arranca acá mismo, escuchando en 127.0.0.1, y se despliega todo como un solo
-# recurso. Ver .env.docker.example, sección 3.
+# recurso.
 #
 #   docker build -t sismark .
 #   docker run -d --env-file .env.docker -p 8000:8000 sismark

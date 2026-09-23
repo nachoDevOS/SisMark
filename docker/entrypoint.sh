@@ -92,10 +92,15 @@ else
     php artisan migrate --force
 fi
 
-# --- 5. Semillas (solo la primera vez, si se pide) --------------------------
-# Crea los permisos y el rol super_admin. Es idempotente, pero se deja detrás
-# de una variable para no correrlo en cada reinicio.
-if [ "${SISMARK_SEED}" = "true" ]; then
+# --- 5. Permisos y rol super_admin -------------------------------------------
+# Corre en cada arranque: los permisos se declaran en RolePolicy::MODULOS, y un
+# permiso nuevo que llega con el despliegue tiene que existir en la tabla
+# `permissions` antes de marcarlo en /roles —si no, guardar el rol falla con
+# PermissionDoesNotExist—. Es idempotente: crea lo que falta y no toca lo que
+# ya existe, así que los permisos de cada rol se conservan.
+#
+# Se apaga con SISMARK_SEED=false.
+if [ "${SISMARK_SEED:-true}" = "true" ]; then
     echo "[sismark] Sembrando roles y permisos…"
     php artisan db:seed --class=RolesAndPermissionsSeeder --force
 fi

@@ -650,5 +650,4 @@ Imagen Docker de **una sola etapa** (`unit:1.34.2-php8.3`), sin Node.
   contenedor no tiene volumen persistente, así que un archivo escrito en disco
   se pierde en el próximo despliegue.
 
-Variables en `.env.docker.example`. Comandos y requisitos en el
-[README](../README.md).
+Variables, comandos y requisitos en el [README](../README.md).
