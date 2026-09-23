@@ -6,7 +6,9 @@
     <div class="cabecera">
         <h1>{{ $equipo->nombre }}</h1>
         <div class="acciones">
-            <a href="{{ route('equipos.edit', $equipo) }}" class="btn btn--gris"><x-heroicon-o-pencil-square />Editar</a>
+            @can('update', $equipo)
+                <a href="{{ route('equipos.edit', $equipo) }}" class="btn btn--gris"><x-heroicon-o-pencil-square />Editar</a>
+            @endcan
             <a href="{{ route('equipos.index') }}" class="btn btn--gris"><x-heroicon-o-arrow-left />Volver</a>
         </div>
     </div>

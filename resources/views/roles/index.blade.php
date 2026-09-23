@@ -8,7 +8,9 @@
             <span class="cabecera__icono"><x-heroicon-o-shield-check /></span>
             <h1>Roles y permisos</h1>
         </div>
-        <a href="{{ route('roles.create') }}" class="btn"><x-heroicon-o-plus />Nuevo rol</a>
+        @can('create', \App\Models\Role::class)
+            <a href="{{ route('roles.create') }}" class="btn"><x-heroicon-o-plus />Nuevo rol</a>
+        @endcan
     </div>
 
     <x-tabla-filtros :action="route('roles.index')" :busqueda="$busqueda"
@@ -30,8 +32,10 @@
                         <td>{{ $rol->permissions_count }}</td>
                         <td>
                             <div class="acciones">
-                                <a href="{{ route('roles.edit', $rol) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
-                                @if ($rol->name !== 'super_admin')
+                                @can('update', $rol)
+                                    <a href="{{ route('roles.edit', $rol) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
+                                @endcan
+                                @if ($rol->name !== 'super_admin' && auth()->user()->can('delete', $rol))
                                     <x-boton-eliminar :accion="route('roles.destroy', $rol)"
                                                       :mensaje="'Se elimina el rol «'.$rol->name.'». Los usuarios que lo tengan pierden sus permisos.'" />
                                 @endif

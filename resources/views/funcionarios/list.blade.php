@@ -77,7 +77,7 @@
                     </td>
                     <td>{{ $persona['pinReloj'] ?: 'Sin PIN' }}</td>
                     <td class="acciones">
-                        @if ($persona['ver'])
+                        @if ($persona['ver'] && auth()->user()->can('View:Persona'))
                             <a href="{{ $persona['ver'] }}" class="btn-icon btn-icon--gris" title="Ver" aria-label="Ver"><x-heroicon-o-eye /></a>
                         @endif
                     </td>

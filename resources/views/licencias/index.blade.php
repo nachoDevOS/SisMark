@@ -8,7 +8,9 @@
             <span class="cabecera__icono"><x-heroicon-o-clipboard-document-check /></span>
             <h1>Licencias de personal</h1>
         </div>
-        <a href="{{ route('licencias.create') }}" class="btn"><x-heroicon-o-plus />Nueva licencia</a>
+        @can('create', \App\Models\Licencia::class)
+            <a href="{{ route('licencias.create') }}" class="btn"><x-heroicon-o-plus />Nueva licencia</a>
+        @endcan
     </div>
 
     <p class="ayuda" style="margin: -.4rem 0 1rem;">Permisos y ausencias justificadas de los funcionarios, por día y turno.</p>

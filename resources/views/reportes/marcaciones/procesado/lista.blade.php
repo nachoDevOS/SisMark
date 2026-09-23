@@ -37,8 +37,10 @@
         <div class="acciones">
             <a class="btn" target="_blank" rel="noopener"
                href="{{ route('reportes.marcaciones.procesado.generar', $parametros + ['print' => 1]) }}"><x-heroicon-o-printer />Imprimir</a>
-            <a class="btn btn--gris"
-               href="{{ route('reportes.marcaciones.procesado.generar', $parametros + ['print' => 2]) }}"><x-heroicon-o-table-cells />Excel</a>
+            @can('Export:Reporte')
+                <a class="btn btn--gris"
+                   href="{{ route('reportes.marcaciones.procesado.generar', $parametros + ['print' => 2]) }}"><x-heroicon-o-table-cells />Excel</a>
+            @endcan
         </div>
     </div>
 

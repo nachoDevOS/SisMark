@@ -9,8 +9,12 @@
             <h1>Biométricos</h1>
         </div>
         <div style="display: flex; gap: .5rem; flex-wrap: wrap;">
-            <a href="{{ route('equipos.auditoria') }}" class="btn btn--gris"><x-heroicon-o-clipboard-document-list />Bitácora</a>
-            <a href="{{ route('equipos.create') }}" class="btn"><x-heroicon-o-plus />Nuevo equipo</a>
+            @can('viewAny', \App\Models\EquipoAuditoria::class)
+                <a href="{{ route('equipos.auditoria') }}" class="btn btn--gris"><x-heroicon-o-clipboard-document-list />Bitácora</a>
+            @endcan
+            @can('create', \App\Models\Equipo::class)
+                <a href="{{ route('equipos.create') }}" class="btn"><x-heroicon-o-plus />Nuevo equipo</a>
+            @endcan
         </div>
     </div>
 
@@ -34,7 +38,13 @@
             <tbody>
                 @forelse ($equipos as $equipo)
                     <tr>
-                        <td><a href="{{ route('equipos.show', $equipo) }}"><strong>{{ $equipo->nombre }}</strong></a></td>
+                        <td>
+                            @can('view', $equipo)
+                                <a href="{{ route('equipos.show', $equipo) }}"><strong>{{ $equipo->nombre }}</strong></a>
+                            @else
+                                <strong>{{ $equipo->nombre }}</strong>
+                            @endcan
+                        </td>
                         <td>{{ $equipo->ip }}</td>
                         <td>{{ $equipo->puerto }}</td>
                         <td>{{ $equipo->ubicacion ?? '—' }}</td>
@@ -50,12 +60,24 @@
                             </span>
                         </td>
                         <td>
+                            @php
+                                // Cada opción del menú «Más» exige su propio permiso (ver
+                                // EquipoPolicy): exportar es `view`, registrar es `sync`,
+                                // vaciar el reloj es `clear` y dar de baja es `delete`.
+                                $puedeExportar = auth()->user()->can('view', $equipo);
+                                $puedeSincronizar = auth()->user()->can('sync', $equipo);
+                                $puedeVaciar = auth()->user()->can('clear', $equipo);
+                                $puedeEliminar = auth()->user()->can('delete', $equipo);
+                            @endphp
                             <div class="acciones">
-                                <form action="{{ route('equipos.probar-conexion', $equipo) }}" method="POST">
-                                    @csrf
-                                    <button type="submit" class="btn-icon" title="Probar conexión" aria-label="Probar conexión"><x-heroicon-o-signal /></button>
-                                </form>
-                                <a href="{{ route('equipos.edit', $equipo) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
+                                @can('update', $equipo)
+                                    <form action="{{ route('equipos.probar-conexion', $equipo) }}" method="POST">
+                                        @csrf
+                                        <button type="submit" class="btn-icon" title="Probar conexión" aria-label="Probar conexión"><x-heroicon-o-signal /></button>
+                                    </form>
+                                    <a href="{{ route('equipos.edit', $equipo) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
+                                @endcan
+                                @if ($puedeExportar || $puedeSincronizar || $puedeVaciar || $puedeEliminar)
                                 <div class="dropdown"
                                      x-data="{
                                          open: false,
@@ -173,15 +195,23 @@
                                         Mas <x-heroicon-o-chevron-down />
                                     </button>
                                     <div class="dropdown-menu" x-show="open" x-cloak x-transition.opacity.duration.100ms>
-                                        <button type="button" x-on:click="modal = true; open = false"><x-heroicon-o-arrow-down-tray />Exportar marcaciones</button>
+                                        @if ($puedeExportar || $puedeSincronizar)
+                                            <button type="button" x-on:click="modal = true; open = false"><x-heroicon-o-arrow-down-tray />Exportar marcaciones</button>
+                                        @endif
 
-                                        <div class="dropdown-menu__peligro">
-                                            <button type="button" x-on:click="modalLimpiar = true; open = false; confirmacion = ''; motivo = ''"><x-heroicon-o-archive-box-x-mark />Borrar marcaciones</button>
-                                            <x-boton-eliminar variante="menu" etiqueta="Eliminar equipo"
-                                                              al-hacer-clic="open = false"
-                                                              :accion="route('equipos.destroy', $equipo)"
-                                                              :mensaje="'Se elimina el equipo «'.$equipo->nombre.'»: deja de aparecer en el listado y de participar en las sincronizaciones. Las marcaciones que ya estén en la base del SIA no se tocan, y el reloj tampoco se borra.'" />
-                                        </div>
+                                        @if ($puedeVaciar || $puedeEliminar)
+                                            <div class="dropdown-menu__peligro">
+                                                @if ($puedeVaciar)
+                                                    <button type="button" x-on:click="modalLimpiar = true; open = false; confirmacion = ''; motivo = ''"><x-heroicon-o-archive-box-x-mark />Borrar marcaciones</button>
+                                                @endif
+                                                @if ($puedeEliminar)
+                                                    <x-boton-eliminar variante="menu" etiqueta="Eliminar equipo"
+                                                                      al-hacer-clic="open = false"
+                                                                      :accion="route('equipos.destroy', $equipo)"
+                                                                      :mensaje="'Se elimina el equipo «'.$equipo->nombre.'»: deja de aparecer en el listado y de participar en las sincronizaciones. Las marcaciones que ya estén en la base del SIA no se tocan, y el reloj tampoco se borra.'" />
+                                                @endif
+                                            </div>
+                                        @endif
                                     </div>
 
                                     {{-- Modal de rango: se elige una vez y sirve para las dos acciones
@@ -213,6 +243,7 @@
                                             </div>
 
                                             <div class="modal-opciones">
+                                                @if ($puedeExportar)
                                                 <button type="button" class="modal-opcion" x-on:click="descargarCsv()"
                                                         :disabled="exportando || enviando">
                                                     <span class="modal-opcion__icono" x-show="! exportando"><x-heroicon-o-arrow-down-tray /></span>
@@ -222,10 +253,12 @@
                                                         <span class="modal-opcion__ayuda">Baja un archivo a tu computadora. No modifica nada.</span>
                                                     </span>
                                                 </button>
+                                                @endif
 
                                                 {{-- Sin rango a propósito: el reloj entrega su historial completo
                                                      igual, así que se registra todo lo que falte. El rango de arriba
                                                      sigue valiendo para el CSV, que es lo que el usuario mira. --}}
+                                                @if ($puedeSincronizar)
                                                 <form method="POST" action="{{ route('equipos.marcaciones.sincronizar', $equipo) }}"
                                                       x-on:submit="if (! confirm('¿Registrar en el sistema todas las marcaciones del reloj que falten?')) { $event.preventDefault(); return; } enviando = true">
                                                     @csrf
@@ -239,6 +272,7 @@
                                                         </span>
                                                     </button>
                                                 </form>
+                                                @endif
                                             </div>
 
                                             <p x-show="errorCsv" x-cloak x-text="errorCsv"
@@ -256,6 +290,7 @@
                                          el historial del reloj y no hay vuelta atrás. Por eso no lleva
                                          fechas, baja un CSV de respaldo con TODO antes de borrar, y
                                          exige escribir LIMPIAR para habilitar el botón. --}}
+                                    @if ($puedeVaciar)
                                     <div class="modal-fondo" x-show="modalLimpiar" x-cloak
                                          x-on:click.self="modalLimpiar = false" x-on:keydown.escape.window="modalLimpiar = false">
                                         <div class="modal-caja">
@@ -301,8 +336,10 @@
                                                style="margin: .75rem 0 0; color: #dc2626; font-size: .8125rem;"></p>
                                         </div>
                                     </div>
+                                    @endif
 
                                 </div>
+                                @endif
                             </div>
                         </td>
                     </tr>

@@ -8,7 +8,9 @@
             <span class="cabecera__icono"><x-heroicon-o-user /></span>
             <h1>Usuarios del panel</h1>
         </div>
-        <a href="{{ route('usuarios.create') }}" class="btn"><x-heroicon-o-plus />Nuevo usuario</a>
+        @can('create', \App\Models\User::class)
+            <a href="{{ route('usuarios.create') }}" class="btn"><x-heroicon-o-plus />Nuevo usuario</a>
+        @endcan
     </div>
 
     <x-tabla-filtros :action="route('usuarios.index')" :busqueda="$busqueda"
@@ -40,7 +42,10 @@
                         <td>{{ $usuario->created_at?->format('d/m/Y H:i') }}</td>
                         <td>
                             <div class="acciones">
-                                <a href="{{ route('usuarios.edit', $usuario) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
+                                @can('update', $usuario)
+                                    <a href="{{ route('usuarios.edit', $usuario) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
+                                @endcan
+                                @can('delete', $usuario)
                                 <div class="dropdown" x-data="{ open: false }" x-on:click.outside="open = false">
                                     <button type="button" class="dropdown-toggle" x-on:click="open = !open" aria-haspopup="true" :aria-expanded="open">
                                         Mas <x-heroicon-o-chevron-down />
@@ -53,6 +58,7 @@
                                         </div>
                                     </div>
                                 </div>
+                                @endcan
                             </div>
                         </td>
                     </tr>

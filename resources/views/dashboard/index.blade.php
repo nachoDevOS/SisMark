@@ -253,7 +253,13 @@
             <tbody>
                 @forelse ($equiposFueraDeLinea as $equipo)
                     <tr>
-                        <td><a href="{{ route('equipos.edit', $equipo) }}"><strong>{{ $equipo->nombre }}</strong></a></td>
+                        <td>
+                            @can('update', $equipo)
+                                <a href="{{ route('equipos.edit', $equipo) }}"><strong>{{ $equipo->nombre }}</strong></a>
+                            @else
+                                <strong>{{ $equipo->nombre }}</strong>
+                            @endcan
+                        </td>
                         <td>{{ $equipo->ip }}</td>
                         <td>{{ $equipo->ubicacion ?? 'Sin ubicación' }}</td>
                         <td>{{ $equipo->ultima_sync?->format('d/m/Y H:i') ?? 'Nunca' }}</td>

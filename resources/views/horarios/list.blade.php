@@ -37,10 +37,16 @@
                     </td>
                     <td>
                         <div class="acciones">
-                            <a href="{{ route('horarios.show', $horario) }}" class="btn-icon btn-icon--gris" title="Ver" aria-label="Ver"><x-heroicon-o-eye /></a>
-                            <a href="{{ route('horarios.edit', $horario) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
-                            <x-boton-eliminar :accion="route('horarios.destroy', $horario)"
-                                              :mensaje="'Se elimina el turno «'.trim($horario->nombreTurno).'».'" />
+                            @can('view', $horario)
+                                <a href="{{ route('horarios.show', $horario) }}" class="btn-icon btn-icon--gris" title="Ver" aria-label="Ver"><x-heroicon-o-eye /></a>
+                            @endcan
+                            @can('update', $horario)
+                                <a href="{{ route('horarios.edit', $horario) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
+                            @endcan
+                            @can('delete', $horario)
+                                <x-boton-eliminar :accion="route('horarios.destroy', $horario)"
+                                                  :mensaje="'Se elimina el turno «'.trim($horario->nombreTurno).'».'" />
+                            @endcan
                         </div>
                     </td>
                 </tr>

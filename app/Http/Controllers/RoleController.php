@@ -102,6 +102,11 @@ class RoleController extends Controller
 
         $role->delete();
 
+        // Spatie solo limpia su caché de permisos cuando el borrado es físico;
+        // con la eliminación lógica el rol seguiría en la caché hasta que
+        // venza. Se limpia a mano para que el cambio rija en el próximo pedido.
+        $role->forgetCachedPermissions();
+
         return redirect()
             ->route('roles.index')
             ->with('estado', 'Rol eliminado.');

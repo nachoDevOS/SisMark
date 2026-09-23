@@ -26,9 +26,13 @@
                         @endif
                     </td>
                     <td class="acciones">
-                        <a href="{{ route('dias-excepcionales.edit', $dia) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
-                        <x-boton-eliminar :accion="route('dias-excepcionales.destroy', $dia)"
-                                          :mensaje="'Se elimina el día excepcional del '.$dia->fecha?->format('d/m/Y').'.'" />
+                        @can('update', $dia)
+                            <a href="{{ route('dias-excepcionales.edit', $dia) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
+                        @endcan
+                        @can('delete', $dia)
+                            <x-boton-eliminar :accion="route('dias-excepcionales.destroy', $dia)"
+                                              :mensaje="'Se elimina el día excepcional del '.$dia->fecha?->format('d/m/Y').'.'" />
+                        @endcan
                     </td>
                 </tr>
             @empty

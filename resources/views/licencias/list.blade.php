@@ -133,7 +133,7 @@
                              Lo pedido desde Mamoré y lo rechazado no se
                              eliminan: se resuelven, o son la constancia de que
                              se resolvieron. El criterio lo da el modelo. --}}
-                        @if ($licencia->esEliminable)
+                        @if ($licencia->esEliminable && auth()->user()->can('delete', $licencia))
                         <x-boton-eliminar :accion="route('licencias.destroy', $licencia)"
                                           :mensaje="$unSoloDia
                                               ? 'Se elimina la licencia del '.$desde?->format('d/m/Y').'.'

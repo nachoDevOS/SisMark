@@ -212,7 +212,10 @@ class PersonaController extends Controller
      */
     public function mamoreShow(Request $request, string $ci, MamoreClient $mamore): View
     {
-        $this->authorize('viewAny', Persona::class);
+        // Es la ficha, igual que `show()`: pide «Ver ficha» y no el del
+        // listado. Va por nombre porque acá no hay un `Persona` local que
+        // pasarle a la policy.
+        $this->autorizarPermiso('View:Persona');
 
         try {
             $persona = $mamore->personByCi($ci);
@@ -362,7 +365,6 @@ class PersonaController extends Controller
         }
     }
 
-
     private function totalesPorContrato(array $meta): array
     {
         return [
@@ -370,7 +372,6 @@ class PersonaController extends Controller
             'sin' => isset($meta['total_sin_contrato']) ? (int) $meta['total_sin_contrato'] : null,
         ];
     }
-
 
     private function normalizarMamore(array $data): array
     {

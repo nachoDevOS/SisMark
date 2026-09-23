@@ -8,7 +8,9 @@
             <span class="cabecera__icono"><x-heroicon-o-calendar-days /></span>
             <h1>Días excepcionales</h1>
         </div>
-        <a href="{{ route('dias-excepcionales.create') }}" class="btn"><x-heroicon-o-plus />Nuevo día</a>
+        @can('create', \App\Models\DiaExcepcional::class)
+            <a href="{{ route('dias-excepcionales.create') }}" class="btn"><x-heroicon-o-plus />Nuevo día</a>
+        @endcan
     </div>
 
     <p class="ayuda" style="margin: -.4rem 0 1rem;">Fechas que no se toman en cuenta para el control de asistencia.</p>
