@@ -101,6 +101,22 @@ if [ "${SISMARK_SEED}" = "true" ]; then
 fi
 
 # --- 6. Cachés de producción -------------------------------------------------
+# Primero se borra lo que pueda haber quedado del despliegue anterior:
+#
+#   view:clear              `storage` suele venir de un volumen, así que las
+#       vistas compiladas de la versión vieja sobreviven al redeploy. Se borran
+#       para que no quede ninguna —p. ej. de una vista que ya no existe—.
+#   permission:cache-reset  La caché de roles y permisos vive en la tabla
+#       `cache` de MySQL (CACHE_STORE=database), no en la imagen, así que
+#       también sobrevive. Se resetea para que cada despliegue arranque
+#       leyendo los permisos reales de la base.
+#
+# No se usa `optimize:clear` porque vacía la caché entera de la aplicación
+# (padrón de Mamoré, catálogos) y el primer uso tras cada despliegue sería lento.
+echo "[sismark] Limpiando vistas compiladas y caché de permisos…"
+php artisan view:clear
+php artisan permission:cache-reset
+
 # Se regeneran en cada arranque: las variables de entorno pueden haber cambiado.
 echo "[sismark] Cacheando configuración, rutas y vistas…"
 php artisan config:cache
