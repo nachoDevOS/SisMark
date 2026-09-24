@@ -2,10 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\ImportarMarcacionesRequest;
 use App\Http\Requests\StoreMarcacionRequest;
 use App\Models\Asistencia;
-use App\Services\RegistroAsistencia;
+use App\Models\EquipoAuditoria;
 use App\Services\ResolutorNombres;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -15,14 +14,14 @@ use Illuminate\View\View;
 
 /**
  * Listado de las marcaciones desde la base local (MySQL, tabla `asistencias`,
- * migrada del SIA) y la importación del CSV que exporta EquipoController.
+ * migrada del SIA) y el alta manual de a una.
  *
  * La tabla tiene ~4.4 millones de filas, por eso el rango arranca en el mes
  * actual: nunca se lista ni se cuenta la tabla completa.
  *
- * Tanto el listado como el import y el alta manual (y la sincronización de
- * equipos) trabajan ya sobre la base local MySQL vía
- * App\Services\RegistroAsistencia.
+ * La importación de CSV no vive acá: el botón del listado abre el mismo modal
+ * de Biométricos y va a EquipoController::importarMarcaciones(), que la deja
+ * en la bitácora con su motivo.
  */
 class MarcacionController extends Controller
 {
@@ -33,14 +32,18 @@ class MarcacionController extends Controller
     {
         $this->authorize('viewAny', Asistencia::class);
 
+        $carga = $this->cargaPedida($request);
+
         // Por defecto: del 1.º del mes hasta hoy (deja fuera las fechas basura
-        // futuras que arrastra el SIA, ej. años 2064/2103).
-        $desde = $request->query('desde', now()->startOfMonth()->toDateString());
-        $hasta = $request->query('hasta', now()->toDateString());
+        // futuras que arrastra el SIA, ej. años 2064/2103). Viniendo de una
+        // carga de la bitácora, sin rango: el reloj y el CSV traen historial y
+        // lo que entró puede ser de cualquier fecha.
+        $desde = $request->query('desde', $carga ? '' : now()->startOfMonth()->toDateString());
+        $hasta = $request->query('hasta', $carga ? '' : now()->toDateString());
         $tipo = $request->query('tipo', '');
         $porPagina = $this->porPagina($request, 10);
 
-        return view('marcaciones.index', compact('desde', 'hasta', 'tipo', 'porPagina'));
+        return view('marcaciones.index', compact('desde', 'hasta', 'tipo', 'porPagina', 'carga'));
     }
 
     /**
@@ -50,13 +53,16 @@ class MarcacionController extends Controller
     {
         $this->authorize('viewAny', Asistencia::class);
 
-        $desde = $request->query('desde', now()->startOfMonth()->toDateString());
-        $hasta = $request->query('hasta', now()->toDateString());
+        $carga = $this->cargaPedida($request);
+
+        $desde = $request->query('desde', $carga ? '' : now()->startOfMonth()->toDateString());
+        $hasta = $request->query('hasta', $carga ? '' : now()->toDateString());
         $buscar = trim((string) $request->query('q', ''));
         $tipo = $request->query('tipo', '');
         $porPagina = $this->porPagina($request, 10);
 
         $marcaciones = Asistencia::query()
+            ->when($carga, fn (Builder $query) => $query->where('equipo_auditoria_id', $carga->id))
             ->enRango($desde, $hasta)
             ->when($buscar !== '', fn (Builder $query) => $query->buscar($buscar))
             ->when($tipo !== '', fn (Builder $query) => $query->where('tipo', $tipo))
@@ -124,6 +130,28 @@ class MarcacionController extends Controller
     }
 
     /**
+     * La entrada de la bitácora de `?carga=`, cuando se entra al listado desde
+     * la bitácora de equipos para ver qué marcaciones guardó una sincronización
+     * o una importación.
+     *
+     * Solo cuentan esas dos acciones: exportar, limpiar y eliminar no insertan
+     * marcaciones, y un id que no existe se ignora en vez de dejar el listado
+     * vacío sin explicación.
+     */
+    private function cargaPedida(Request $request): ?EquipoAuditoria
+    {
+        $id = (int) $request->query('carga', 0);
+
+        if ($id <= 0) {
+            return null;
+        }
+
+        return EquipoAuditoria::query()
+            ->whereIn('accion', EquipoAuditoria::ACCIONES_QUE_GUARDAN)
+            ->find($id);
+    }
+
+    /**
      * A dónde volver después de registrar: a la ficha desde la que se abrió el
      * modal (`local` o `mamore`) o, si se registró desde el listado, al
      * listado. Solo se aceptan esos dos orígenes conocidos, así un valor
@@ -136,105 +164,5 @@ class MarcacionController extends Controller
             'mamore' => route('funcionarios.mamore', ['ci' => $ci]),
             default => route('marcaciones.index'),
         };
-    }
-
-    /**
-     * Importa a la tabla local `asistencias` el CSV que ya genera
-     * EquipoController::exportarMarcaciones() (columnas CI/ID, Nombre,
-     * Fecha, Hora). El CI se cruza contra `personas.ci`; lo que no matchea un
-     * funcionario o ya existe (mismo ci+fecha+hora) se cuenta pero no se inserta.
-     */
-    public function importar(ImportarMarcacionesRequest $request, RegistroAsistencia $registro): RedirectResponse
-    {
-        $this->authorize('create', Asistencia::class);
-
-        $ruta = $request->file('archivo')->getRealPath();
-        $separador = $this->detectarSeparador($ruta);
-        $manejador = fopen($ruta, 'r');
-
-        $filas = [];
-        $esPrimeraFila = true;
-
-        while (($columnas = fgetcsv($manejador, 0, $separador)) !== false) {
-            // Salta las líneas en blanco que suele dejar Excel al final.
-            if (count(array_filter($columnas, fn ($celda): bool => trim((string) $celda) !== '')) === 0) {
-                continue;
-            }
-
-            [$ci, , $fechaCsv, $horaCsv] = array_pad($columnas, 4, null);
-
-            $fecha = $this->parsearFecha(trim((string) $fechaCsv));
-            $hora = $this->parsearHora(trim((string) $horaCsv));
-
-            // La primera fila que no parsea como fecha/hora es el encabezado: se
-            // descarta sin contarla. El resto de filas ilegibles van como
-            // inválidas (momento nulo) para que el servicio las cuente.
-            if ((! $fecha || ! $hora) && $esPrimeraFila) {
-                $esPrimeraFila = false;
-
-                continue;
-            }
-
-            $esPrimeraFila = false;
-
-            $filas[] = [
-                'ci' => $ci,
-                'momento' => $fecha && $hora ? $fecha->copy()->setTime($hora->hour, $hora->minute, $hora->second) : null,
-            ];
-        }
-
-        fclose($manejador);
-
-        $conteo = $registro->registrar($filas);
-
-        return back()->with('estado', $registro->mensaje($conteo));
-    }
-
-    /**
-     * Detecta el separador del CSV. Excel en español guarda con ';', mientras
-     * que el que exporta el sistema usa ','. Se decide por el que más aparece
-     * en la primera línea.
-     */
-    private function detectarSeparador(string $ruta): string
-    {
-        $manejador = fopen($ruta, 'r');
-        $primeraLinea = (string) fgets($manejador);
-        fclose($manejador);
-
-        return substr_count($primeraLinea, ';') > substr_count($primeraLinea, ',') ? ';' : ',';
-    }
-
-    /**
-     * Parsea la fecha probando los formatos que puede dejar el export propio
-     * (d/m/Y) o un reguardado desde Excel (d-m-Y, ISO). Devuelve la fecha a
-     * medianoche, o null si ninguno encaja.
-     */
-    private function parsearFecha(string $valor): ?Carbon
-    {
-        foreach (['d/m/Y', 'd-m-Y', 'Y-m-d'] as $formato) {
-            try {
-                return Carbon::createFromFormat('!'.$formato, $valor);
-            } catch (\Throwable) {
-                continue;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Parsea la hora con o sin segundos. Devuelve null si no encaja.
-     */
-    private function parsearHora(string $valor): ?Carbon
-    {
-        foreach (['H:i:s', 'H:i'] as $formato) {
-            try {
-                return Carbon::createFromFormat('!'.$formato, $valor);
-            } catch (\Throwable) {
-                continue;
-            }
-        }
-
-        return null;
     }
 }

@@ -6,6 +6,7 @@ use App\Exceptions\DeviceServiceException;
 use App\Models\Equipo;
 use App\Models\EquipoAuditoria;
 use Illuminate\Support\Carbon;
+use Throwable;
 
 /**
  * Lectura de marcaciones de un equipo biométrico y su volcado a la tabla local
@@ -16,6 +17,10 @@ use Illuminate\Support\Carbon;
  * que corre a las horas configuradas en cada equipo. Los dos leen del reloj vía
  * el microservicio, registran con {@see RegistroAsistencia} y dejan la entrada
  * en la bitácora.
+ *
+ * También vuelca el CSV que se importa desde Biométricos o Marcaciones
+ * ({@see importar()}): no lee el reloj ni lleva equipo, pero guarda igual y
+ * queda en la bitácora.
  *
  * **La sincronización no pide rango: baja el buffer completo del reloj.** Y no
  * cuesta más que pedir un día, porque el protocolo ZK no sabe filtrar —
@@ -61,21 +66,19 @@ class SincronizadorEquipos
      *   contador. `null` si no se pudo averiguar (firmware que no lo expone, o
      *   microservicio viejo): ausente no es cero, es «no se sabe».
      * - `leidas`: cuántas se leyeron del buffer, antes de filtrar por rango.
-     * - `recibidas`: cuántas llegaron a Laravel, ya filtradas por el
-     *   microservicio.
      *
      * `enEquipo` contra `leidas` es la prueba: si el reloj declara 1500 y se
      * leyeron 1499, la lectura se cortó por el medio. Contando solo lo que
      * llegó, eso es invisible.
      *
-     * @return array{marcaciones: array<int, array<string, mixed>>, error: ?string, recibidas: int, leidas: int, enEquipo: ?int}
+     * @return array{marcaciones: array<int, array<string, mixed>>, error: ?string, leidas: int, enEquipo: ?int}
      */
     private function leer(Equipo $equipo, string $desde, string $hasta): array
     {
         try {
             $respuesta = $this->deviceService->attendance($equipo, $desde ?: null, $hasta ?: null);
         } catch (DeviceServiceException $e) {
-            return ['marcaciones' => [], 'error' => $e->getMessage(), 'recibidas' => 0, 'leidas' => 0, 'enEquipo' => null];
+            return ['marcaciones' => [], 'error' => $e->getMessage(), 'leidas' => 0, 'enEquipo' => null];
         }
 
         $todas = $respuesta['marcaciones'] ?? [];
@@ -83,7 +86,6 @@ class SincronizadorEquipos
         return [
             'marcaciones' => $this->filtrarPorRango($todas, $desde, $hasta),
             'error' => null,
-            'recibidas' => count($todas),
             // Un microservicio anterior a estas cifras no las manda: se cae al
             // conteo de lo que llegó, y la comprobación de integridad queda
             // neutralizada en vez de acusar una pérdida que no ocurrió.
@@ -103,6 +105,9 @@ class SincronizadorEquipos
      * La primera mide el transporte, la segunda el destino. Una corrida que
      * trajo 1499 de 1500 se marca fallida aunque las 1499 se hayan guardado
      * bien: falta una marcación de alguien.
+     *
+     * Cada marcación insertada queda atada a la entrada de la bitácora (ver
+     * {@see guardar()}).
      *
      * @return array{exito: bool, completa: ?bool, mensaje: string, total: int, enEquipo: ?int, perdidas: ?int, conteo: array{insertadas: int, existentes: int, sinFuncionario: int, invalidas: int}}
      */
@@ -135,7 +140,12 @@ class SincronizadorEquipos
             'momento' => filled($marcacion['timestamp'] ?? null) ? Carbon::parse($marcacion['timestamp']) : null,
         ], $todas);
 
-        $conteo = $this->registro->registrar($filas, $equipo);
+        [$sincronizacion, $conteo] = $this->guardar($equipo, EquipoAuditoria::ACCION_SINCRONIZAR, $filas, [
+            // Lo que el reloj dice que tiene. Es la única cifra que no sale de
+            // contar lo que llegó, y por eso es la que delata una lectura
+            // cortada por el medio.
+            'en_equipo' => $lectura['enEquipo'],
+        ]);
 
         $perdidas = $this->perdidas($lectura);
         $completa = $perdidas === null ? null : $perdidas === 0;
@@ -147,29 +157,7 @@ class SincronizadorEquipos
                 ."faltan {$perdidas}. La lectura quedó incompleta y se reintenta en la próxima corrida.";
         }
 
-        // El desglose va en columnas y no solo dentro del texto de `detalle`:
-        // así la bitácora se puede leer de un vistazo y, sobre todo, sumar. Un
-        // equipo que trae 400 marcaciones y las 400 son repetidas está tan
-        // «sincronizado» como uno que trae 400 nuevas, y con una sola cifra los
-        // dos casos se ven idénticos.
-        EquipoAuditoria::registrar($equipo, EquipoAuditoria::ACCION_SINCRONIZAR, [
-            // Lo que el reloj dice que tiene. Es la única cifra que no sale de
-            // contar lo que llegó, y por eso es la que delata una lectura
-            // cortada por el medio.
-            'en_equipo' => $lectura['enEquipo'],
-            // Lo que llegó a SisMark. Las cinco columnas de abajo reparten este
-            // total y tienen que sumarlo exacto.
-            'total_marcaciones' => $lectura['recibidas'],
-            // Sin rango pedido nunca se recorta nada; queda en cero y así se ve
-            // que el total llegó entero a repartirse.
-            'fuera_de_rango' => $lectura['recibidas'] - count($todas),
-            'nuevas' => $conteo['insertadas'],
-            'repetidas' => $conteo['existentes'],
-            'sin_funcionario' => $conteo['sinFuncionario'],
-            'fallidas' => $conteo['invalidas'],
-            'detalle' => $mensaje,
-            'exito' => $completa !== false,
-        ]);
+        $this->cerrar($sincronizacion, $conteo, $mensaje, $completa !== false);
 
         return [
             'exito' => true,
@@ -180,6 +168,93 @@ class SincronizadorEquipos
             'perdidas' => $perdidas,
             'conteo' => $conteo,
         ];
+    }
+
+    /**
+     * Sube a la base un CSV de marcaciones, dejando en la bitácora quién lo
+     * subió, por qué y qué pasó con cada fila.
+     *
+     * Es el camino para lo que no se pudo sincronizar: un reloj sin red cuyo
+     * historial se bajó por USB, o un respaldo guardado antes de vaciarlo. Va
+     * sin equipo porque el CSV no dice de qué reloj salió; las marcaciones
+     * quedan atadas solo a esta entrada de la bitácora.
+     *
+     * @param  list<array{ci: ?string, momento: ?Carbon}>  $filas
+     * @return array{insertadas: int, existentes: int, sinFuncionario: int, invalidas: int}
+     */
+    public function importar(array $filas, string $motivo, string $archivo): array
+    {
+        [$importacion, $conteo] = $this->guardar(null, EquipoAuditoria::ACCION_IMPORTAR, $filas, [
+            'motivo' => $motivo,
+        ]);
+
+        $mensaje = $this->registro->mensaje($conteo, "Importación de «{$archivo}»");
+
+        $this->cerrar($importacion, $conteo, $mensaje, true);
+
+        return $conteo;
+    }
+
+    /**
+     * Abre la entrada de la bitácora y guarda las marcaciones atadas a ella.
+     *
+     * La entrada se crea **antes** de guardar, para que cada marcación
+     * insertada lleve su id en `equipo_auditoria_id`; quien llama la completa
+     * después con {@see cerrar()}. Si el guardado revienta a mitad de camino,
+     * la entrada queda fallida con el error: no se queda «en curso» para
+     * siempre, y las marcaciones que alcanzaron a entrar siguen apuntando a
+     * ella.
+     *
+     * @param  list<array{ci: ?string, momento: ?Carbon}>  $filas
+     * @param  array<string, mixed>  $extra
+     * @return array{0: EquipoAuditoria, 1: array{insertadas: int, existentes: int, sinFuncionario: int, invalidas: int}}
+     */
+    private function guardar(?Equipo $equipo, string $accion, array $filas, array $extra): array
+    {
+        $entrada = EquipoAuditoria::registrar($equipo, $accion, [
+            ...$extra,
+            // Lo que llegó a SisMark. Las cuatro columnas del destino reparten
+            // este total y tienen que sumarlo exacto.
+            'total_marcaciones' => count($filas),
+            'detalle' => 'Guardando marcaciones…',
+            'exito' => false,
+        ]);
+
+        try {
+            $conteo = $this->registro->registrar($filas, $equipo, $entrada);
+        } catch (Throwable $e) {
+            $entrada->update([
+                'detalle' => "Se interrumpió al guardar: {$e->getMessage()}",
+                'exito' => false,
+            ]);
+
+            throw $e;
+        }
+
+        return [$entrada, $conteo];
+    }
+
+    /**
+     * Completa la entrada de la bitácora con el desglose de lo guardado.
+     *
+     * El desglose va en columnas y no solo dentro del texto de `detalle`: así
+     * la bitácora se puede leer de un vistazo y, sobre todo, sumar. Una carga
+     * que trae 400 marcaciones y las 400 son repetidas está tan completa como
+     * una que trae 400 nuevas, y con una sola cifra los dos casos se ven
+     * idénticos.
+     *
+     * @param  array{insertadas: int, existentes: int, sinFuncionario: int, invalidas: int}  $conteo
+     */
+    private function cerrar(EquipoAuditoria $entrada, array $conteo, string $mensaje, bool $exito): void
+    {
+        $entrada->update([
+            'nuevas' => $conteo['insertadas'],
+            'repetidas' => $conteo['existentes'],
+            'sin_funcionario' => $conteo['sinFuncionario'],
+            'fallidas' => $conteo['invalidas'],
+            'detalle' => $mensaje,
+            'exito' => $exito,
+        ]);
     }
 
     /**

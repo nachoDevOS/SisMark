@@ -9,6 +9,9 @@
             @can('update', $equipo)
                 <a href="{{ route('equipos.edit', $equipo) }}" class="btn btn--gris"><x-heroicon-o-pencil-square />Editar</a>
             @endcan
+            @can('sync', $equipo)
+                <a href="{{ route('equipos.sincronizacion.edit', $equipo) }}" class="btn btn--gris"><x-heroicon-o-clock />Sincronización</a>
+            @endcan
             <a href="{{ route('equipos.index') }}" class="btn btn--gris"><x-heroicon-o-arrow-left />Volver</a>
         </div>
     </div>

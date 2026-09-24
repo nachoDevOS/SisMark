@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Asistencia;
 use App\Models\Equipo;
+use App\Models\EquipoAuditoria;
 use App\Models\Persona;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -57,10 +58,15 @@ class RegistroAsistencia
      * que se inserte. Va en null cuando la fuente no lo sabe: el CSV no dice de
      * qué equipo se exportó, y el alta manual no viene de ninguno.
      *
+     * `$sincronizacion` es la entrada de la bitácora de la corrida que las
+     * trae, y también queda en cada marcación insertada: así la bitácora llega
+     * a las marcaciones que agregó cada corrida. Solo la pasa
+     * {@see SincronizadorEquipos}.
+     *
      * @param  iterable<array{ci: ?string, momento: ?Carbon}>  $filas
      * @return array{insertadas: int, existentes: int, sinFuncionario: int, invalidas: int}
      */
-    public function registrar(iterable $filas, ?Equipo $equipo = null): array
+    public function registrar(iterable $filas, ?Equipo $equipo = null, ?EquipoAuditoria $sincronizacion = null): array
     {
         $conteo = ['insertadas' => 0, 'existentes' => 0, 'sinFuncionario' => 0, 'invalidas' => 0];
 
@@ -90,13 +96,13 @@ class RegistroAsistencia
             $lote[] = $normalizada;
 
             if (count($lote) >= self::LOTE) {
-                $this->registrarLote($lote, $equipo, $conteo);
+                $this->registrarLote($lote, $equipo, $sincronizacion, $conteo);
                 $lote = [];
             }
         }
 
         if ($lote !== []) {
-            $this->registrarLote($lote, $equipo, $conteo);
+            $this->registrarLote($lote, $equipo, $sincronizacion, $conteo);
         }
 
         return $conteo;
@@ -152,7 +158,7 @@ class RegistroAsistencia
      * @param  list<array{ci: string, fecha: Carbon, hora: string, clave: string}>  $lote
      * @param  array{insertadas: int, existentes: int, sinFuncionario: int, invalidas: int}  $conteo
      */
-    private function registrarLote(array $lote, ?Equipo $equipo, array &$conteo): void
+    private function registrarLote(array $lote, ?Equipo $equipo, ?EquipoAuditoria $sincronizacion, array &$conteo): void
     {
         $cis = array_values(array_unique(array_column($lote, 'ci')));
         $fechas = array_values(array_unique(array_map(
@@ -186,7 +192,7 @@ class RegistroAsistencia
                 'hora' => $fila['hora'],
                 'tipo' => Asistencia::TIPO_RELOJ,
                 'equipo_id' => $equipo?->id,
-                'estado' => 1,
+                'equipo_auditoria_id' => $sincronizacion?->id,
                 // El insert masivo no dispara los eventos del modelo, así que la
                 // columna que llena el trait RegistersUserEvents se pone acá.
                 // Queda nula cuando sincroniza la tarea programada, que no tiene

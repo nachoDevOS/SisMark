@@ -50,6 +50,19 @@ class EquipoPolicy
     }
 
     /**
+     * Subir a la base un CSV de marcaciones a nombre de un equipo.
+     *
+     * Va sin equipo: el equipo se elige en el formulario, y es el mismo
+     * permiso para cualquiera. Aparte de `sync` porque las marcaciones no las
+     * trae el reloj sino un archivo que carga una persona, y por eso exige
+     * motivo y queda en la bitácora.
+     */
+    public function import(AuthUser $authUser): bool
+    {
+        return $authUser->can('Import:Equipo');
+    }
+
+    /**
      * Vaciar el buffer de marcaciones del reloj.
      *
      * Va aparte de `delete` porque no es lo mismo dar de baja un equipo del

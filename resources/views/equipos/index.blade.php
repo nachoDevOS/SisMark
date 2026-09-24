@@ -12,6 +12,7 @@
             @can('viewAny', \App\Models\EquipoAuditoria::class)
                 <a href="{{ route('equipos.auditoria') }}" class="btn btn--gris"><x-heroicon-o-clipboard-document-list />Bitácora</a>
             @endcan
+            <x-modal-importar-marcaciones-equipo />
             @can('create', \App\Models\Equipo::class)
                 <a href="{{ route('equipos.create') }}" class="btn"><x-heroicon-o-plus />Nuevo equipo</a>
             @endcan
@@ -77,6 +78,9 @@
                                     </form>
                                     <a href="{{ route('equipos.edit', $equipo) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
                                 @endcan
+                                @if ($puedeSincronizar)
+                                    <a href="{{ route('equipos.sincronizacion.edit', $equipo) }}" class="btn-icon" title="Sincronización automática" aria-label="Sincronización automática"><x-heroicon-o-clock /></a>
+                                @endif
                                 @if ($puedeExportar || $puedeSincronizar || $puedeVaciar || $puedeEliminar)
                                 <div class="dropdown"
                                      x-data="{
@@ -196,7 +200,7 @@
                                     </button>
                                     <div class="dropdown-menu" x-show="open" x-cloak x-transition.opacity.duration.100ms>
                                         @if ($puedeExportar || $puedeSincronizar)
-                                            <button type="button" x-on:click="modal = true; open = false"><x-heroicon-o-arrow-down-tray />Exportar marcaciones</button>
+                                            <button type="button" x-on:click="modal = true; open = false"><x-heroicon-o-arrow-path />Descargar y sincronizar</button>
                                         @endif
 
                                         @if ($puedeVaciar || $puedeEliminar)
@@ -220,7 +224,7 @@
                                     <div class="modal-fondo" x-show="modal" x-cloak
                                          x-on:click.self="modal = false" x-on:keydown.escape.window="modal = false">
                                         <div class="modal-caja modal-caja--ancha">
-                                            <h2>Marcaciones de «{{ $equipo->nombre }}»</h2>
+                                            <h2>Descargar y sincronizar «{{ $equipo->nombre }}»</h2>
                                             <p class="modal-bajada">Elegí el rango y después qué hacer con esas marcaciones.</p>
 
                                             <div class="grid-2">

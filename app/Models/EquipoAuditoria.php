@@ -7,13 +7,14 @@ use Database\Factories\EquipoAuditoriaFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Una entrada de la bitácora de equipos biométricos.
  *
- * Se escribe sola desde EquipoController cada vez que alguien exporta el CSV,
- * envía las marcaciones a la base del SIA, vacía el reloj o da de baja un
- * equipo. No se edita ni se borra: es el registro de quién hizo qué y por qué.
+ * Se escribe sola cada vez que alguien exporta el CSV, sincroniza el reloj,
+ * importa un CSV de marcaciones, vacía el reloj o da de baja un equipo. No se
+ * edita ni se borra: es el registro de quién hizo qué y por qué.
  */
 class EquipoAuditoria extends Model
 {
@@ -32,6 +33,9 @@ class EquipoAuditoria extends Model
     /** Dio de baja el equipo del sistema. */
     public const ACCION_ELIMINAR = 'eliminar';
 
+    /** Subió a la base un CSV con marcaciones del equipo, con motivo. */
+    public const ACCION_IMPORTAR = 'importar';
+
     /**
      * Etiquetas legibles de cada acción, para las pantallas.
      *
@@ -42,6 +46,18 @@ class EquipoAuditoria extends Model
         self::ACCION_SINCRONIZAR => 'Envió a la BD',
         self::ACCION_LIMPIAR => 'Limpió el equipo',
         self::ACCION_ELIMINAR => 'Eliminó el equipo',
+        self::ACCION_IMPORTAR => 'Importó CSV',
+    ];
+
+    /**
+     * Acciones que guardan marcaciones en `asistencias`. Cada marcación que
+     * insertan lleva el id de la entrada en `equipo_auditoria_id`.
+     *
+     * @var list<string>
+     */
+    public const ACCIONES_QUE_GUARDAN = [
+        self::ACCION_SINCRONIZAR,
+        self::ACCION_IMPORTAR,
     ];
 
     /**
@@ -70,7 +86,6 @@ class EquipoAuditoria extends Model
         'repetidas',
         'sin_funcionario',
         'fallidas',
-        'fuera_de_rango',
         'desde',
         'hasta',
         'detalle',
@@ -92,7 +107,6 @@ class EquipoAuditoria extends Model
             'repetidas' => 'integer',
             'sin_funcionario' => 'integer',
             'fallidas' => 'integer',
-            'fuera_de_rango' => 'integer',
         ];
     }
 
@@ -103,14 +117,17 @@ class EquipoAuditoria extends Model
      * trait RegistersUserEvents en `registerUser_id`. Quien llama solo pasa lo
      * propio de la acción.
      *
-     * @param  array{motivo?: ?string, en_equipo?: ?int, total_marcaciones?: ?int, nuevas?: ?int, repetidas?: ?int, sin_funcionario?: ?int, fallidas?: ?int, fuera_de_rango?: ?int, desde?: ?string, hasta?: ?string, detalle?: ?string, exito?: bool}  $extra
+     * El equipo va en null en la importación de CSV: el archivo no dice de qué
+     * reloj salió, así que no hay equipo que anotar ni foto que sacar.
+     *
+     * @param  array{motivo?: ?string, en_equipo?: ?int, total_marcaciones?: ?int, nuevas?: ?int, repetidas?: ?int, sin_funcionario?: ?int, fallidas?: ?int, desde?: ?string, hasta?: ?string, detalle?: ?string, exito?: bool}  $extra
      */
-    public static function registrar(Equipo $equipo, string $accion, array $extra = []): self
+    public static function registrar(?Equipo $equipo, string $accion, array $extra = []): self
     {
         return static::create([
-            'equipo_id' => $equipo->id,
+            'equipo_id' => $equipo?->id,
             'accion' => $accion,
-            'datos_equipo' => static::fotoDelEquipo($equipo),
+            'datos_equipo' => $equipo ? static::fotoDelEquipo($equipo) : [],
             'ip_usuario' => request()->ip(),
             ...$extra,
         ]);
@@ -164,6 +181,26 @@ class EquipoAuditoria extends Model
     }
 
     /**
+     * Marcaciones que insertó esta sincronización o importación: las nuevas y
+     * las sin funcionario. Las repetidas no están, porque ya estaban cargadas.
+     *
+     * @return HasMany<Asistencia, $this>
+     */
+    public function asistencias(): HasMany
+    {
+        return $this->hasMany(Asistencia::class, 'equipo_auditoria_id');
+    }
+
+    /**
+     * Cuántas marcaciones guardó esta carga en la base, con funcionario o sin
+     * él. Es lo que se ve al abrir sus marcaciones desde la bitácora.
+     */
+    public function marcacionesGuardadas(): int
+    {
+        return (int) $this->nuevas + (int) $this->sin_funcionario;
+    }
+
+    /**
      * Etiqueta legible de la acción.
      */
     public function etiquetaAccion(): string
@@ -172,10 +209,15 @@ class EquipoAuditoria extends Model
     }
 
     /**
-     * Nombre del equipo tal como estaba al momento de la acción.
+     * Nombre del equipo tal como estaba al momento de la acción. Una
+     * importación de CSV no tiene equipo: el archivo no dice de qué reloj salió.
      */
     public function nombreEquipo(): string
     {
+        if ($this->accion === self::ACCION_IMPORTAR && empty($this->datos_equipo)) {
+            return 'Archivo CSV';
+        }
+
         return $this->datos_equipo['nombre'] ?? 'Equipo eliminado';
     }
 

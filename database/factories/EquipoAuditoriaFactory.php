@@ -45,7 +45,6 @@ class EquipoAuditoriaFactory extends Factory
             'repetidas' => null,
             'sin_funcionario' => null,
             'fallidas' => null,
-            'fuera_de_rango' => null,
             'desde' => null,
             'hasta' => null,
             'detalle' => null,
@@ -77,7 +76,6 @@ class EquipoAuditoriaFactory extends Factory
                 'repetidas' => $repetidas,
                 'sin_funcionario' => $sinFuncionario,
                 'fallidas' => $fallidas,
-                'fuera_de_rango' => 0,
             ];
         });
     }
@@ -119,7 +117,6 @@ class EquipoAuditoriaFactory extends Factory
             'repetidas' => null,
             'sin_funcionario' => null,
             'fallidas' => null,
-            'fuera_de_rango' => null,
         ]);
     }
 }

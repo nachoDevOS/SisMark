@@ -12,8 +12,9 @@
     </div>
 
     <p style="margin: -.4rem 0 1.1rem; color: var(--muted); font-size: .85rem;">
-        Quién exportó, registró en el sistema, limpió o dio de baja cada equipo biométrico.
-        Las acciones que borran información llevan el motivo escrito por quien las hizo.
+        Quién exportó, registró en el sistema, importó un CSV, limpió o dio de baja cada
+        equipo biométrico. Las importaciones y las acciones que borran información llevan
+        el motivo escrito por quien las hizo.
         Cada sincronización se mide en dos tramos:
         <strong>la transferencia</strong> compara lo que el reloj dice tener contra lo que
         llegó —si no coinciden, la lectura se cortó por el medio y falta una marcación—, y
@@ -40,7 +41,7 @@
         <table>
             {{-- Dos grupos de columnas porque son dos cuentas distintas y encadenadas:
                      en el reloj = llegaron + se perdieron
-                     llegaron    = nuevas + repetidas + sin funcionario + con error + fuera de rango
+                     llegaron    = nuevas + repetidas + sin funcionario + con error
                  Juntas en una sola fila de encabezados, los diez números se leían como
                  una lista suelta y no se veía cuál tenía que cerrar contra cuál. --}}
             <thead>
@@ -52,7 +53,7 @@
                     <th rowspan="2">Motivo / detalle</th>
                     <th colspan="3" style="text-align: center; border-left: 1px solid var(--borde);"
                         title="Del reloj a SisMark: ¿llegó todo lo que el equipo tenía guardado?">Transferencia</th>
-                    <th colspan="5" style="text-align: center; border-left: 1px solid var(--borde);"
+                    <th colspan="4" style="text-align: center; border-left: 1px solid var(--borde);"
                         title="De lo que llegó: qué pasó con cada marcación">Destino en la base</th>
                 </tr>
                 <tr>
@@ -65,7 +66,6 @@
                     <th style="text-align: right;" title="Ya estaban registradas: el reloj las vuelve a entregar en cada lectura">Repetidas</th>
                     <th style="text-align: right;" title="Se guardaron igual, pero el ID del reloj todavía no está en el padrón">Sin funcionario</th>
                     <th style="text-align: right;" title="Fecha inválida del reloj o error al guardar: son las únicas que no se guardan">Con error</th>
-                    <th style="text-align: right;" title="Quedaban fuera del rango pedido. La sincronización no pide rango, así que acá siempre es 0">Fuera de rango</th>
                 </tr>
             </thead>
             <tbody>
@@ -91,17 +91,30 @@
                                     {{ $registro->transferenciaCompleta() === false ? 'Incompleta' : 'Falló' }}
                                 </div>
                             @endunless
+                            {{-- Cada marcación que guardó la sincronización o la
+                                 importación lleva su id (`asistencias.equipo_auditoria_id`):
+                                 el enlace abre el listado filtrado por ella. --}}
+                            @if (in_array($registro->accion, \App\Models\EquipoAuditoria::ACCIONES_QUE_GUARDAN, true) && $registro->marcacionesGuardadas() > 0)
+                                @can('viewAny', \App\Models\Asistencia::class)
+                                    <div style="font-size: .75rem; margin-top: .2rem;">
+                                        <a href="{{ route('marcaciones.index', ['carga' => $registro->id]) }}">Ver marcaciones</a>
+                                    </div>
+                                @endcan
+                            @endif
                         </td>
                         <td>
                             {{-- Se muestran los datos guardados al momento de la acción: siguen
                                  siendo correctos aunque después le cambien la IP o lo den de baja. --}}
                             <strong>{{ $registro->nombreEquipo() }}</strong>
-                            <div style="color: var(--muted); font-size: .75rem;">
-                                {{ $registro->datos_equipo['ip'] ?? '—' }}:{{ $registro->datos_equipo['puerto'] ?? '—' }}
-                                @if (! empty($registro->datos_equipo['ubicacion']))
-                                    · {{ $registro->datos_equipo['ubicacion'] }}
-                                @endif
-                            </div>
+                            {{-- Una importación de CSV no tiene equipo: no hay IP que mostrar. --}}
+                            @if (! empty($registro->datos_equipo))
+                                <div style="color: var(--muted); font-size: .75rem;">
+                                    {{ $registro->datos_equipo['ip'] ?? '—' }}:{{ $registro->datos_equipo['puerto'] ?? '—' }}
+                                    @if (! empty($registro->datos_equipo['ubicacion']))
+                                        · {{ $registro->datos_equipo['ubicacion'] }}
+                                    @endif
+                                </div>
+                            @endif
                             @if (! empty($registro->datos_equipo['algoritmo']))
                                 <div style="color: var(--muted); font-size: .75rem;">{{ $registro->datos_equipo['algoritmo'] }}</div>
                             @endif
@@ -178,11 +191,10 @@
                                 0
                             @endif
                         </td>
-                        <td style="text-align: right; color: var(--muted);">{{ $registro->fuera_de_rango ?? '—' }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="13" class="vacio">Todavía no hay movimientos registrados.</td>
+                        <td colspan="12" class="vacio">Todavía no hay movimientos registrados.</td>
                     </tr>
                 @endforelse
             </tbody>

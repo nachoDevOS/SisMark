@@ -35,10 +35,16 @@ Route::middleware('auth')->group(function (): void {
     // Bitácora de acciones sobre las marcaciones. Va antes del resource para que
     // el binding {equipo} del show no capture la palabra «auditoria».
     Route::get('equipos/auditoria', [EquipoController::class, 'auditoria'])->name('equipos.auditoria');
+    // Sube un CSV de marcaciones a nombre de un equipo, con motivo y bitácora.
+    Route::post('equipos/importar-marcaciones', [EquipoController::class, 'importarMarcaciones'])->name('equipos.marcaciones.importar');
     // CRUD completo (base local).
     Route::resource('equipos', EquipoController::class);
     // Habla en vivo con el microservicio Python (probar conexión, exportar y
     // sincronizar marcaciones del equipo).
+    // Sincronización automática (días y horas): pantalla aparte de la edición
+    // porque la pide `Sync:Equipo`, no `Update:Equipo`.
+    Route::get('equipos/{equipo}/sincronizacion', [EquipoController::class, 'editarSincronizacion'])->name('equipos.sincronizacion.edit');
+    Route::put('equipos/{equipo}/sincronizacion', [EquipoController::class, 'actualizarSincronizacion'])->name('equipos.sincronizacion.update');
     Route::post('equipos/{equipo}/probar-conexion', [EquipoController::class, 'probarConexion'])->name('equipos.probar-conexion');
     Route::get('equipos/{equipo}/marcaciones/exportar', [EquipoController::class, 'exportarMarcaciones'])->name('equipos.marcaciones.exportar');
     Route::post('equipos/{equipo}/marcaciones/sincronizar', [EquipoController::class, 'sincronizarMarcaciones'])->name('equipos.marcaciones.sincronizar');
@@ -144,12 +150,11 @@ Route::middleware('auth')->group(function (): void {
     // funcionario en un rango), con el formato del sistema de escritorio viejo.
     Route::get('funcionarios/{persona}/reporte-marcaciones', [PersonaController::class, 'reporteMarcaciones'])->name('funcionarios.reporte');
 
-    // Dos formas de cargar marcaciones: el CSV que ya exporta
-    // "Equipos > Marcaciones > Exportar" y el alta manual de a una (tipo M)
-    // desde el modal, para lo que el reloj no registró (papeleta, equipo caído).
+    // Listado de marcaciones y alta manual de a una (tipo M), para lo que el
+    // reloj no registró (papeleta, equipo caído). El CSV se importa por
+    // `equipos.marcaciones.importar`, con equipo, motivo y bitácora.
     Route::get('marcaciones', [MarcacionController::class, 'index'])->name('marcaciones.index');
     Route::get('marcaciones/ajax/list', [MarcacionController::class, 'list'])->name('marcaciones.list');
-    Route::post('marcaciones/importar', [MarcacionController::class, 'importar'])->name('marcaciones.importar');
     Route::post('marcaciones', [MarcacionController::class, 'store'])->name('marcaciones.store');
 
     // Reportes: selección de funcionario + generación (pantalla, imprimible o

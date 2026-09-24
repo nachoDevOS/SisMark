@@ -44,6 +44,7 @@ class RolePolicy
         'Approve' => 'Aprobar',
         'Export' => 'Exportar',
         'Sync' => 'Sincronizar',
+        'Import' => 'Importar CSV',
         'Clear' => 'Limpiar biométrico',
         // Emitir la credencial con la que un sistema externo consume la API.
         // Va aparte de `Update` porque no es editar la ficha: un token da
@@ -73,9 +74,9 @@ class RolePolicy
         ],
         'Asistencia' => [
             'etiqueta' => 'Marcaciones',
-            // `Create` cubre las dos formas manuales de que entre una marcación:
-            // registro manual e importación de CSV. Bajarlas del reloj es
-            // `Sync:Equipo`, en Biométricos.
+            // `Create` es el registro manual de a una. Bajarlas del reloj es
+            // `Sync:Equipo` e importar un CSV es `Import:Equipo`, los dos en
+            // Biométricos y con bitácora.
             'habilidades' => ['ViewAny', 'Create'],
         ],
         'Reporte' => [
@@ -110,8 +111,10 @@ class RolePolicy
             'etiqueta' => 'Biométricos',
             // `Sync` y `Clear` van aparte de `Update`/`Delete` porque no son lo
             // mismo: sincronizar escribe marcaciones en la base, y vaciar borra
-            // el historial entero del reloj y es irreversible.
-            'habilidades' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Sync', 'Clear'],
+            // el historial entero del reloj y es irreversible. `Import` sube un
+            // CSV de marcaciones a nombre de un equipo, con motivo: va aparte de
+            // `Sync` porque el archivo lo trae una persona, no el reloj.
+            'habilidades' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Sync', 'Import', 'Clear'],
         ],
         'EquipoAuditoria' => [
             'etiqueta' => 'Bitácora de biométricos',

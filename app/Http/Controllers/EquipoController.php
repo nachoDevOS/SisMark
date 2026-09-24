@@ -3,11 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\DeviceServiceException;
+use App\Http\Requests\ActualizarSincronizacionEquipoRequest;
+use App\Http\Requests\ImportarMarcacionesEquipoRequest;
 use App\Http\Requests\StoreEquipoRequest;
 use App\Http\Requests\UpdateEquipoRequest;
 use App\Models\Equipo;
 use App\Models\EquipoAuditoria;
 use App\Services\DeviceService;
+use App\Services\LectorCsvMarcaciones;
+use App\Services\RegistroAsistencia;
 use App\Services\SincronizadorEquipos;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -76,6 +80,8 @@ class EquipoController extends Controller
                 // equipos que ya se dieron de baja.
                 ->where('datos_equipo', 'like', "%{$busqueda}%")
                 ->orWhere('motivo', 'like', "%{$busqueda}%")
+                // El detalle lleva el nombre del archivo de las importaciones.
+                ->orWhere('detalle', 'like', "%{$busqueda}%")
                 ->orWhereHas('usuario', fn (Builder $usuario) => $usuario
                     ->where('name', 'like', "%{$busqueda}%"))))
             ->latest()
@@ -147,6 +153,32 @@ class EquipoController extends Controller
         return redirect()
             ->route('equipos.index')
             ->with('estado', 'Equipo actualizado correctamente.');
+    }
+
+    /**
+     * Formulario de la sincronización automática: si corre, qué días y a qué
+     * horas. Aparte de la edición porque lo pide `Sync:Equipo`, no `Update`.
+     */
+    public function editarSincronizacion(Equipo $equipo): View
+    {
+        $this->authorize('sync', $equipo);
+
+        return view('equipos.sincronizacion', compact('equipo'));
+    }
+
+    /**
+     * Guarda la sincronización automática. La validación la hace
+     * ActualizarSincronizacionEquipoRequest.
+     */
+    public function actualizarSincronizacion(ActualizarSincronizacionEquipoRequest $request, Equipo $equipo): RedirectResponse
+    {
+        $this->authorize('sync', $equipo);
+
+        $equipo->update($request->validated());
+
+        return redirect()
+            ->route('equipos.index')
+            ->with('estado', "Sincronización de «{$equipo->nombre}» actualizada.");
     }
 
     /**
@@ -285,6 +317,30 @@ class EquipoController extends Controller
         }
 
         return back()->with('estado', $resultado['mensaje']);
+    }
+
+    /**
+     * Sube a la base un CSV de marcaciones, con motivo y consentimiento, y lo
+     * deja en la bitácora. Sin equipo: el archivo no dice de qué reloj salió.
+     * Cada marcación que entra queda atada a esa entrada de la bitácora.
+     */
+    public function importarMarcaciones(
+        ImportarMarcacionesEquipoRequest $request,
+        LectorCsvMarcaciones $lector,
+        SincronizadorEquipos $sincronizador,
+        RegistroAsistencia $registro,
+    ): RedirectResponse {
+        $this->authorize('import', Equipo::class);
+
+        $archivo = $request->file('archivo');
+
+        $conteo = $sincronizador->importar(
+            $lector->leer($archivo->getRealPath()),
+            $request->validated('motivo'),
+            $archivo->getClientOriginalName(),
+        );
+
+        return back()->with('estado', $registro->mensaje($conteo, "Importación de «{$archivo->getClientOriginalName()}»"));
     }
 
     /**

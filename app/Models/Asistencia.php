@@ -61,8 +61,10 @@ class Asistencia extends Model
         // De qué reloj salió. Null en lo migrado del SIA, en el alta manual y en
         // el CSV, que no dice de qué equipo se exportó.
         'equipo_id',
+        // Qué sincronización o importación de CSV la insertó. Null en lo
+        // migrado del SIA y en el alta manual.
+        'equipo_auditoria_id',
         'observacion',
-        'estado',
     ];
 
     /**
@@ -111,6 +113,20 @@ class Asistencia extends Model
     public function equipo(): BelongsTo
     {
         return $this->belongsTo(Equipo::class);
+    }
+
+    /**
+     * Entrada de la bitácora de la sincronización que insertó la marcación.
+     *
+     * Null en lo migrado del SIA, en el alta manual y en el CSV. Una marcación
+     * que después vuelve a llegar como repetida conserva la de la primera
+     * corrida: esa es la que la trajo.
+     *
+     * @return BelongsTo<EquipoAuditoria, $this>
+     */
+    public function sincronizacion(): BelongsTo
+    {
+        return $this->belongsTo(EquipoAuditoria::class, 'equipo_auditoria_id');
     }
 
     /**

@@ -8,22 +8,35 @@
             <span class="cabecera__icono"><x-heroicon-o-finger-print /></span>
             <h1>Marcaciones</h1>
         </div>
-        @can('create', \App\Models\Asistencia::class)
-            {{-- Dos vías de carga: el CSV que exporta «Biométricos >
-                 Marcaciones > Exportar» —lo habitual, por lote— y el alta
-                 manual de a una, para lo que el reloj no registró. El import va
-                 primero porque es el camino normal. --}}
-            <div class="acciones">
-                <x-modal-importar-marcaciones />
+        {{-- Dos vías de carga: el CSV —el mismo modal de Biométricos, con motivo y
+             bitácora, y permiso `Import:Equipo`— y el alta manual
+             de a una, para lo que el reloj no registró. Cada botón pide su
+             propio permiso. --}}
+        <div class="acciones">
+            <x-modal-importar-marcaciones-equipo />
+            @can('create', \App\Models\Asistencia::class)
                 <x-modal-marcacion />
-            </div>
-        @endcan
+            @endcan
+        </div>
     </div>
 
-    <p class="ayuda" style="margin: -.4rem 0 1rem;">
-        Todas las marcaciones registradas. El listado arranca en el mes actual porque
-        la tabla tiene millones de filas.
-    </p>
+    @if ($carga)
+        {{-- Se llega desde la bitácora de equipos: el listado muestra solo lo que
+             guardó esa carga (nuevas y sin funcionario), sin límite de fechas. --}}
+        <div class="aviso" style="margin: -.4rem 0 1rem;">
+            Marcaciones que guardó la {{ $carga->accion === \App\Models\EquipoAuditoria::ACCION_IMPORTAR ? 'importación' : 'sincronización' }} de
+            <strong>{{ $carga->nombreEquipo() }}</strong>
+            del {{ $carga->created_at->format('d/m/Y H:i') }}
+            ({{ $carga->marcacionesGuardadas() }}).
+            Las repetidas no aparecen: ya estaban cargadas de antes.
+            <a href="{{ route('marcaciones.index') }}">Ver todas las marcaciones</a>
+        </div>
+    @else
+        <p class="ayuda" style="margin: -.4rem 0 1rem;">
+            Todas las marcaciones registradas. El listado arranca en el mes actual porque
+            la tabla tiene millones de filas.
+        </p>
+    @endif
 
     {{-- Filtros del listado (browse): disparan la carga AJAX de la tabla. --}}
     <div class="tabla-filtros">
@@ -80,9 +93,11 @@
             const dateDesde = document.getElementById('f-desde');
             const dateHasta = document.getElementById('f-hasta');
             const selTipo = document.getElementById('f-tipo');
+            const carga = @json($carga?->id);
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
+                    ...(carga ? { carga } : {}),
                     desde: dateDesde.value,
                     hasta: dateHasta.value,
                     tipo: selTipo.value,
