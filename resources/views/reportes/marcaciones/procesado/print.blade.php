@@ -15,7 +15,6 @@
         @media print {
             thead { display: table-header-group; }
             tr { page-break-inside: avoid; }
-            .leyenda, .firmas, .resumen { page-break-inside: avoid; }
         }
     </style>
 @endsection
@@ -44,6 +43,10 @@
         .'Computado: '.P::duracion($totales['computado']).' de '.P::duracion($totales['esperado'])."\n"
         .'Impreso: '.now()->format('d/m/Y H:i:s');
     $qrSvg = preg_replace('/^<\?xml.*?\?>\s*/s', '', \SimpleSoftwareIO\QrCode\Facades\QrCode::format('svg')->size(100)->margin(0)->generate($qrTexto));
+
+    // Solo los días con turno asignado, igual que la tabla en pantalla: los
+    // «no laborable» no se controlan y llenaban la hoja de filas vacías.
+    $diasConTurno = $dias->reject(fn (array $dia): bool => $dia['estado'] === P::NO_LABORABLE);
 @endphp
 
 @section('content')
@@ -98,7 +101,7 @@
             </tr>
         </thead>
         <tbody>
-            @forelse ($dias as $dia)
+            @forelse ($diasConTurno as $dia)
                 @php
                     $nombreDia = Turno::DIAS[$dia['fecha']->dayOfWeek + 1] ?? '—';
                     $filas = max(1, count($dia['bloques']));
@@ -137,7 +140,7 @@
                 @endif
             @empty
                 <tr>
-                    <td colspan="13" style="text-align: center">No se encontraron días en el rango.</td>
+                    <td colspan="13" style="text-align: center">No hay días con turno asignado en el rango.</td>
                 </tr>
             @endforelse
             <tr>
@@ -146,41 +149,5 @@
                 <th colspan="7"></th>
             </tr>
         </tbody>
-    </table>
-
-    <div class="resumen" style="font-size: 12px; margin-top: 10px;">
-        <b>Horas computadas:</b> {{ P::duracion($totales['computado']) }} de {{ P::duracion($totales['esperado']) }}
-        &nbsp;|&nbsp; <b>Saldo:</b> {{ $totales['saldo'] > 0 ? '+' : '' }}{{ P::duracion($totales['saldo']) }}
-        &nbsp;|&nbsp; <b>Salida anticipada:</b> {{ P::desvio($totales['anticipo']) }}
-        <br>
-        <b>Días por estado:</b>
-        @foreach ($totales['porEstado'] as $estado => $cantidad)
-            {{ P::ETIQUETAS[$estado] ?? $estado }}: {{ $cantidad }}@if (! $loop->last) &nbsp;|&nbsp; @endif
-        @endforeach
-    </div>
-
-    <div class="leyenda" style="font-size: 12px; margin-top: 10px;">
-        <b>Referencias:</b>
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>T.C.</b> = licencia de turno completo &nbsp;&nbsp; <b>C.G.H.</b> = licencia con goce de haberes
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Atraso</b> = se dispara cuando la entrada pasa la tolerancia, y se mide contra la hora de entrada del turno.
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Abandono</b> = se retiró antes de la mínima hora de salida, o no marcó un tramo que la licencia no cubría.
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Horas computadas</b> = acotadas al turno; marcar dentro de la tolerancia cuenta como llegar a la hora.
-        <br>&nbsp;&nbsp;&nbsp;&nbsp;Los días excepcionales y las licencias de turno completo no controlan asistencia.
-    </div>
-
-    <br><br><br>
-    <table width="100%" class="firmas">
-        <tr>
-            <td style="text-align: center">
-                ______________________
-                <br>
-                <b>Firma Responsable</b>
-            </td>
-            <td style="text-align: center">
-                ______________________
-                <br>
-                <b>Firma RR. HH.</b>
-            </td>
-        </tr>
     </table>
 @endsection

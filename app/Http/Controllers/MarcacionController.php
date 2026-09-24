@@ -66,17 +66,18 @@ class MarcacionController extends Controller
             ->enRango($desde, $hasta)
             ->when($buscar !== '', fn (Builder $query) => $query->buscar($buscar))
             ->when($tipo !== '', fn (Builder $query) => $query->where('tipo', $tipo))
-            // Ordena por el `id` de la tabla, del más alto al más bajo.
+            // De la marcación más reciente a la más antigua, por fecha y hora.
             //
-            // El id no es cronológico: las filas entraron con el orden en que
-            // el cursor de la migración las trajo del SIA, que es el de la
-            // clave del origen (IdPersona, Fecha, Hora). Como el `ci` es texto,
-            // cada funcionario ocupa un bloque de ids contiguos con su
-            // historial adentro, así que el listado agrupa por persona y las
-            // fechas no bajan en orden.
+            // No por `id`: no es cronológico. Las filas migradas del SIA
+            // entraron en el orden de su clave (IdPersona, Fecha, Hora), así
+            // que cada funcionario ocupa un bloque de ids con su historial
+            // adentro, y ordenar por id agrupaba por persona.
             //
-            // Alcanza solo: el id es único, así que el orden es total y estable
-            // entre páginas sin necesidad de desempatar por fecha ni hora.
+            // El `id` queda de desempate: dos funcionarios pueden marcar en el
+            // mismo segundo, y sin un orden total la paginación repetiría o
+            // saltearía filas entre páginas.
+            ->orderByDesc('fecha')
+            ->orderByDesc('hora')
             ->orderByDesc('id')
             ->paginate($porPagina)
             ->withQueryString();

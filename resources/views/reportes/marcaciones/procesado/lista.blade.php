@@ -8,8 +8,7 @@
 
     // La tabla en pantalla lista solo los días con turno asignado: los «no
     // laborable» no se controlan y llenaban el listado de filas vacías. Siguen
-    // contados en «Días por estado» del resumen, y el imprimible los conserva
-    // porque ese formato replica el reporte del sistema de escritorio viejo.
+    // contados en «Días por estado» del resumen. El imprimible los saca igual.
     $diasConTurno = $dias->reject(fn (array $dia): bool => $dia['estado'] === P::NO_LABORABLE);
 @endphp
 
