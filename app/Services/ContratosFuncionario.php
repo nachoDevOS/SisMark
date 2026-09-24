@@ -96,6 +96,30 @@ class ContratosFuncionario
     }
 
     /**
+     * Los tramos que manda el consumidor en el pedido (`contratos`), para no
+     * salir a preguntárselos a Mamoré.
+     *
+     * **La lista vacía no es lo mismo que no mandar nada.** Vacía significa «no
+     * tuvo contrato en el rango»; no mandar `contratos` significa «no sé» y ahí
+     * se le pregunta a Mamoré. La diferencia la resuelve quien llama con
+     * `$request->has('contratos')`, no este método.
+     *
+     * @param  array<int, array{desde: string, hasta?: ?string}>  $contratos
+     * @return list<array{desde: Carbon, hasta: ?Carbon}>
+     */
+    public static function delPedido(array $contratos): array
+    {
+        return collect($contratos)
+            ->map(fn (array $tramo): array => [
+                'desde' => Carbon::parse($tramo['desde'])->startOfDay(),
+                'hasta' => blank($tramo['hasta'] ?? null) ? null : Carbon::parse($tramo['hasta'])->startOfDay(),
+            ])
+            ->sortBy(fn (array $tramo): int => $tramo['desde']->getTimestamp())
+            ->values()
+            ->all();
+    }
+
+    /**
      * Traduce los contratos que devuelve la API a tramos ordenados.
      *
      * Cada tramo lleva la dirección y el cargo **de ese contrato**, no los de

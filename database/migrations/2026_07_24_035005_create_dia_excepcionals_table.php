@@ -5,12 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Tabla local (MySQL) que replica «Calendario» del SIA (SQL Server 2008 R2):
- * los días excepcionales (feriados, tolerancias, motivos de inasistencia).
- * En el SIA la tabla se llama Calendario; acá se renombra a `dias_excepcionales`.
- *
- * Campos en camelCase, con id/timestamps/eliminación lógica propios. Una fila
- * por fecha, por eso `fecha` es la clave natural (índice único) del upsert.
+ * Feriados y tolerancias (SIA «Calendario»).
  */
 return new class extends Migration
 {
@@ -20,16 +15,16 @@ return new class extends Migration
             $table->id();
             $table->dateTime('fecha');
             $table->string('motivoInasistencia', 255)->nullable();
-
+            $table->string('adjunto', 255)->nullable();
+            $table->string('adjuntoNombre', 255)->nullable();
             $table->text('observacion')->nullable();
             $table->smallInteger('estado')->default(1);
-
             $table->timestamps();
             $table->foreignId('registerUser_id')->nullable()->constrained('users');
-
             $table->softDeletes();
             $table->foreignId('deleteUser_id')->nullable()->constrained('users');
             $table->text('deleteObservacion')->nullable();
+            $table->index('fecha');
         });
     }
 

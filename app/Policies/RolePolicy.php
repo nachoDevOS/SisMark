@@ -138,6 +138,11 @@ class RolePolicy
             // todo el personal es otra. Se pueden dar por separado.
             'habilidades' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Token'],
         ],
+        'Configuracion' => [
+            'etiqueta' => 'Configuración',
+            // Una sola casilla: ver y cambiar todos los parámetros del sistema.
+            'habilidades' => ['Update'],
+        ],
     ];
 
     /**
@@ -156,18 +161,6 @@ class RolePolicy
         }
 
         return $nombres;
-    }
-
-    /**
-     * Habilidades que admite un módulo, con su etiqueta legible.
-     *
-     * @return array<string, string>
-     */
-    public static function habilidadesDe(string $modulo): array
-    {
-        $habilidades = self::MODULOS[$modulo]['habilidades'] ?? [];
-
-        return array_intersect_key(self::HABILIDADES, array_flip($habilidades));
     }
 
     public function viewAny(AuthUser $authUser): bool

@@ -69,11 +69,88 @@
                    la dirección entera y desmarcar es la excepción. --}}
               seleccionados: [],
               seleccionPrevia: @js($seleccionPrevia),
+              {{-- Permiso personal o licencia institucional. Sin elegir a mano,
+                   sigue al alcance: para una persona suele ser un permiso que
+                   pidió; para varios o una dirección, un feriado o una actividad. --}}
+              tipo: @js(old('tipo', $modoInicial === 'uno' ? \App\Models\Licencia::TIPO_PERSONAL : \App\Models\Licencia::TIPO_INSTITUCIONAL)),
+              tipoElegido: {{ old('tipo') !== null ? 'true' : 'false' }},
+              {{-- Saldo de permisos por horas contra el tope mensual. --}}
+              ci: @js($persona['ci'] ?? null),
+              lEntra: @js((string) old('lEntra', '')),
+              lSale: @js((string) old('lSale', '')),
+              saldo: null,
+              cargandoSaldo: false,
+              errorSaldo: '',
+              timerSaldo: null,
+              pedidoSaldo: 0,
               init() {
                   {{-- Si el envío volvió por un error de validación con la dirección
                        ya elegida, se rearma sola: si no, el combo aparece vacío y
                        parece que se perdió la selección. --}}
                   if (this.modo === 'direccion') { this.cargarDirecciones(); }
+                  {{-- Todo lo que cambia los días o las horas del permiso recalcula
+                       el saldo. Los turnos elegidos a mano avisan desde su checkbox. --}}
+                  {{-- El permiso personal es solo para un funcionario: varios o por
+                       dirección son siempre licencia institucional. --}}
+                  this.$watch('modo', (modo) => {
+                      if (modo !== 'uno') { this.tipo = 'institucional'; }
+                      else if (! this.tipoElegido) { this.tipo = 'personal'; }
+                  });
+                  {{-- El personal es siempre por horas; el institucional arranca en
+                       turno completo y puede pasar a por horas. --}}
+                  this.$watch('tipo', (tipo) => { this.completo = tipo !== 'personal'; });
+                  if (this.modo !== 'uno') { this.tipo = 'institucional'; }
+                  if (this.tipo === 'personal') { this.completo = false; }
+                  ['modo', 'tipo', 'completo', 'desde', 'hasta', 'lEntra', 'lSale', 'porTurno']
+                      .forEach((campo) => this.$watch(campo, () => this.consultarSaldo()));
+                  this.consultarSaldo();
+              },
+              {{-- Pide el saldo al servidor, que resuelve los días igual que el alta
+                   y calcula con el mismo servicio que bloquea al guardar. Con un
+                   pequeño respiro para no pedir por cada tecla, y descartando las
+                   respuestas viejas si llegan después de una nueva. --}}
+              consultarSaldo() {
+                  clearTimeout(this.timerSaldo);
+                  if (this.modo !== 'uno' || this.tipo !== 'personal' || this.completo || ! this.ci || ! this.desde || ! this.hasta || this.hasta < this.desde) {
+                      this.pedidoSaldo++;
+                      this.saldo = null;
+                      this.errorSaldo = '';
+                      this.cargandoSaldo = false;
+                      return;
+                  }
+                  this.timerSaldo = setTimeout(async () => {
+                      const pedido = ++this.pedidoSaldo;
+                      this.cargandoSaldo = true;
+                      this.errorSaldo = '';
+                      const params = new URLSearchParams({ ci: this.ci, desde: this.desde, hasta: this.hasta });
+                      if (this.lEntra) { params.set('lEntra', this.lEntra); }
+                      if (this.lSale) { params.set('lSale', this.lSale); }
+                      if (this.porTurno) {
+                          this.$root.querySelectorAll('input[name^=asignaciones]:checked')
+                              .forEach((casilla) => params.append('asignaciones[]', casilla.value));
+                      }
+                      try {
+                          const resp = await fetch(`{{ route('licencias.saldo') }}?${params}`, { headers: { 'Accept': 'application/json' } });
+                          const cuerpo = await resp.json().catch(() => null);
+                          if (pedido !== this.pedidoSaldo) { return; }
+                          if (resp.ok && cuerpo) {
+                              this.saldo = cuerpo;
+                          } else {
+                              this.saldo = null;
+                              this.errorSaldo = (cuerpo && (cuerpo.error || cuerpo.message)) || 'No se pudo calcular el saldo de permisos.';
+                          }
+                      } catch (e) {
+                          if (pedido === this.pedidoSaldo) {
+                              this.saldo = null;
+                              this.errorSaldo = 'No se pudo calcular el saldo de permisos.';
+                          }
+                      } finally {
+                          if (pedido === this.pedidoSaldo) { this.cargandoSaldo = false; }
+                      }
+                  }, 350);
+              },
+              get excedeTope() {
+                  return this.modo === 'uno' && this.tipo === 'personal' && ! this.completo && !! this.saldo && this.saldo.activo && this.saldo.excede;
               },
               get unidadesDeLaDireccion() {
                   if (! this.direccion) { return []; }
@@ -608,6 +685,7 @@
                                              asignación y el servidor resuelve los turnos por el rango. --}}
                                         <input type="checkbox" name="asignaciones[]" value="{{ $asignacion->id }}"
                                                @checked($marcada) :disabled="! porTurno || modo !== 'uno'"
+                                               x-on:change="consultarSaldo()"
                                                aria-label="Elegir turno {{ $turno->nombreTurno }}">
                                     </td>
                                     <td>{{ $abreviar((int) $turno->dia) }}</td>
@@ -647,8 +725,33 @@
             </div>
         @endif
 
-        {{-- Paso 3: rango, alcance del día y motivo. --}}
+        {{-- Paso 3: tipo, rango, alcance del día y motivo. --}}
         <div class="card card--padded" style="margin-top: 1rem;">
+            {{-- Qué es. Solo el permiso personal cuenta contra el tope mensual. --}}
+            <div class="campo">
+                <label>Tipo <span class="req">*</span></label>
+                {{-- Para varios o una dirección el tipo es fijo: licencia
+                     institucional. El radio queda oculto pero marcado, y viaja. --}}
+                <p x-show="modo !== 'uno'" x-cloak style="margin: .25rem 0;">
+                    <span class="pill pill--ok">Licencia institucional</span>
+                </p>
+                <div class="toolbar" style="gap: 1.25rem;" x-show="modo === 'uno'">
+                    @foreach (\App\Models\Licencia::TIPOS as $valor => $etiqueta)
+                        <div class="campo check" style="margin: 0;">
+                            <input type="radio" id="tipo-{{ $valor }}" name="tipo" value="{{ $valor }}"
+                                   x-model="tipo" x-on:change="tipoElegido = true">
+                            <label for="tipo-{{ $valor }}" style="margin: 0;">{{ $etiqueta }}</label>
+                        </div>
+                    @endforeach
+                </div>
+                <p class="ayuda" style="margin-bottom: 0;">
+                    <span x-show="tipo === 'personal'">Lo pide el funcionario para su uso (trámite, médico, asunto familiar). Es siempre por horas y cuenta contra el tope mensual de permisos.</span>
+                    <span x-show="tipo === 'institucional'" x-cloak>La dispone la institución (feriado, actividad, capacitación, comisión). Puede ser de turno completo o por horas, y no cuenta contra el tope.</span>
+                    <span x-show="modo !== 'uno'" x-cloak><br>Para varios funcionarios o una dirección se anota siempre licencia institucional.</span>
+                </p>
+                @error('tipo') <div class="error">{{ $message }}</div> @enderror
+            </div>
+
             <div class="toolbar" style="align-items: flex-end;">
                 <div class="campo">
                     <label for="desde">Desde <span class="req">*</span></label>
@@ -668,36 +771,61 @@
                            x-model="hasta" x-on:change="rangoCambio()" required>
                     @error('hasta') <div class="error">{{ $message }}</div> @enderror
                 </div>
+            </div>
+
+            {{-- Alcance. El permiso personal es siempre por horas; la licencia
+                 institucional es de turno completo o por horas. Lo valida también
+                 `StoreLicenciaRequest`. --}}
+            <input type="hidden" name="tCompleto" :value="completo ? 1 : 0">
+            <div class="campo">
+                <label>Alcance <span class="req">*</span></label>
+                {{-- El alcance y los haberes van en la misma fila: son las dos
+                     casillas del permiso. Sin tildar «Turno completo», es por horas. --}}
+                <div class="toolbar" style="gap: 1.5rem; align-items: center;">
+                    <div class="campo check" style="margin: 0;" x-show="tipo !== 'personal'" x-cloak>
+                        <input type="checkbox" id="alcance-completo" x-model="completo">
+                        <label for="alcance-completo" style="margin: 0;">Turno completo</label>
+                    </div>
+                    <span class="pill pill--info" x-show="tipo === 'personal'">Por horas</span>
+                    <div class="campo check" style="margin: 0;">
+                        <input type="checkbox" id="goceHaberes" name="goceHaberes" value="1" @checked(old('goceHaberes', 1))>
+                        <label for="goceHaberes" style="margin: 0;">Con goce de haberes</label>
+                    </div>
+                </div>
+                <p class="ayuda" style="margin: .35rem 0 0;" x-show="tipo === 'personal'">
+                    El permiso personal no puede ser de turno completo y cuenta contra el tope mensual de permisos.
+                </p>
+                <p class="ayuda" style="margin: .35rem 0 0;" x-show="tipo !== 'personal'" x-cloak>
+                    Si no marcará en todo el día, dejá «Turno completo». Si llegará tarde o se irá
+                    temprano, destildalo y cargá desde qué hora hasta qué hora.
+                </p>
+                @error('tCompleto') <div class="error">{{ $message }}</div> @enderror
+            </div>
+
+            <div class="toolbar" style="align-items: flex-end;" x-show="! completo" x-cloak>
                 <div class="campo">
-                    <label for="lEntra">Hora entrada</label>
+                    <label for="lEntra">Desde las <span class="req">*</span></label>
                     <input type="time" id="lEntra" name="lEntra" class="input"
-                           value="{{ old('lEntra') }}" :disabled="completo">
+                           value="{{ old('lEntra') }}" x-model="lEntra" :disabled="completo" :required="! completo">
                     @error('lEntra') <div class="error">{{ $message }}</div> @enderror
                 </div>
                 <div class="campo">
-                    <label for="lSale">Hora salida</label>
+                    <label for="lSale">Hasta las <span class="req">*</span></label>
                     <input type="time" id="lSale" name="lSale" class="input"
-                           value="{{ old('lSale') }}" :disabled="completo">
+                           value="{{ old('lSale') }}" x-model="lSale" :disabled="completo" :required="! completo">
                     @error('lSale') <div class="error">{{ $message }}</div> @enderror
                 </div>
             </div>
 
-            <div class="toolbar" style="align-items: flex-end; margin-top: .5rem;">
-                <div class="campo check">
-                    <input type="checkbox" id="tCompleto" name="tCompleto" value="1" x-model="completo">
-                    <label for="tCompleto" style="margin: 0;">Turno completo</label>
-                </div>
-                <div class="campo check">
-                    <input type="checkbox" id="goceHaberes" name="goceHaberes" value="1" @checked(old('goceHaberes', 1))>
-                    <label for="goceHaberes" style="margin: 0;">Con goce de haberes</label>
-                </div>
-                <div class="campo" style="flex: 1; min-width: 14rem;">
+            {{-- Motivo y respaldo en dos columnas, alineados arriba. --}}
+            <div class="grid-2" style="align-items: start;">
+                <div class="campo">
                     <label for="motivo">Motivo de la ausencia <span class="req">*</span></label>
                     <input type="text" id="motivo" name="motivo" class="input" maxlength="255"
                            value="{{ old('motivo') }}" required>
                     @error('motivo') <div class="error">{{ $message }}</div> @enderror
                 </div>
-                <div class="campo" style="flex: 1; min-width: 14rem;">
+                <div class="campo">
                     <label for="respaldo">Respaldo</label>
                     <input type="file" id="respaldo" name="respaldo" class="input"
                            accept=".jpg,.jpeg,.png,.pdf">
@@ -709,16 +837,69 @@
                 </div>
             </div>
 
-            <p class="ayuda">
-                Si el empleado no marcará su asistencia, dejá «Turno completo».
-                Si llegará tarde o se irá temprano, desmarcalo y definí las horas de entrada y salida.
-            </p>
+            {{-- Saldo de permisos por horas contra el tope mensual (Configuración).
+                 Solo con un funcionario y sin turno completo: en «varios» y «por
+                 dirección» no entra un recuadro por persona, y el control queda al
+                 guardar. Se recalcula al cambiar fechas, horas o turnos. --}}
+            @if ($persona)
+                <div x-show="modo === 'uno' && tipo === 'personal' && ! completo && (cargandoSaldo || errorSaldo || (saldo && saldo.activo))" x-cloak
+                     style="margin: .75rem 0; border: 1px solid var(--border); border-radius: .4rem; padding: .6rem .75rem;"
+                     :style="{ borderColor: excedeTope ? 'var(--danger)' : 'var(--border)' }">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; flex-wrap: wrap; margin-bottom: .4rem;">
+                        <strong>Permisos por horas de {{ $nombre ?: 'el funcionario' }}</strong>
+                        <span class="ayuda" style="margin: 0;" x-show="saldo && saldo.activo">
+                            Tope <span x-text="saldo ? saldo.tope : ''"></span>
+                            <span x-text="saldo ? saldo.alcance : ''"></span>
+                        </span>
+                    </div>
+
+                    <div x-show="cargandoSaldo" class="ayuda">Calculando el saldo…</div>
+                    <div x-show="errorSaldo && ! cargandoSaldo" class="aviso aviso--error" style="margin: 0;" x-text="errorSaldo"></div>
+
+                    <template x-if="saldo && saldo.activo && ! cargandoSaldo">
+                        <div>
+                            <table style="margin: 0;">
+                                <thead>
+                                    <tr>
+                                        <th></th>
+                                        <th>Usado</th>
+                                        <th>Este permiso</th>
+                                        <th>Queda</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="bolsa in saldo.bolsas" :key="bolsa.titulo">
+                                        <tr :style="bolsa.excede ? { color: 'var(--danger)', fontWeight: 600 } : {}">
+                                            <td x-text="bolsa.titulo"></td>
+                                            <td x-text="bolsa.usado"></td>
+                                            <td x-text="bolsa.pedido ? `+${bolsa.pedido}` : '—'"></td>
+                                            <td x-text="bolsa.excede ? 'Se pasa del tope' : bolsa.queda"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+
+                            <div x-show="saldo.excede" class="aviso aviso--error" style="margin: .5rem 0 0;">
+                                Este permiso supera el tope mensual: acortá las horas o el rango para poder anotarlo.
+                            </div>
+                            <p x-show="! saldo.excede && ! (lEntra && lSale)" class="ayuda" style="margin: .4rem 0 0;">
+                                Cargá la hora de entrada y la de salida para ver cuánto suma este permiso.
+                            </p>
+                            <p x-show="! saldo.excede && lEntra && lSale && saldo.dias === 0" class="ayuda" style="margin: .4rem 0 0;">
+                                En el rango no hay días para licenciar: no tiene turno o ya tiene licencia esos días.
+                            </p>
+                        </div>
+                    </template>
+                </div>
+            @endif
 
             <div class="form-acciones">
                 <button type="submit" class="btn"
                         :disabled="(modo === 'uno' && ! {{ $persona ? 'true' : 'false' }})
                                    || (modo === 'varios' && elegidos.length === 0)
-                                   || (modo === 'direccion' && (! direccion || seleccionados.length === 0))">
+                                   || (modo === 'direccion' && (! direccion || seleccionados.length === 0))
+                                   || excedeTope"
+                        :title="excedeTope ? 'Supera el tope mensual de permisos' : ''">
                     <x-heroicon-o-check />Anotar licencia(s)
                 </button>
                 <a href="{{ route('licencias.index') }}" class="btn btn--gris"><x-heroicon-o-x-mark />Cancelar</a>

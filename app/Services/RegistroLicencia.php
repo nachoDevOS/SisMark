@@ -76,12 +76,12 @@ class RegistroLicencia
      * Anota las licencias y devuelve el conteo por resultado.
      *
      * @param  Collection<string, Collection<int, AsignacionTurno>>  $asignacionesPorCi  turnos a licenciar, agrupados por carnet
-     * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int, estado?: string, origen?: string}  $datos
-     * @return array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, funcionarios: int}
+     * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int, estado?: string, origen?: string, tipo: string}  $datos
+     * @return array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, diasSinTurno: list<string>, funcionarios: int}
      */
     public function anotar(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array $datos): array
     {
-        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinTurno' => 0, 'funcionarios' => 0];
+        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinTurno' => 0, 'diasSinTurno' => [], 'funcionarios' => 0];
 
         if ($asignacionesPorCi->isEmpty()) {
             return $conteo;
@@ -113,6 +113,9 @@ class RegistroLicencia
             // Por dónde entró. «propio» por defecto: es lo que corresponde a la
             // pantalla de Recursos Humanos, que es quien más usa este servicio.
             'origen' => $datos['origen'] ?? Licencia::ORIGEN_PROPIO,
+            // Qué es: permiso personal o licencia institucional. Lo dice quien
+            // anota; la API de Mamoré lo deriva del alcance.
+            'tipo' => $datos['tipo'],
         ];
 
         $candidatos = $this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo);
@@ -150,7 +153,7 @@ class RegistroLicencia
             // rechazado o dado de baja: reescribir aquella fila borraría la
             // constancia de que se pidió y de cómo se resolvió. Por eso el
             // índice único incluye `solicitud` —ver la migración
-            // `agregar_solicitud_a_licencias`—, así dos pedidos distintos del
+            // `create_licencias_table`—, así dos pedidos distintos del
             // mismo día conviven.
             //
             // `insert()` no dispara eventos de modelo, así que el autor y los
@@ -174,6 +177,29 @@ class RegistroLicencia
     }
 
     /**
+     * Los días que {@see anotar()} crearía para cada carnet: los que tienen turno
+     * en el rango y todavía no están ocupados. Es lo que se mide contra el tope
+     * mensual de permisos ({@see TopePermisos}) antes de anotar.
+     *
+     * @param  Collection<string, Collection<int, AsignacionTurno>>  $asignacionesPorCi
+     * @return array<string, list<string>> fechas `Y-m-d` por carnet
+     */
+    public function fechasNuevas(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta): array
+    {
+        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinTurno' => 0, 'diasSinTurno' => [], 'funcionarios' => 0];
+        $ocupados = $this->ocupados($asignacionesPorCi->keys()->all(), $desde, $hasta);
+        $fechas = [];
+
+        foreach ($this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo) as $clave => $candidato) {
+            if (! $ocupados->has($clave)) {
+                $fechas[$candidato['ci']][$candidato['fecha']] = true;
+            }
+        }
+
+        return array_map(fn (array $dias): array => array_keys($dias), $fechas);
+    }
+
+    /**
      * Un identificador de solicitud por carnet alcanzado.
      *
      * ULID y no autoincremental: se genera en PHP antes del `insert()` masivo,
@@ -194,7 +220,7 @@ class RegistroLicencia
      * clave natural: dos asignaciones al mismo turno y día son una sola licencia.
      *
      * @param  Collection<string, Collection<int, AsignacionTurno>>  $asignacionesPorCi
-     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, funcionarios: int}  $conteo
+     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, diasSinTurno: list<string>, funcionarios: int}  $conteo
      * @return array<string, array{ci: string, fecha: string, turno_id: int}>
      */
     private function candidatos(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array &$conteo): array
@@ -206,6 +232,8 @@ class RegistroLicencia
             $fecha = $desde->copy()->startOfDay();
 
             while ($fecha->lessThanOrEqualTo($fin)) {
+                $tieneTurno = false;
+
                 foreach ($asignaciones as $asignacion) {
                     $turno = $asignacion->turno;
 
@@ -219,6 +247,8 @@ class RegistroLicencia
                         continue;
                     }
 
+                    $tieneTurno = true;
+
                     if (! self::dentroDeVigencia($asignacion, $fecha)) {
                         $conteo['fueraDeVigencia']++;
 
@@ -230,6 +260,12 @@ class RegistroLicencia
                         'fecha' => $fecha->toDateString(),
                         'turno_id' => (int) $turno->id,
                     ];
+                }
+
+                // Sin turno ese día de la semana —un sábado, un domingo— no hay
+                // nada que licenciar. Se anota para poder decir por qué.
+                if (! $tieneTurno) {
+                    $conteo['diasSinTurno'][] = $fecha->toDateString();
                 }
 
                 $fecha->addDay();
@@ -273,14 +309,29 @@ class RegistroLicencia
     /**
      * Arma el mensaje de resultado a partir del conteo.
      *
-     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, funcionarios: int}  $conteo
+     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, diasSinTurno: list<string>, funcionarios: int}  $conteo
      */
     public function mensaje(array $conteo): string
     {
-        $partes = ["{$conteo['creadas']} licencia(s) anotada(s)"];
+        // Con nada anotado el «0 licencia(s) anotada(s)» no dice nada: lo que
+        // sirve son los motivos.
+        $partes = $conteo['creadas'] > 0 ? ["{$conteo['creadas']} licencia(s) anotada(s)"] : [];
 
-        if ($conteo['funcionarios'] > 1) {
+        if ($partes !== [] && $conteo['funcionarios'] > 1) {
             $partes[0] .= " para {$conteo['funcionarios']} funcionario(s)";
+        }
+
+        if ($conteo['diasSinTurno'] !== []) {
+            $dias = array_values(array_unique($conteo['diasSinTurno']));
+            sort($dias);
+            // Pocos días se nombran; muchos —un feriado para cientos de
+            // personas— se cuentan.
+            $partes[] = count($dias) <= 3
+                ? 'sin turno asignado el '.implode(', ', array_map(
+                    fn (string $dia): string => Carbon::parse($dia)->translatedFormat('l d/m'),
+                    $dias,
+                ))
+                : count($conteo['diasSinTurno']).' día(s) sin turno asignado';
         }
 
         if ($conteo['existentes'] > 0) {
@@ -295,7 +346,7 @@ class RegistroLicencia
             $partes[] = "{$conteo['sinTurno']} sin horario vinculado";
         }
 
-        return implode(', ', $partes).'.';
+        return ($partes === [] ? 'no había días para anotar' : implode(', ', $partes)).'.';
     }
 
     /**

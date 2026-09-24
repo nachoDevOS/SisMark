@@ -78,6 +78,27 @@ class Licencia extends Model
         self::ORIGEN_SIA => 'SIA',
     ];
 
+    /**
+     * Qué es la licencia, aparte de por dónde entró.
+     *
+     * El permiso personal lo pide el funcionario para su uso; la licencia
+     * institucional la dispone la institución (feriado, actividad, comisión).
+     * Solo el personal cuenta contra el tope mensual de permisos.
+     */
+    public const TIPO_PERSONAL = 'personal';
+
+    public const TIPO_INSTITUCIONAL = 'institucional';
+
+    /**
+     * Cómo se escribe cada tipo en pantalla.
+     *
+     * @var array<string, string>
+     */
+    public const TIPOS = [
+        self::TIPO_PERSONAL => 'Permiso personal',
+        self::TIPO_INSTITUCIONAL => 'Licencia institucional',
+    ];
+
     protected $table = 'licencias';
 
     /**
@@ -89,10 +110,12 @@ class Licencia extends Model
         // expandido a un día y turno por fila— comparten este valor, que es lo
         // que permite mostrarlas como una sola licencia. En lo migrado del SIA
         // cada fila lleva la suya, porque allá la fila es la licencia: ver la
-        // migración `agregar_solicitud_a_licencias`.
+        // migración `create_licencias_table`.
         'solicitud',
         // Por dónde entró: «propio», «mamore» o «sia».
         'origen',
+        // Qué es: «personal» o «institucional» (ver TIPOS).
+        'tipo',
         'usuario',
         'fecha',
         'ci',
@@ -182,7 +205,7 @@ class Licencia extends Model
      * viene sin hora en `fechaPedido`, y así un grupo llegaba a 10.308 filas
      * separadas por hasta 20 años.
      *
-     * El `null` no debería existir —la migración rellenó lo viejo y los dos
+     * El `null` no debería existir —la copia del SIA la calcula y los dos
      * escritores de la tabla la escriben—, pero si una fila se cuela sin valor
      * se la trata sola en vez de juntarla con todas las demás sin valor.
      */
@@ -297,7 +320,7 @@ class Licencia extends Model
      * El último paso **tiene que ir acotado**: la subconsulta de
      * `iniciosDeSolicitud()` suelta sobre la tabla entera se evalúa fila por fila
      * y con una búsqueda poco frecuente no vuelve. Ver la migración
-     * `agregar_solicitud_a_licencias`.
+     * `create_licencias_table`.
      * ---
      *
      * @param  Builder  $filtrada  la consulta ya filtrada, sin ordenar ni paginar
@@ -658,6 +681,26 @@ class Licencia extends Model
     public function getOrigenEtiquetaAttribute(): string
     {
         return self::ORIGENES[$this->origen] ?? (string) $this->origen;
+    }
+
+    /**
+     * Cómo se escribe el tipo en pantalla.
+     */
+    public function getTipoEtiquetaAttribute(): string
+    {
+        return self::TIPOS[$this->tipo] ?? '—';
+    }
+
+    /**
+     * Modificador de `.pill` con el que se pinta el tipo.
+     */
+    public function getTipoPillAttribute(): string
+    {
+        return match ($this->tipo) {
+            self::TIPO_PERSONAL => 'pill--info',
+            self::TIPO_INSTITUCIONAL => 'pill--ok',
+            default => 'pill--neutro',
+        };
     }
 
     /**

@@ -40,6 +40,18 @@
             </select>
         </label>
 
+        {{-- Filtro de tipo: separa los permisos personales —los que cuentan
+             contra el tope— de las licencias institucionales. --}}
+        <label class="tabla-filtros__mostrar">
+            Tipo
+            <select id="f-tipo" aria-label="Filtrar por tipo de licencia">
+                <option value="">Todos</option>
+                @foreach (\App\Models\Licencia::TIPOS as $valor => $etiqueta)
+                    <option value="{{ $valor }}" @selected($tipo === $valor)>{{ $etiqueta }}</option>
+                @endforeach
+            </select>
+        </label>
+
         <div class="buscador">
             <x-heroicon-o-magnifying-glass />
             <input type="text" id="f-buscar" value="{{ $busqueda }}" placeholder="Buscar por CI, funcionario o motivo…">
@@ -58,11 +70,13 @@
             const inputBuscar = document.getElementById('f-buscar');
             const selPaginate = document.getElementById('f-paginate');
             const selEstado = document.getElementById('f-estado');
+            const selTipo = document.getElementById('f-tipo');
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
                     q: inputBuscar.value,
                     estado: selEstado.value,
+                    tipo: selTipo.value,
                     por_pagina: selPaginate.value,
                     page: page,
                 });
@@ -89,6 +103,7 @@
 
             selPaginate.addEventListener('change', () => cargar(1));
             selEstado.addEventListener('change', () => cargar(1));
+            selTipo.addEventListener('change', () => cargar(1));
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }

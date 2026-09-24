@@ -54,6 +54,10 @@ class LicenciaApiResource extends JsonResource
                 ? 'Turno completo'
                 : trim(($entra ?? '—').' – '.($sale ?? '—')),
             'conGoceDeHaberes' => (bool) $this->goceHaberes,
+            // Permiso personal o licencia institucional. Solo el personal
+            // cuenta contra el tope.
+            'tipo' => $this->tipo,
+            'tipoEtiqueta' => $this->tipo_etiqueta,
             'motivo' => $this->motivo ?: null,
             // El estado viaja aunque no esté aprobada: el funcionario tiene que
             // ver en qué quedó lo que pidió. El filtro de «solo aprobadas» es del

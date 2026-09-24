@@ -113,6 +113,7 @@ aparte (`sia`) y **solo de lectura**.
 | **Bitácora** | `/equipos/auditoria` | Qué se le hizo a cada reloj, cuándo y con qué resultado |
 | **Reportes** | `/reportes/marcaciones/*` | Sin procesar y procesado |
 | **Usuarios / Roles** | `/usuarios`, `/roles` | Acceso y matriz de permisos |
+| **Configuración** | `/configuracion` | Parámetros del sistema (hoy: tope mensual de permisos y cómo se cuenta). Un solo permiso, `Update:Configuracion` |
 
 ### La ficha del funcionario
 
@@ -348,6 +349,81 @@ envío manipulado no puede convertir un rechazo en una aprobación. Cada decisi�
 queda con su autor y su fecha. Lo rechazado y lo dado de baja se conserva como
 constancia y nunca se reescribe.
 
+Si el pedido cae en días sin turno (un sábado, un domingo), no se anota nada y el
+mensaje lo dice: *«No se anotó ninguna solicitud: sin turno asignado el sábado
+26/09.»* (`RegistroLicencia::mensaje()`, conteo `diasSinTurno`).
+
+### Tipos de licencia y tope mensual de permisos
+
+Cada licencia tiene un **tipo** (`licencias.tipo`) y un **alcance**
+(`tCompleto`: turno completo o por horas, con `lEntra`/`lSale`). Solo existen
+tres combinaciones:
+
+| Tipo | Alcance | ¿Cuenta en el tope? | Se registra desde SisMark (RRHH) | Se registra desde Mamoré (funcionario) |
+|---|---|---|---|---|
+| Personal | Por horas | **Sí** | Sí | Sí (sin tildar «Todo el turno») |
+| Institucional | Turno completo | No | Sí | Sí (tildando «Todo el turno») |
+| Institucional | Por horas | No | Sí | No |
+| ~~Personal~~ | ~~Turno completo~~ | — | no existe | no existe |
+
+- **Personal**: lo pide el funcionario para su uso (trámite, médico). Es siempre
+  por horas.
+- **Institucional**: lo dispone la institución (feriado, actividad, comisión).
+- **SisMark**: `StoreLicenciaRequest` rechaza personal + turno completo, y
+  personal para varios funcionarios o una dirección (el permiso personal es de
+  **un** funcionario). En los formularios, el campo **Alcance** depende del tipo:
+  con personal dice «Por horas» fijo y las horas son obligatorias; con
+  institucional hay un checkbox «Turno completo» (tildado por defecto; sin
+  tildar, pide las horas). Con «Varios» o «Por dirección» el tipo es fijo:
+  licencia institucional.
+- **Mamoré**: el funcionario no elige el tipo; `SolicitudLicenciaController` lo
+  deriva del alcance (turno completo → institucional; por horas → personal).
+- **Del SIA**: `sia:migrar-licencias` las copia como **institucionales** (son
+  licencias ya otorgadas; no cuentan en el tope).
+
+**El tope** (`App\Services\TopePermisos`) limita cuánto permiso **personal por
+horas** puede sumar un funcionario en el mes. Se configura en «Configuración»:
+
+| Parámetro | Valores |
+|---|---|
+| Tope mensual | horas y minutos; en 0 no hay tope |
+| Cómo se cuenta | **por contrato** (un tope por cada contrato del mes; lo que sobra de uno no pasa al otro) o **por mes** (uno solo) |
+
+Qué suma, y cuándo se controla:
+
+| Momento | Se compara contra el tope | Dónde |
+|---|---|---|
+| Pedir (RRHH o Mamoré) | **aprobado + pendiente + lo nuevo** | `LicenciaController::store()`, `Api\SolicitudLicenciaController::store()` |
+| Aprobar | **aprobado + esta solicitud** (cubre que el tope se haya bajado después) | `LicenciaController::excesoAlAprobar()` |
+| Rechazar / dar de baja | libera el tiempo | — |
+
+- Cada mes arranca de cero; lo usado se cuenta desde el día 1.
+- Un permiso que ocupa dos turnos el mismo día se cobra una vez.
+- Por contrato, los contratos los manda Mamoré en el pedido (`contratos`); si no
+  vienen, se le piden. Si Mamoré no contesta, el mes es una sola bolsa y el tope
+  se aplica igual.
+
+El **saldo** que se muestra sale del mismo cálculo que bloquea (`saldo()` y
+`excesos()` comparten `bolsas()`), así lo que se ve y lo que pasa no difieren:
+
+```
+Permisos por horas · Septiembre de 2026            Tope 1h 00m por contrato
+                          Disponible  Aprobado  Pendiente  Te queda
+Septiembre (contrato …)     1h 00m     0h 30m    0h 00m     0h 30m
+```
+
+«Te queda» = disponible − aprobado − pendiente. Si ya se pasó (el tope se bajó),
+muestra 0h 00m y «pasado por X». Se ve en la ficha de la solicitud, en la
+pestaña Licencias del funcionario, en vivo al anotar, y en el perfil de Mamoré
+vía la API (`saldo` en `GET …/licencias`, con `usado`, `pendiente`, `queda` y
+`excedido`, en texto y en minutos).
+
+> **Por qué Mamoré manda los contratos.** En desarrollo, `php artisan serve`
+> atiende un pedido por vez. Si SisMark le preguntara los contratos a Mamoré
+> mientras Mamoré espera la respuesta de SisMark, los dos quedan trabados hasta
+> que vence el plazo. Por eso `GET …/licencias`, `GET …/asistencia` y
+> `POST …/licencias` aceptan `contratos` (`ContratosFuncionario::delPedido()`).
+
 ---
 
 ## 8. Integración con Mamoré — la dirección opuesta
@@ -479,7 +555,7 @@ La meta es que SisMark viva 100% en MySQL y deje de depender del SQL Server.
 ## 11. Permisos
 
 Convención del nombre: **`Habilidad:Modulo`** (`ViewAny:Persona`,
-`Approve:Licencia`, `Clear:Equipo`).
+`Approve:Licencia`, `Clear:Equipo`, `Update:Configuracion`).
 
 ```
 Usuario inicia sesión
@@ -536,11 +612,12 @@ app/
 │   │   │   └── TurnoSugeridoController.php           # el horario sugerido
 │   │   ├── AsignacionTurnoController.php
 │   │   ├── Auth/LoginController.php
+│   │   ├── ConfiguracionController.php  # «Configuración», un grupo por tarjeta
 │   │   ├── DashboardController.php
 │   │   ├── DiaExcepcionalController.php
 │   │   ├── DiaTurnoController.php     # «Horarios»
 │   │   ├── EquipoController.php       # CRUD + probar/exportar/sincronizar/vaciar
-│   │   ├── LicenciaController.php
+│   │   ├── LicenciaController.php     # alta, ficha, aprobar (con control de tope)
 │   │   ├── MarcacionController.php
 │   │   ├── PersonaController.php      # funcionarios + solapas de la ficha
 │   │   ├── ReporteMarcacionController.php
@@ -548,6 +625,8 @@ app/
 │   └── Requests/                      # Store*/Update*/Revisar* por recurso
 ├── Models/
 │   ├── Sia/                           # solo lectura, conexión `sia`
+│   ├── Configuracion.php              # parámetros: GRUPOS + PARAMETROS, clave → valor
+│   ├── Licencia.php                   # TIPO_PERSONAL / TIPO_INSTITUCIONAL, estados
 │   ├── SistemaExterno.php             # consumidor de la API v1, dueño del token
 │   ├── SistemaExternoAuditoria.php    # bitácora de emisión y revocación
 │   └── *.php                          # base local
@@ -563,6 +642,7 @@ app/
 │   ├── SincronizadorEquipos.php       # reloj → tabla `asistencias`
 │   ├── RegistroAsistencia.php         # alta de marcaciones desde cualquier fuente
 │   ├── RegistroLicencia.php           # expande un rango a una fila por día/turno
+│   ├── TopePermisos.php               # tope mensual de permisos: saldo y excesos
 │   ├── RespaldoDocumento.php          # adjuntos al bucket S3, enlaces firmados
 │   ├── ResumenEscritorio.php          # paneles del escritorio
 │   └── ExcelMarcacionesProcesadas.php # .xlsx nativo del reporte procesado
@@ -614,6 +694,9 @@ ingreso dentro de la tabla.
 | Cuándo se sincroniza solo | `app/Models/Equipo.php::tocaSincronizar()` + `routes/console.php` |
 | Qué devuelve la API a Mamoré | `app/Http/Controllers/Api/AsistenciaFuncionarioController.php` |
 | Cómo se aprueba una licencia | `LicenciaController` + `RevisarLicenciaRequest` |
+| Por qué no dejó pedir un permiso (tope) | `app/Services/TopePermisos.php` |
+| Qué combinaciones tipo/alcance valen | `StoreLicenciaRequest` + `Api\SolicitudLicenciaController` |
+| Parámetros del sistema | `app/Models/Configuracion.php::PARAMETROS` |
 | La lista de permisos | `app/Policies/RolePolicy::MODULOS` |
 | Colores, sidebar, paginación | `resources/views/layouts/app.blade.php` |
 | Comportamientos globales | `app/Providers/AppServiceProvider.php` |

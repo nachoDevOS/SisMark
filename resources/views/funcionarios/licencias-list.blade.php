@@ -4,7 +4,55 @@
         \App\Models\Licencia::PENDIENTE => 'pill--advertencia',
         \App\Models\Licencia::RECHAZADO => 'pill--no',
     ];
+    $duracion = fn (int $minutos): string => \App\Services\ProcesadorAsistencia::duracion($minutos * 60);
 @endphp
+
+{{-- Saldo de permisos por horas del mes elegido contra el tope de Configuración:
+     cuánto lleva aprobado, cuánto pendiente y cuánto le queda (restan los dos); las
+     licencias de turno completo no descuentan. Solo con un mes y tope configurado. --}}
+@if ($saldo)
+    <div class="card card--padded" style="margin-bottom: .75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; flex-wrap: wrap; margin-bottom: .4rem;">
+            <strong>Permisos por horas · {{ ucfirst($mes->translatedFormat('F \d\e Y')) }}</strong>
+            <span class="ayuda" style="margin: 0;">
+                Tope {{ $duracion($saldo['tope']) }} {{ $saldo['porContrato'] ? 'por contrato' : 'por mes' }}
+            </span>
+        </div>
+
+        <table style="margin: 0;">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Disponible</th>
+                    <th>Aprobado</th>
+                    <th>Pendiente</th>
+                    <th>Le queda</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($saldo['bolsas'] as $bolsa)
+                    @php
+                        // Puede pasar si el tope se bajó después de pedir: lo
+                        // anotado no se anula, pero no entra nada más.
+                        $pasado = $bolsa['usado'] + $bolsa['pendiente'] > $saldo['tope'];
+                    @endphp
+                    <tr @if ($pasado) style="color: var(--danger); font-weight: 600;" @endif>
+                        <td>{{ $bolsa['titulo'] }}</td>
+                        <td>{{ $duracion($saldo['tope']) }}</td>
+                        <td>{{ $duracion($bolsa['usado']) }}</td>
+                        <td>{{ $duracion($bolsa['pendiente']) }}</td>
+                        <td>
+                            <strong>{{ $duracion($bolsa['queda']) }}</strong>
+                            @if ($pasado)
+                                <span class="ayuda">(pasado por {{ $duracion($bolsa['usado'] + $bolsa['pendiente'] - $saldo['tope']) }})</span>
+                            @endif
+                        </td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+@endif
 
 {{-- Una fila por solicitud, como el listado general: el alta expande el rango a
      una fila por día y turno, y sueltas un permiso de cinco días parecería cinco
@@ -18,6 +66,7 @@
                 <th>Alcance</th>
                 <th>Haberes</th>
                 <th>Motivo</th>
+                <th>Tipo</th>
                 <th>Origen</th>
                 <th>Estado</th>
                 <th></th>
@@ -70,6 +119,10 @@
                         @endif
                     </td>
                     <td>
+                        {{-- Qué es: permiso personal o licencia institucional. --}}
+                        <span class="pill {{ $licencia->tipo_pill }}">{{ $licencia->tipo_etiqueta }}</span>
+                    </td>
+                    <td>
                         <span class="pill {{ $licencia->origen === \App\Models\Licencia::ORIGEN_MAMORE ? 'pill--info' : 'pill--neutro' }}">
                             {{ $licencia->origen_etiqueta }}
                         </span>
@@ -104,7 +157,13 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="8" class="vacio">El funcionario no tiene licencias registradas.</td></tr>
+                <tr>
+                    <td colspan="9" class="vacio">
+                        {{ $mes
+                            ? 'El funcionario no tiene licencias en '.$mes->translatedFormat('F \d\e Y').'.'
+                            : 'El funcionario no tiene licencias registradas.' }}
+                    </td>
+                </tr>
             @endforelse
         </tbody>
     </table>

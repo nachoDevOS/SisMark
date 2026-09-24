@@ -59,6 +59,9 @@ class StoreLicenciaRequest extends FormRequest
             'asignaciones.*' => ['integer', 'exists:asignacion_turnos,id'],
             'desde' => ['required', 'date'],
             'hasta' => ['required', 'date', 'after_or_equal:desde'],
+            // Permiso personal (lo pide el funcionario, cuenta contra el tope) o
+            // licencia institucional (la dispone la institución).
+            'tipo' => ['required', Rule::in(array_keys(Licencia::TIPOS))],
             'tCompleto' => ['required', 'boolean'],
             'goceHaberes' => ['required', 'boolean'],
             'lEntra' => ['nullable', 'required_if:tCompleto,false', 'date_format:H:i'],
@@ -88,7 +91,8 @@ class StoreLicenciaRequest extends FormRequest
     }
 
     /**
-     * Un rango desmedido generaría miles de filas por un error de tipeo.
+     * Un rango desmedido generaría miles de filas por un error de tipeo, y un
+     * permiso personal no puede ser de turno completo.
      */
     public function withValidator(Validator $validator): void
     {
@@ -103,6 +107,20 @@ class StoreLicenciaRequest extends FormRequest
                 $validator->errors()->add('hasta', 'El rango no puede superar '.RegistroLicencia::MAX_DIAS.' días.');
             }
         });
+
+        // El permiso personal es siempre por horas: el turno completo lo dispone
+        // la institución. Sin esto quedaría un personal que no cuenta en el tope.
+        $validator->after(function (Validator $validator): void {
+            if ($this->input('tipo') === Licencia::TIPO_PERSONAL && $this->boolean('tCompleto')) {
+                $validator->errors()->add('tCompleto', 'El permiso personal es por horas. Si es por el turno completo, elegí «Licencia institucional».');
+            }
+
+            // El permiso personal lo pide una persona: para varios funcionarios o
+            // una dirección solo se anota licencia institucional.
+            if ($this->input('tipo') === Licencia::TIPO_PERSONAL && $this->input('modo') !== 'uno') {
+                $validator->errors()->add('tipo', 'El permiso personal es para un funcionario. Para varios o una dirección, elegí «Licencia institucional».');
+            }
+        });
     }
 
     /**
@@ -114,6 +132,8 @@ class StoreLicenciaRequest extends FormRequest
             'ci.required_if' => 'Elegí el funcionario que requiere la licencia.',
             'cis.required_if' => 'Agregá al menos un funcionario a la lista.',
             'direccion.required_if' => 'Elegí la dirección administrativa que se licencia.',
+            'tipo.required' => 'Indicá si es un permiso personal o una licencia institucional.',
+            'tipo.in' => 'Indicá si es un permiso personal o una licencia institucional.',
             'hasta.after_or_equal' => 'La fecha «Hasta» no puede ser anterior a «Desde».',
             'lEntra.required_if' => 'Indicá la hora de entrada o marcá «Turno completo».',
             'lSale.required_if' => 'Indicá la hora de salida o marcá «Turno completo».',

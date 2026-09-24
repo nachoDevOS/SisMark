@@ -13,6 +13,7 @@ use App\Services\ProcesadorAsistencia;
 use App\Services\ResolutorNombres;
 use App\Services\RespaldoDocumento;
 use App\Services\ResumenEscritorio;
+use App\Services\TopePermisos;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -106,7 +107,7 @@ class AsistenciaFuncionarioController extends Controller
         // preguntábamos a él—. Lo que cambia es la dirección del dato, no de
         // quién sale.
         $dias = $request->has('contratos')
-            ? $procesador->procesarConTramos($ci, $desde, $hasta, $this->tramosDelPedido($request))
+            ? $procesador->procesarConTramos($ci, $desde, $hasta, ContratosFuncionario::delPedido($request->input('contratos') ?? []))
             : $procesador->procesar($ci, $desde, $hasta);
 
         $totales = $procesador->totales($dias);
@@ -198,7 +199,63 @@ class AsistenciaFuncionarioController extends Controller
         });
 
         return LicenciaApiResource::collection($licencias)
-            ->additional($this->meta($request, $ci, $desde, $hasta));
+            ->additional([
+                ...$this->meta($request, $ci, $desde, $hasta),
+                'saldo' => $this->saldoDePermisos($request, $ci, $desde, $hasta),
+            ]);
+    }
+
+    /**
+     * Cuánto permiso personal por horas lleva el funcionario en los meses del
+     * rango y cuánto le queda, contra el tope de Configuración. Es lo que el
+     * funcionario ve en su perfil antes de pedir.
+     *
+     * Con `contratos` en el pedido se reparte por esos tramos sin salir a
+     * preguntarle a Mamoré; ver la nota de {@see self::asistencia()}. `null` si
+     * no hay tope configurado.
+     *
+     * @return array{tope: string, topeMinutos: int, alcance: string, bolsas: list<array{titulo: string, usado: string, usadoMinutos: int, pendiente: string, pendienteMinutos: int, queda: string, quedaMinutos: int, pasado: bool, excedido: string, excedidoMinutos: int}>}|null
+     */
+    private function saldoDePermisos(Request $request, string $ci, Carbon $desde, Carbon $hasta): ?array
+    {
+        $saldo = app(TopePermisos::class)->saldo(
+            $ci,
+            $desde,
+            $hasta,
+            [],
+            null,
+            null,
+            $request->has('contratos') ? ContratosFuncionario::delPedido($request->input('contratos') ?? []) : null,
+        );
+
+        if ($saldo === null) {
+            return null;
+        }
+
+        $duracion = fn (int $minutos): string => ProcesadorAsistencia::duracion($minutos * 60);
+
+        return [
+            'tope' => $duracion($saldo['tope']),
+            'topeMinutos' => $saldo['tope'],
+            'alcance' => $saldo['porContrato'] ? 'por contrato' : 'por mes',
+            'bolsas' => array_map(fn (array $bolsa): array => [
+                'titulo' => $bolsa['titulo'],
+                'usado' => $duracion($bolsa['usado']),
+                'usadoMinutos' => $bolsa['usado'],
+                // Lo pedido que espera decisión: todavía no está concedido, pero
+                // ya resta de lo que queda para pedir.
+                'pendiente' => $duracion($bolsa['pendiente']),
+                'pendienteMinutos' => $bolsa['pendiente'],
+                'queda' => $duracion($bolsa['queda']),
+                'quedaMinutos' => $bolsa['queda'],
+                // Puede pasar si el tope se bajó después de pedir: lo anotado no
+                // se anula, pero no entra nada más.
+                'pasado' => $saldo['tope'] < $bolsa['usado'] + $bolsa['pendiente'],
+                // Cuánto se pasó, para mostrarlo junto al «queda» en cero.
+                'excedido' => $duracion(max(0, $bolsa['usado'] + $bolsa['pendiente'] - $saldo['tope'])),
+                'excedidoMinutos' => max(0, $bolsa['usado'] + $bolsa['pendiente'] - $saldo['tope']),
+            ], $saldo['bolsas']),
+        ];
     }
 
     /**
@@ -284,32 +341,6 @@ class AsistenciaFuncionarioController extends Controller
             'url' => $enlace,
             'nombre' => $licencia->adjuntoNombre ?: 'respaldo',
         ]);
-    }
-
-    /**
-     * Los tramos de contrato que mandó el consumidor, con la misma forma que
-     * devuelve {@see ContratosFuncionario::tramos()}.
-     *
-     * **La lista vacía no es lo mismo que no mandar nada.** Vacía significa «no
-     * tuvo contrato en el rango» y excluye todos sus días —salen «sin
-     * contrato»—; no mandar `contratos` significa «no sé» y ahí se le pregunta a
-     * Mamoré. La diferencia la resuelve `$request->has()` en
-     * {@see self::asistencia()}, no este método.
-     *
-     * @return list<array{desde: Carbon, hasta: ?Carbon}>
-     */
-    private function tramosDelPedido(Request $request): array
-    {
-        return collect($request->input('contratos') ?? [])
-            ->map(fn (array $tramo): array => [
-                'desde' => Carbon::parse($tramo['desde'])->startOfDay(),
-                'hasta' => ($tramo['hasta'] ?? null) === null || $tramo['hasta'] === ''
-                    ? null
-                    : Carbon::parse($tramo['hasta'])->startOfDay(),
-            ])
-            ->sortBy(fn (array $tramo): int => $tramo['desde']->getTimestamp())
-            ->values()
-            ->all();
     }
 
     /**

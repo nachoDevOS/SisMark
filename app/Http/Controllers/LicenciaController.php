@@ -12,6 +12,7 @@ use App\Services\ProcesadorAsistencia;
 use App\Services\RegistroLicencia;
 use App\Services\ResolutorNombres;
 use App\Services\RespaldoDocumento;
+use App\Services\TopePermisos;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -39,8 +40,9 @@ class LicenciaController extends Controller
         $busqueda = trim((string) $request->query('q', ''));
         $porPagina = $this->porPagina($request);
         $estado = $this->estado($request);
+        $tipo = $this->tipo($request);
 
-        return view('licencias.index', compact('busqueda', 'porPagina', 'estado'));
+        return view('licencias.index', compact('busqueda', 'porPagina', 'estado', 'tipo'));
     }
 
     /**
@@ -53,17 +55,19 @@ class LicenciaController extends Controller
         $busqueda = trim((string) $request->query('q', ''));
         $porPagina = $this->porPagina($request);
         $estado = $this->estado($request);
+        $tipo = $this->tipo($request);
 
         // Una fila por solicitud, no por día: el alta expande el rango a una
         // fila por día y turno, así que sin esto «14 al 15 de agosto» sale como
         // dos licencias y parece que hay que aprobarlas por separado.
         //
         // Va en dos pasos —primero qué solicitudes entran, después la fila que
-        // abre cada una—; ver la migración `agregar_solicitud_a_licencias`.
+        // abre cada una—; ver la migración `create_licencias_table`.
         $licencias = Licencia::paginarPorSolicitud(
             Licencia::query()
                 ->when($busqueda !== '', fn (Builder $query) => $query->buscar($busqueda))
-                ->when($estado !== '', fn (Builder $query) => $query->where('estado', $estado)),
+                ->when($estado !== '', fn (Builder $query) => $query->where('estado', $estado))
+                ->when($tipo !== '', fn (Builder $query) => $query->where('tipo', $tipo)),
             $porPagina,
         )->withQueryString();
 
@@ -106,7 +110,24 @@ class LicenciaController extends Controller
         // 5 días») y lo que se va a modificar realmente.
         $pendientes = $dias->where('estado', Licencia::PENDIENTE);
 
-        return view('licencias.show', compact('licencia', 'dias', 'ficha', 'pendientes'));
+        // Saldo de permisos por horas del mes de la solicitud, para decidir con el
+        // dato a la vista. Solo si es un permiso personal por horas y sigue
+        // contando —una rechazada no descuenta, una institucional no tiene
+        // tope—. Lo aprobado y lo pendiente —esta solicitud incluida— van en
+        // columnas aparte.
+        $porHoras = $dias->reject(fn (Licencia $dia): bool => $dia->tCompleto
+            || $dia->estado === Licencia::RECHAZADO
+            || $dia->tipo === Licencia::TIPO_INSTITUCIONAL);
+        $saldo = $porHoras->isEmpty() ? null : app(TopePermisos::class)->saldo(
+            trim((string) $licencia->ci),
+            $porHoras->min('fecha'),
+            $porHoras->max('fecha'),
+            [],
+            null,
+            null,
+        );
+
+        return view('licencias.show', compact('licencia', 'dias', 'ficha', 'pendientes', 'saldo'));
     }
 
     /**
@@ -137,6 +158,10 @@ class LicenciaController extends Controller
      */
     private function resolver(RevisarLicenciaRequest $request, Licencia $licencia, string $estado): RedirectResponse
     {
+        if ($estado === Licencia::APROBADO && ($exceso = $this->excesoAlAprobar($licencia)) !== null) {
+            return back()->with('error', $exceso);
+        }
+
         $afectados = Licencia::query()
             ->deLaSolicitud($licencia)
             ->pendientes()
@@ -161,6 +186,42 @@ class LicenciaController extends Controller
         return $estado === Licencia::RECHAZADO
             ? redirect($this->fichaDelFuncionario($licencia))->with('estado', $mensaje)
             : back()->with('estado', $mensaje);
+    }
+
+    /**
+     * Si aprobar la solicitud pasa el tope mensual de permisos, el motivo; si
+     * no, `null`.
+     *
+     * Al pedir ya se controló contra lo aprobado y lo pendiente; acá se mira
+     * solo lo aprobado más esta solicitud, por si el tope se bajó después de
+     * pedirla. Solo aplica a los permisos personales por horas.
+     */
+    private function excesoAlAprobar(Licencia $licencia): ?string
+    {
+        $porHoras = Licencia::query()
+            ->deLaSolicitud($licencia)
+            ->pendientes()
+            ->where('tCompleto', false)
+            ->where('tipo', Licencia::TIPO_PERSONAL)
+            ->whereNotNull('lEntra')
+            ->whereNotNull('lSale')
+            ->get(['fecha', 'lEntra', 'lSale']);
+
+        if ($porHoras->isEmpty()) {
+            return null;
+        }
+
+        $ci = trim((string) $licencia->ci);
+        $tope = app(TopePermisos::class);
+        // Los días de una solicitud comparten horario: salen del mismo pedido.
+        $excesos = $tope->excesos(
+            [$ci => $porHoras->map(fn (Licencia $dia): string => $dia->fecha->toDateString())->unique()->values()->all()],
+            $porHoras->first()->lEntra->format('H:i'),
+            $porHoras->first()->lSale->format('H:i'),
+            conPendientes: false,
+        );
+
+        return $excesos === [] ? null : 'No se puede aprobar. '.$tope->mensajeDeExcesos($excesos, false);
     }
 
     /**
@@ -254,6 +315,75 @@ class LicenciaController extends Controller
             'id' => $persona['ci'],
             'texto' => $directorio->etiqueta($persona),
         ])->values());
+    }
+
+    /**
+     * Saldo de permisos por horas del funcionario contra el tope mensual, para
+     * el recuadro de «Licenciar»: cuánto lleva en cada mes —y contrato— del
+     * rango, cuánto suma lo que se está armando y si se pasa.
+     *
+     * Resuelve los días igual que el alta —turnos del rango, los elegidos a
+     * mano, sin los días ya ocupados— y calcula con el mismo servicio que la
+     * bloquea al guardar, así lo que se ve es lo que va a pasar.
+     *
+     * Responde `activo: false` cuando no hay tope configurado.
+     */
+    public function saldo(Request $request, RegistroLicencia $registro, TopePermisos $tope): JsonResponse
+    {
+        $this->authorize('create', Licencia::class);
+
+        $datos = $request->validate([
+            'ci' => ['required', 'string', 'max:20'],
+            'desde' => ['required', 'date'],
+            'hasta' => ['required', 'date', 'after_or_equal:desde'],
+            'lEntra' => ['nullable', 'date_format:H:i'],
+            'lSale' => ['nullable', 'date_format:H:i'],
+            'asignaciones' => ['nullable', 'array'],
+            'asignaciones.*' => ['integer'],
+        ]);
+
+        $desde = Carbon::parse($datos['desde'])->startOfDay();
+        $hasta = Carbon::parse($datos['hasta'])->startOfDay();
+
+        if ($desde->diffInDays($hasta) + 1 > RegistroLicencia::MAX_DIAS) {
+            return response()->json(['error' => 'El rango no puede superar '.RegistroLicencia::MAX_DIAS.' días.'], 422);
+        }
+
+        $ci = trim($datos['ci']);
+        $asignaciones = $this->turnosDelRango([$ci], $desde, $hasta, array_map('intval', $datos['asignaciones'] ?? []));
+        $fechas = $registro->fechasNuevas($asignaciones, $desde, $hasta)[$ci] ?? [];
+
+        // Salida y entrada invertidas no son un pedido: se muestra solo lo usado,
+        // y la validación del formulario avisa al guardar.
+        $lEntra = $datos['lEntra'] ?? null;
+        $lSale = $datos['lSale'] ?? null;
+
+        if ($lEntra !== null && $lSale !== null && $lSale <= $lEntra) {
+            $lEntra = $lSale = null;
+        }
+
+        $saldo = $tope->saldo($ci, $desde, $hasta, $fechas, $lEntra, $lSale);
+
+        if ($saldo === null) {
+            return response()->json(['activo' => false]);
+        }
+
+        $duracion = fn (int $minutos): string => ProcesadorAsistencia::duracion($minutos * 60);
+
+        return response()->json([
+            'activo' => true,
+            'tope' => $duracion($saldo['tope']),
+            'alcance' => $saldo['porContrato'] ? 'por contrato' : 'por mes',
+            'excede' => $saldo['excede'],
+            'dias' => count($fechas),
+            'bolsas' => array_map(fn (array $bolsa): array => [
+                'titulo' => $bolsa['titulo'],
+                'usado' => $duracion($bolsa['usado']),
+                'pedido' => $bolsa['pedido'] > 0 ? $duracion($bolsa['pedido']) : null,
+                'queda' => $duracion($bolsa['queda']),
+                'excede' => $bolsa['excede'],
+            ], $saldo['bolsas']),
+        ]);
     }
 
     /**
@@ -371,6 +501,7 @@ class LicenciaController extends Controller
         RegistroLicencia $registro,
         RespaldoDocumento $respaldos,
         DirectorioMamore $directorio,
+        TopePermisos $tope,
     ): RedirectResponse {
         $datos = $request->validated();
 
@@ -414,6 +545,23 @@ class LicenciaController extends Controller
                 ->with('error', $this->motivoSinTurnos($modo, $elegidas));
         }
 
+        // Tope mensual de permisos por horas, solo para los permisos personales:
+        // si alguien se pasa, no se anota nada, ni siquiera a los demás. Anotar
+        // a medias dejaría a Recursos Humanos adivinando a quién le faltó.
+        if ($datos['tipo'] === Licencia::TIPO_PERSONAL && ! $datos['tCompleto']) {
+            $excesos = $tope->excesos(
+                $registro->fechasNuevas($asignacionesPorCi, $desde, $hasta),
+                (string) $datos['lEntra'],
+                (string) $datos['lSale'],
+            );
+
+            if ($excesos !== []) {
+                return back()
+                    ->withInput()
+                    ->with('error', $tope->mensajeDeExcesos($excesos, $modo !== 'uno'));
+            }
+        }
+
         // El respaldo se sube una sola vez y la ruta se copia a todas las filas
         // que genere el rango: son la misma licencia partida por día y turno.
         // Va después de resolver los turnos, para no dejar un archivo huérfano
@@ -432,6 +580,7 @@ class LicenciaController extends Controller
             'adjuntoNombre' => $adjuntoNombre,
             'usuario' => (string) ($request->user()?->name ?? ''),
             'usuarioId' => $request->user()?->id,
+            'tipo' => $datos['tipo'],
         ]);
 
         if ($conteo['creadas'] === 0) {
@@ -602,6 +751,17 @@ class LicenciaController extends Controller
         $estado = trim((string) $request->query('estado', ''));
 
         return in_array($estado, Licencia::ESTADOS, true) ? $estado : '';
+    }
+
+    /**
+     * Filtro de tipo del listado: uno de {@see Licencia::TIPOS}, o vacío para
+     * todos. Lo desconocido vale como vacío, por lo mismo que el estado.
+     */
+    private function tipo(Request $request): string
+    {
+        $tipo = trim((string) $request->query('tipo', ''));
+
+        return array_key_exists($tipo, Licencia::TIPOS) ? $tipo : '';
     }
 
     /**

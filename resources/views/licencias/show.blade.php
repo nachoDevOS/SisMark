@@ -96,6 +96,10 @@
                     <dd>{{ $licencia->fechaPedido?->format('d/m/Y H:i') ?? '—' }}</dd>
                 </div>
                 <div>
+                    <dt>Tipo</dt>
+                    <dd><span class="pill {{ $licencia->tipo_pill }}">{{ $licencia->tipo_etiqueta }}</span></dd>
+                </div>
+                <div>
                     <dt>Origen</dt>
                     <dd>
                         <span class="pill {{ $licencia->origen === \App\Models\Licencia::ORIGEN_MAMORE ? 'pill--info' : 'pill--neutro' }}">
@@ -191,6 +195,53 @@
             </table>
         </div>
     </div>
+
+    {{-- Saldo de permisos por horas contra el tope mensual (Configuración): lo
+         aprobado y lo pendiente —esta solicitud incluida— por separado; los dos
+         restan de lo que queda. Solo cuando la solicitud es por horas y hay tope. --}}
+    @if ($saldo)
+        <div class="tarjeta">
+            <h2>Permisos por horas del mes</h2>
+            <p class="ayuda" style="margin: -.5rem 0 .75rem;">
+                Tope {{ \App\Services\ProcesadorAsistencia::duracion($saldo['tope'] * 60) }}
+                {{ $saldo['porContrato'] ? 'por contrato' : 'por mes' }}.
+                Lo pendiente incluye esta solicitud. Si aprobarla pasa el tope, no se deja aprobar.
+            </p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Disponible</th>
+                        <th>Usado</th>
+                        <th>Pendiente</th>
+                        <th>Queda</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($saldo['bolsas'] as $bolsa)
+                        @php
+                            $pasado = $bolsa['usado'] + $bolsa['pendiente'] > $saldo['tope'];
+                        @endphp
+                        <tr @if ($pasado) style="color: var(--danger); font-weight: 600;" @endif>
+                            <td>{{ $bolsa['titulo'] }}</td>
+                            <td>{{ \App\Services\ProcesadorAsistencia::duracion($saldo['tope'] * 60) }}</td>
+                            <td>{{ \App\Services\ProcesadorAsistencia::duracion($bolsa['usado'] * 60) }}</td>
+                            <td>{{ \App\Services\ProcesadorAsistencia::duracion($bolsa['pendiente'] * 60) }}</td>
+                            <td>
+                                {{-- Puede pasar si el tope se bajó después de pedir: lo
+                                     anotado no se anula, pero no entra nada más. --}}
+                                {{ \App\Services\ProcesadorAsistencia::duracion($bolsa['queda'] * 60) }}
+                                @if ($pasado)
+                                    (pasado por {{ \App\Services\ProcesadorAsistencia::duracion(($bolsa['usado'] + $bolsa['pendiente'] - $saldo['tope']) * 60) }})
+                                @endif
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    @endif
 
     {{-- El panel solo aparece sobre lo que sigue «Pendiente», la misma condición
          que exige `RevisarLicenciaRequest`. Va en un `@if` aparte del `@can` y no

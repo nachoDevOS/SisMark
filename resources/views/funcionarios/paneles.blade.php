@@ -100,6 +100,13 @@
                 </label>
 
                 <div class="tabla-filtros__extra">
+                    {{-- Mes y año: arranca en el actual, que es el que se mira para
+                         saber cuánto permiso le queda. Vacío, lista todas. --}}
+                    <label class="filtro">
+                        Mes
+                        <input type="month" id="l-mes" value="{{ now()->format('Y-m') }}"
+                               aria-label="Mes y año de las licencias">
+                    </label>
                     {{-- Alta acotada a este funcionario; la pantalla «Licenciar»
                          queda para los feriados y las altas en lote. --}}
                     <x-modal-licencia :ci="$ci" :origen="$origen ?? ''" />
@@ -190,8 +197,11 @@
             licencias: {
                 url: @json(route('funcionarios.licencias.list')),
                 contenedor: document.getElementById('l-results'),
-                filtros: () => ({ por_pagina: document.getElementById('l-paginate').value }),
-                controles: ['l-paginate'],
+                filtros: () => ({
+                    mes: document.getElementById('l-mes').value,
+                    por_pagina: document.getElementById('l-paginate').value,
+                }),
+                controles: ['l-mes', 'l-paginate'],
             },
             @endif
             @if ($verTurnos)

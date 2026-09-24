@@ -20,6 +20,7 @@
                 <th>Alcance</th>
                 <th>Haberes</th>
                 <th>Motivo</th>
+                <th>Tipo</th>
                 <th>Origen</th>
                 <th>Estado</th>
                 <th></th>
@@ -102,6 +103,10 @@
                         @endif
                     </td>
                     <td>
+                        {{-- Qué es: permiso personal o licencia institucional. --}}
+                        <span class="pill {{ $licencia->tipo_pill }}">{{ $licencia->tipo_etiqueta }}</span>
+                    </td>
+                    <td>
                         {{-- De dónde salió: lo pidió el funcionario desde Mamoré,
                              lo cargó Recursos Humanos acá, o vino de la copia del
                              sistema viejo. --}}
@@ -142,7 +147,7 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="9" class="vacio">{{ $busqueda !== '' ? 'Sin licencias para la búsqueda.' : 'Aún no hay licencias registradas.' }}</td></tr>
+                <tr><td colspan="10" class="vacio">{{ $busqueda !== '' ? 'Sin licencias para la búsqueda.' : 'Aún no hay licencias registradas.' }}</td></tr>
             @endforelse
         </tbody>
     </table>

@@ -10,10 +10,12 @@ use App\Models\Persona;
 use App\Services\DirectorioMamore;
 use App\Services\MamoreClient;
 use App\Services\ResolutorNombres;
+use App\Services\TopePermisos;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator as Paginador;
+use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 /**
@@ -117,7 +119,7 @@ class PersonaController extends Controller
      * Parcial de las licencias de una cédula para la solapa de la ficha.
      * También se cruza por CI, así que sirve a las dos fichas.
      */
-    public function licenciasList(Request $request): View
+    public function licenciasList(Request $request, TopePermisos $tope): View
     {
         $this->authorize('viewAny', Licencia::class);
 
@@ -131,14 +133,45 @@ class PersonaController extends Controller
         // Sin `with('turno')`: la tabla ya no muestra el horario —un pedido de
         // cinco días puede abarcar turnos distintos y poner el del primer día
         // engañaba—. El desglose día por día, con su turno, está en la ficha.
+        //
+        // Con `mes` («2026-09») salen las solicitudes con algún día en ese mes;
+        // una que cruza de un mes al otro aparece en los dos. Sin mes, todas.
+        $mes = $this->mesPedido($request);
+
         $licencias = Licencia::paginarPorSolicitud(
-            Licencia::query()->where('ci', $ci),
+            Licencia::query()
+                ->where('ci', $ci)
+                ->when($mes, fn (Builder $query) => $query->whereBetween('fecha', [
+                    $mes->toDateString(),
+                    $mes->copy()->endOfMonth()->toDateString(),
+                ])),
             $this->porPagina($request),
         )->withQueryString();
 
         $resumen = Licencia::resumenDe($licencias->getCollection()->map->clave_agrupadora);
 
-        return view('funcionarios.licencias-list', compact('licencias', 'resumen'));
+        // Cuánto permiso por horas lleva y le queda en el mes, contra el tope de
+        // Configuración. Solo con un mes elegido: el tope es mensual.
+        $saldo = $mes === null
+            ? null
+            : $tope->saldo($ci, $mes, $mes->copy()->endOfMonth()->startOfDay(), [], null, null);
+
+        return view('funcionarios.licencias-list', compact('licencias', 'resumen', 'mes', 'saldo'));
+    }
+
+    /**
+     * El mes del filtro de licencias (`?mes=2026-09`) como su primer día, o
+     * `null` si no vino o no es un mes válido: en ese caso se listan todas.
+     */
+    private function mesPedido(Request $request): ?Carbon
+    {
+        $mes = trim((string) $request->query('mes', ''));
+
+        if (! preg_match('/^(\d{4})-(\d{2})$/', $mes, $partes) || ! checkdate((int) $partes[2], 1, (int) $partes[1])) {
+            return null;
+        }
+
+        return Carbon::create((int) $partes[1], (int) $partes[2], 1);
     }
 
     /**

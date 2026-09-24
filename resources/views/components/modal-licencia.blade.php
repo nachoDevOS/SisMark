@@ -11,6 +11,8 @@
     // reabre con lo que se había cargado. El marcador `_form` distingue cuál de
     // los formularios de la ficha fue, porque comparten nombres de campo.
     $abierto = old('_form') === 'licencia' ? 'true' : 'false';
+    $tipoInicial = old('tipo', \App\Models\Licencia::TIPO_PERSONAL);
+    $completoInicial = $tipoInicial !== \App\Models\Licencia::TIPO_PERSONAL && (bool) old('tCompleto', 1);
     $verTurnos = auth()->user()?->can('viewAny', \App\Models\AsignacionTurno::class) ?? false;
     // `acciones=0`: acá los turnos se muestran solo como referencia, sin los
     // botones de concluir ni eliminar de la solapa de la ficha.
@@ -25,7 +27,10 @@
     <div x-data="{
              abierto: {{ $abierto }},
              cargado: false,
-             completo: {{ old('tCompleto', 1) ? 'true' : 'false' }},
+             tipo: @js($tipoInicial),
+             {{-- El personal es siempre por horas; el institucional arranca en
+                  turno completo y puede pasar a por horas. --}}
+             completo: {{ $completoInicial ? 'true' : 'false' }},
              async abrir() {
                  this.abierto = true;
                  if (this.cargado) { return; }
@@ -92,23 +97,53 @@
                         </div>
                     </div>
 
-                    <div class="campo check">
-                        <input type="checkbox" id="lic-completo-{{ $sufijo }}" name="tCompleto" value="1" x-model="completo">
-                        <label for="lic-completo-{{ $sufijo }}" style="margin: 0;">Turno completo</label>
+                    {{-- Qué es. Para un funcionario suele ser un permiso que pidió; solo
+                         el personal cuenta contra el tope mensual de permisos. --}}
+                    <div class="campo">
+                        <label>Tipo <span class="req">*</span></label>
+                        <div class="toolbar" style="gap: 1.25rem;">
+                            @foreach (\App\Models\Licencia::TIPOS as $valor => $etiquetaTipo)
+                                <div class="campo check" style="margin: 0;">
+                                    <input type="radio" id="lic-tipo-{{ $valor }}-{{ $sufijo }}" name="tipo" value="{{ $valor }}"
+                                           x-model="tipo" x-on:change="completo = tipo !== 'personal'">
+                                    <label for="lic-tipo-{{ $valor }}-{{ $sufijo }}" style="margin: 0;">{{ $etiquetaTipo }}</label>
+                                </div>
+                            @endforeach
+                        </div>
+                        @error('tipo') <div class="error">{{ $message }}</div> @enderror
                     </div>
 
-                    {{-- Solo para las salidas parciales: llegó tarde o se fue temprano. --}}
+                    {{-- Alcance. El permiso personal es siempre por horas; la licencia
+                         institucional es de turno completo o por horas. Lo valida
+                         también `StoreLicenciaRequest`. --}}
+                    <input type="hidden" name="tCompleto" :value="completo ? 1 : 0">
+                    <div class="campo">
+                        <label>Alcance <span class="req">*</span></label>
+                        {{-- Sin tildar, es por horas. --}}
+                        <div class="campo check" style="margin: 0;" x-show="tipo !== 'personal'" x-cloak>
+                            <input type="checkbox" id="lic-alcance-completo-{{ $sufijo }}" x-model="completo">
+                            <label for="lic-alcance-completo-{{ $sufijo }}" style="margin: 0;">Turno completo</label>
+                        </div>
+                        <p class="ayuda" style="margin: 0;" x-show="tipo === 'personal'">
+                            <strong>Por horas.</strong> El permiso personal no puede ser de turno completo
+                            y cuenta contra el tope mensual de permisos.
+                        </p>
+                        @error('tCompleto') <div class="error">{{ $message }}</div> @enderror
+                    </div>
+
+                    {{-- Desde qué hora hasta qué hora: llegó tarde, salió antes o se
+                         ausentó un rato. --}}
                     <div class="grid-2" x-show="! completo" x-cloak>
                         <div class="campo">
-                            <label for="lic-entra-{{ $sufijo }}">Hora de entrada</label>
+                            <label for="lic-entra-{{ $sufijo }}">Desde las <span class="req">*</span></label>
                             <input type="time" id="lic-entra-{{ $sufijo }}" name="lEntra"
-                                   value="{{ old('lEntra') }}" :disabled="completo">
+                                   value="{{ old('lEntra') }}" :disabled="completo" :required="! completo">
                             @error('lEntra') <div class="error">{{ $message }}</div> @enderror
                         </div>
                         <div class="campo">
-                            <label for="lic-sale-{{ $sufijo }}">Hora de salida</label>
+                            <label for="lic-sale-{{ $sufijo }}">Hasta las <span class="req">*</span></label>
                             <input type="time" id="lic-sale-{{ $sufijo }}" name="lSale"
-                                   value="{{ old('lSale') }}" :disabled="completo">
+                                   value="{{ old('lSale') }}" :disabled="completo" :required="! completo">
                             @error('lSale') <div class="error">{{ $message }}</div> @enderror
                         </div>
                     </div>

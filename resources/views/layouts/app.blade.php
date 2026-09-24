@@ -719,6 +719,7 @@
                 'usuarios' => request()->routeIs('usuarios.*'),
                 'roles' => request()->routeIs('roles.*'),
                 'tokens-api' => request()->routeIs('tokens-api.*'),
+                'configuracion' => request()->routeIs('configuracion.*'),
             ];
             // El grupo «Parámetros» arranca desplegado cuando la pantalla actual
             // es una de las suyas; si no, el ítem activo quedaría escondido.
@@ -823,6 +824,11 @@
             @can('ViewAny:SistemaExterno')
                 <a href="{{ route('tokens-api.index') }}" @class(['sidebar__link', 'activo' => $enMenu['tokens-api']]) title="Tokens de API"@if ($enMenu['tokens-api']) aria-current="page"@endif>
                     <x-heroicon-o-key /><span class="sidebar__texto">Tokens de API</span>
+                </a>
+            @endcan
+            @can('Update:Configuracion')
+                <a href="{{ route('configuracion.edit') }}" @class(['sidebar__link', 'activo' => $enMenu['configuracion']]) title="Configuración"@if ($enMenu['configuracion']) aria-current="page"@endif>
+                    <x-heroicon-o-cog-6-tooth /><span class="sidebar__texto">Configuración</span>
                 </a>
             @endcan
 

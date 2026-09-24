@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Licencia;
+use App\Services\ContratosFuncionario;
 use App\Services\RegistroLicencia;
 use App\Services\RespaldoDocumento;
+use App\Services\TopePermisos;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -41,7 +43,7 @@ class SolicitudLicenciaController extends Controller
      * asignados en esas fechas no hay licencia posible —una licencia licencia un
      * turno—, y si ya existe una para ese día no se pisa.
      */
-    public function store(Request $request, string $ci, RegistroLicencia $registro, RespaldoDocumento $respaldos): JsonResponse
+    public function store(Request $request, string $ci, RegistroLicencia $registro, RespaldoDocumento $respaldos, TopePermisos $tope): JsonResponse
     {
         // Cuando la solicitud trae un respaldo viaja como `multipart/form-data`,
         // y ahí no hay booleanos: `tCompleto` llega como el texto «1» o «0». Sin
@@ -75,6 +77,12 @@ class SolicitudLicenciaController extends Controller
             // presenta al volver), así que exigirlo frenaría la solicitud en vez
             // de mejorarla. Quien resuelve decide si le alcanza lo que ve.
             'respaldo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            // Los contratos del funcionario en los meses del pedido, para contar
+            // el tope por contrato sin preguntárselos de vuelta a Mamoré. Ver
+            // {@see AsistenciaFuncionarioController::asistencia()}.
+            'contratos' => ['nullable', 'array'],
+            'contratos.*.desde' => ['required', 'date'],
+            'contratos.*.hasta' => ['nullable', 'date'],
         ], [
             'hasta.after_or_equal' => 'La fecha «Hasta» no puede ser anterior a «Desde».',
             'lEntra.required_if' => 'Indicá la hora de entrada o pedí el turno completo.',
@@ -100,6 +108,24 @@ class SolicitudLicenciaController extends Controller
             ], 422);
         }
 
+        // Tope mensual de permisos por horas: si este pedido lo pasa, no se
+        // anota nada. Va antes de subir el respaldo, para no dejar un archivo
+        // huérfano.
+        if (! $datos['tCompleto']) {
+            $excesos = $tope->excesos(
+                $registro->fechasNuevas($asignaciones, $desde, $hasta),
+                (string) $datos['lEntra'],
+                (string) $datos['lSale'],
+                $request->has('contratos') ? [$ci => ContratosFuncionario::delPedido($datos['contratos'] ?? [])] : null,
+            );
+
+            if ($excesos !== []) {
+                return response()->json([
+                    'message' => $tope->mensajeDeExcesos($excesos, false),
+                ], 422);
+            }
+        }
+
         // El respaldo se sube recién acá, con los turnos ya resueltos: subirlo
         // antes dejaría un archivo huérfano en el bucket cada vez que la
         // solicitud no llega a anotar nada.
@@ -123,6 +149,10 @@ class SolicitudLicenciaController extends Controller
             'usuarioId' => null,
             'estado' => Licencia::PENDIENTE,
             'origen' => Licencia::ORIGEN_MAMORE,
+            // Desde Mamoré el tipo lo da el alcance: el turno completo es una
+            // licencia institucional; por horas, un permiso personal, que es
+            // el único que cuenta contra el tope.
+            'tipo' => $datos['tCompleto'] ? Licencia::TIPO_INSTITUCIONAL : Licencia::TIPO_PERSONAL,
         ]);
 
         if ($conteo['creadas'] === 0) {

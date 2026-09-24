@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AsignacionTurnoController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiaExcepcionalController;
 use App\Http\Controllers\DiaTurnoController;
@@ -13,6 +14,7 @@ use App\Http\Controllers\ReporteMarcacionController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SistemaExternoController;
 use App\Http\Controllers\UserController;
+use App\Models\Configuracion;
 use Illuminate\Support\Facades\Route;
 
 // Login propio del sitio (guard 'web' estándar).
@@ -53,6 +55,12 @@ Route::middleware('auth')->group(function (): void {
     Route::resource('usuarios', UserController::class)
         ->parameters(['usuarios' => 'usuario'])
         ->except('show');
+    // Parámetros del sistema, una sección por grupo (ver Configuracion::GRUPOS).
+    // Cada sección se guarda aparte.
+    Route::get('configuracion', [ConfiguracionController::class, 'edit'])->name('configuracion.edit');
+    Route::put('configuracion/{grupo}', [ConfiguracionController::class, 'update'])
+        ->whereIn('grupo', array_keys(Configuracion::GRUPOS))
+        ->name('configuracion.update');
     // Roles y su matriz de permisos.
     Route::resource('roles', RoleController::class)->except('show');
 
@@ -118,6 +126,9 @@ Route::middleware('auth')->group(function (): void {
     Route::get('licencias/ajax/list', [LicenciaController::class, 'list'])->name('licencias.list');
     // Búsqueda JSON de funcionarios para el combo de la pantalla «Licenciar».
     Route::get('licencias/ajax/funcionarios', [LicenciaController::class, 'buscarFuncionarios'])->name('licencias.funcionarios');
+    // Saldo de permisos por horas contra el tope mensual, en vivo mientras se
+    // arma la licencia de un funcionario.
+    Route::get('licencias/ajax/saldo', [LicenciaController::class, 'saldo'])->name('licencias.saldo');
     // Alcance «por dirección»: el catálogo de direcciones y unidades, y el
     // personal con contrato de la elegida, para verlo antes de anotar. Tienen
     // ruta propia y no la del reporte porque aquella exige el permiso de

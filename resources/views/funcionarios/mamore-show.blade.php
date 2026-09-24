@@ -75,8 +75,6 @@
                 <div><dt>Cédula</dt><dd>{{ $persona['full_ci'] ?? ($persona['ci'] ?? '—') }}</dd></div>
                 <div><dt>Género</dt><dd>{{ $persona['gender'] ?? '—' }}</dd></div>
                 <div><dt>Fecha de nacimiento</dt><dd>{{ $persona['birthday'] ?? '—' }}</dd></div>
-                {{-- <div><dt>Estado civil</dt><dd>{{ $persona['civil_status'] ?? '—' }}</dd></div> --}}
-                {{-- <div><dt>Nº de hijos</dt><dd>{{ $persona['number_children'] ?? '—' }}</dd></div> --}}
                 <div><dt>Profesión</dt><dd>{{ $persona['profession'] ?? '—' }}</dd></div>
             </dl>
         </div>
@@ -137,9 +135,6 @@
                         {{ $fechaContrato($contrato['finish'] ?? null) ?? 'Sin fecha de término' }}
                     </dd>
                 </div>
-                {{-- <div><dt>Código</dt><dd>{{ ($contrato['code'] ?? null) ?: '—' }}</dd></div>
-                <div><dt>Tipo de proceso</dt><dd>{{ ($contrato['procedure_type'] ?? null) ?: '—' }}</dd></div> --}}
-                {{-- <div><dt>Lugar de trabajo</dt><dd>{{ ($contrato['work_location'] ?? null) ?: (($contrato['job_location'] ?? null) ?: '—') }}</dd></div> --}}
             </dl>
         </div>
     @else
