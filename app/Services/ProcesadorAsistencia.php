@@ -695,6 +695,11 @@ class ProcesadorAsistencia
      * Tramo licenciado recortado al turno, en segundos desde medianoche.
      * `[null, null]` si la licencia no acota horas o no toca el turno.
      *
+     * La licencia que termina justo a la hora de entrada (la iza de bandera de
+     * 07:00 a 08:00 con turno de 08:00) o empieza justo a la de salida no suma
+     * horas, pero sí cubre esa marca: tiene prioridad sobre el reloj. Vuelve
+     * como un tramo de largo cero pegado a ese borde.
+     *
      * @return array{0: ?int, 1: ?int}
      */
     private function tramoLicencia(?Licencia $licencia, int $hEntrada, int $hSalida): array
@@ -708,6 +713,14 @@ class ProcesadorAsistencia
 
         if ($entra === null || $sale === null || $sale <= $entra) {
             return [null, null];
+        }
+
+        if ($sale === $hEntrada) {
+            return [$hEntrada, $hEntrada];
+        }
+
+        if ($entra === $hSalida) {
+            return [$hSalida, $hSalida];
         }
 
         $recortadoEntra = max($entra, $hEntrada);

@@ -125,8 +125,8 @@
                                 <td style="text-align: center" rowspan="{{ $filas }}">{{ $nombreDia }}</td>
                             @endif
                             <td>{{ trim((string) $bloque['turno']->nombreTurno) }}</td>
-                            <td style="text-align: center">{{ $bloque['entrada'] === null ? '' : P::hora($bloque['entrada']) }}</td>
-                            <td style="text-align: center">{{ $bloque['salida'] === null ? '' : P::hora($bloque['salida']) }}</td>
+                            <td style="text-align: center">{{ ! $bloque['entradaExigida'] ? 'licencia' : ($bloque['entrada'] === null ? '' : P::hora($bloque['entrada'])) }}</td>
+                            <td style="text-align: center">{{ ! $bloque['salidaExigida'] ? 'licencia' : ($bloque['salida'] === null ? '' : P::hora($bloque['salida'])) }}</td>
                             <td style="text-align: center">{{ $bloque['atraso'] > 0 ? P::desvio($bloque['atraso']) : '' }}</td>
                             <td style="text-align: center"><b>{{ $bloque['estado'] === P::ABANDONO ? 'ABANDONO' : '' }}</b></td>
                             <td style="text-align: center"><b>{{ P::FALTAS[$bloque['estado']] ?? '' }}</b></td>

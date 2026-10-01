@@ -19,7 +19,8 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * Arma el reporte de marcaciones procesadas como .xlsx nativo, con la misma
  * maqueta que la versión imprimible (`reportes/marcaciones/procesado/print`):
  * logo, encabezado institucional, las 13 columnas con la fecha y el día
- * combinados por jornada, totales, resumen, referencias y firmas.
+ * combinados por jornada, totales y firmas. El resumen de horas, los días por
+ * estado y las referencias quedan solo en el imprimible.
  *
  * Todas las celdas de datos se escriben como texto explícito: si se dejaran
  * como números, Excel convertiría «08:25:00» en una hora y «1/7/2026» en una
@@ -71,7 +72,7 @@ class ExcelMarcacionesProcesadas
 
         $fila = $this->escribirEncabezado($hoja, $persona, $desde, $hasta);
         $fila = $this->escribirTabla($hoja, $dias, $fila);
-        $fila = $this->escribirResumen($hoja, $totales, $fila);
+        $fila = $this->escribirTotales($hoja, $totales, $fila);
         $this->escribirFirmas($hoja, $fila);
 
         $this->aplicarFormatoHoja($hoja);
@@ -242,7 +243,9 @@ class ExcelMarcacionesProcesadas
         $fila++;
         $primeraFilaDatos = $fila;
 
-        foreach ($dias as $dia) {
+        // Solo los días con turno asignado, igual que la pantalla y el
+        // imprimible: los «no laborable» no se controlan.
+        foreach ($dias->reject(fn (array $dia): bool => $dia['estado'] === ProcesadorAsistencia::NO_LABORABLE) as $dia) {
             $fila = $this->escribirDia($hoja, $dia, $fila);
         }
 
@@ -304,8 +307,8 @@ class ExcelMarcacionesProcesadas
                 $indice === 0 ? $fecha : '',
                 $indice === 0 ? $nombreDia : '',
                 trim((string) $bloque['turno']->nombreTurno),
-                $bloque['entrada'] === null ? '' : ProcesadorAsistencia::hora($bloque['entrada']),
-                $bloque['salida'] === null ? '' : ProcesadorAsistencia::hora($bloque['salida']),
+                ! $bloque['entradaExigida'] ? 'licencia' : ($bloque['entrada'] === null ? '' : ProcesadorAsistencia::hora($bloque['entrada'])),
+                ! $bloque['salidaExigida'] ? 'licencia' : ($bloque['salida'] === null ? '' : ProcesadorAsistencia::hora($bloque['salida'])),
                 $bloque['atraso'] > 0 ? ProcesadorAsistencia::desvio($bloque['atraso']) : '',
                 $bloque['estado'] === ProcesadorAsistencia::ABANDONO ? 'ABANDONO' : '',
                 ProcesadorAsistencia::FALTAS[$bloque['estado']] ?? '',
@@ -348,11 +351,11 @@ class ExcelMarcacionesProcesadas
     }
 
     /**
-     * Fila de totales, resumen de horas, días por estado y referencias.
+     * Fila de totales del rango, al pie de la tabla.
      *
      * @param  array<string, mixed>  $totales
      */
-    private function escribirResumen(Worksheet $hoja, array $totales, int $fila): int
+    private function escribirTotales(Worksheet $hoja, array $totales, int $fila): int
     {
         $hoja->mergeCells("A{$fila}:E{$fila}");
         $hoja->setCellValue("A{$fila}", 'Totales del rango:');
@@ -365,37 +368,7 @@ class ExcelMarcacionesProcesadas
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'D9D9D9']],
         ]);
 
-        $fila += 2;
-
-        $porEstado = [];
-
-        foreach ($totales['porEstado'] as $estado => $cantidad) {
-            $porEstado[] = (ProcesadorAsistencia::ETIQUETAS[$estado] ?? $estado).": {$cantidad}";
-        }
-
-        $lineas = [
-            'Horas computadas: '.ProcesadorAsistencia::duracion($totales['computado'])
-                .' de '.ProcesadorAsistencia::duracion($totales['esperado'])
-                .'  |  Saldo: '.($totales['saldo'] > 0 ? '+' : '').ProcesadorAsistencia::duracion($totales['saldo'])
-                .'  |  Salida anticipada: '.ProcesadorAsistencia::desvio($totales['anticipo']),
-            'Días por estado: '.implode('  |  ', $porEstado),
-            '',
-            'Referencias:',
-            '    T.C. = licencia de turno completo · C.G.H. = licencia con goce de haberes',
-            '    Atraso = se dispara cuando la entrada pasa la tolerancia, y se mide contra la hora de entrada del turno.',
-            '    Abandono = se retiró antes de la mínima hora de salida, o no marcó un tramo que la licencia no cubría.',
-            '    Horas computadas = acotadas al turno; marcar dentro de la tolerancia cuenta como llegar a la hora.',
-            '    Los días excepcionales y las licencias de turno completo no controlan asistencia.',
-        ];
-
-        foreach ($lineas as $linea) {
-            $hoja->mergeCells("A{$fila}:".self::ULTIMA_COLUMNA.$fila);
-            $hoja->setCellValue("A{$fila}", $linea);
-            $hoja->getStyle("A{$fila}")->getFont()->setSize(9)->setBold($linea === 'Referencias:');
-            $fila++;
-        }
-
-        return $fila;
+        return $fila + 1;
     }
 
     /**

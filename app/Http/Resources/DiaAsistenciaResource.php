@@ -70,6 +70,10 @@ class DiaAsistenciaResource extends JsonResource
                 : null,
             'entrada' => ProcesadorAsistencia::hora($bloque['entrada']),
             'salida' => ProcesadorAsistencia::hora($bloque['salida']),
+            // La licencia cubre esa marca y tiene prioridad sobre el reloj: el
+            // consumidor muestra «licencia» en vez de un «—» que parece olvido.
+            'entradaPorLicencia' => ! $bloque['entradaExigida'],
+            'salidaPorLicencia' => ! $bloque['salidaExigida'],
             'estado' => $bloque['estado'],
             'estadoEtiqueta' => ProcesadorAsistencia::ETIQUETAS[$bloque['estado']] ?? $bloque['estado'],
             'atrasoSegundos' => $bloque['atraso'],

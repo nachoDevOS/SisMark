@@ -161,8 +161,13 @@
         <div class="tabs__panel" data-panel="procesado" hidden>
             <div class="tabla-filtros">
                 <div class="tabla-filtros__extra">
-                    <input type="date" id="p-desde" value="{{ $desde }}" aria-label="Desde">
-                    <input type="date" id="p-hasta" value="{{ $hasta }}" aria-label="Hasta">
+                    {{-- Un mes entero, como el perfil de Mamoré: la asistencia se
+                         mira y se cierra por mes. --}}
+                    <label class="filtro">
+                        Mes
+                        <input type="month" id="p-mes" value="{{ now()->format('Y-m') }}"
+                               max="{{ now()->format('Y-m') }}" aria-label="Mes y año de la asistencia">
+                    </label>
                 </div>
             </div>
 
@@ -179,6 +184,17 @@
         const ci = @json($ci);
         const reporteBase = @json($reporteUrl);
         const enlaceReporte = document.getElementById('m-reporte');
+        const hoy = @json(now()->toDateString());
+
+        // «2026-09» → del 1 al último día del mes. El mes en curso corta en hoy:
+        // los días que todavía no pasaron saldrían como faltas.
+        function rangoDelMes(mes) {
+            if (!mes) { return {}; }
+            const [anio, numero] = mes.split('-').map(Number);
+            const ultimo = new Date(anio, numero, 0).getDate();
+            const hasta = `${mes}-${String(ultimo).padStart(2, '0')}`;
+            return { desde: `${mes}-01`, hasta: hasta < hoy ? hasta : hoy };
+        }
 
         // Cada solapa: su endpoint, su contenedor y qué filtros manda.
         const paneles = {
@@ -225,13 +241,12 @@
                 // base local como respaldo.
                 filtros: () => ({
                     persona: ci,
-                    desde: document.getElementById('p-desde').value,
-                    hasta: document.getElementById('p-hasta').value,
+                    ...rangoDelMes(document.getElementById('p-mes').value),
                     // Sin la línea de nombre, CI, PIN y cargo: la cabecera de la
                     // ficha ya la muestra completa, unos centímetros más arriba.
                     encabezado: 0,
                 }),
-                controles: ['p-desde', 'p-hasta'],
+                controles: ['p-mes'],
             },
             @endif
         };
