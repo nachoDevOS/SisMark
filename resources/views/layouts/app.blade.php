@@ -589,59 +589,26 @@
         .pag__link--disabled { color: #c1c7cf; cursor: not-allowed; }
         .pag__link--puntos { border-color: transparent; background: none; color: var(--muted); }
 
-        /* ===== Escritorio: tarjetas de estadística y mini gráfico ===== */
+        /* ===== Escritorio: cuatro números del día, avisos y accesos ===== */
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
         @media (max-width: 960px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 560px) { .stats-grid { grid-template-columns: 1fr; } }
         .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: .625rem;
-            padding: 1rem 1.1rem; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
-        .stat-card__valor { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
-        .stat-card__label { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
+            padding: 1.25rem 1.1rem; box-shadow: 0 1px 2px rgba(0,0,0,.05); text-align: center; }
+        .stat-card__valor { font-size: 2.25rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+        .stat-card__label { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+        .stat-card__sub { font-size: .75rem; color: var(--muted); margin-top: .25rem; }
         .stat-card--success .stat-card__valor { color: #166534; }
         .stat-card--danger .stat-card__valor { color: #991b1b; }
-        .stat-card--warning .stat-card__valor { color: #92400e; }
-
-        .mini-chart { display: flex; align-items: flex-end; gap: .3rem; height: 8rem; padding-top: .5rem; }
-        .mini-chart__barra { flex: 1; background: var(--verde); border-radius: .2rem .2rem 0 0; min-height: 2px; }
-        .mini-chart__ejes { display: flex; justify-content: space-between; color: var(--muted); font-size: .7rem; margin-top: .4rem; }
-        /* Las 24 barras del día no entran con la separación del gráfico de
-           tendencia: quedan más juntas y más bajas. */
-        .mini-chart--horas { height: 6.5rem; gap: .15rem; }
-        /* Una hora sin marcaciones no es lo mismo que una con pocas: se dibuja
-           apenas insinuada para que el hueco se lea como hueco. */
-        .mini-chart__barra--cero { background: var(--border); }
-        .mini-chart__barra--pico { background: var(--sidebar); }
-
-        /* ===== Escritorio: tercera línea de la tarjeta, la que interpreta el
-           número de arriba («68 en un lunes normal»). Sin esto el valor es un
-           dato suelto que nadie sabe si está bien o mal. ===== */
-        .stat-card__sub { font-size: .72rem; color: var(--muted); margin-top: .35rem; line-height: 1.35; }
 
         .escritorio__seccion { font-size: .78rem; font-weight: 700; letter-spacing: .06em;
             text-transform: uppercase; color: var(--muted); margin: 0 0 .75rem; }
         .escritorio__fecha { font-size: .8rem; color: var(--muted); margin-left: auto;
             text-transform: capitalize; }
-        .escritorio__aviso { display: flex; align-items: flex-start; gap: .6rem; margin-bottom: 1.5rem; }
+        .escritorio__aviso { display: flex; align-items: flex-start; gap: .6rem; margin-bottom: 1rem; }
         .escritorio__aviso svg { width: 1.2rem; height: 1.2rem; flex-shrink: 0; margin-top: .1rem; }
-
-        /* Dos tarjetas a la par: gráfico ancho + resumen angosto. */
-        .escritorio__par { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1.5rem;
-            align-items: start; }
-        @media (max-width: 860px) { .escritorio__par { grid-template-columns: 1fr; } }
-        .escritorio__tendencia { margin-bottom: 1.5rem; }
-
-        /* Lista de dato/valor de los paneles del escritorio: el número alineado
-           a la derecha y en cifras de ancho fijo, para que las columnas de
-           dígitos queden a plomo entre filas. */
-        .datos-lista { margin: 0; display: flex; flex-direction: column; }
-        .datos-lista > div { display: flex; align-items: baseline; justify-content: space-between;
-            gap: 1rem; padding: .45rem 0; border-bottom: 1px solid var(--border); }
-        .datos-lista > div:last-child { border-bottom: 0; padding-bottom: 0; }
-        .datos-lista dt { font-size: .8125rem; color: var(--muted); margin: 0; }
-        .datos-lista dd { margin: 0; font-size: .95rem; font-weight: 600;
-            font-variant-numeric: tabular-nums; white-space: nowrap; }
-        .datos-lista__alerta dd { color: var(--danger); }
-        .datos-lista__nota { font-size: .72rem; color: var(--muted); margin: .7rem 0 0; line-height: 1.45; }
+        .escritorio__accesos { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: 1.5rem; }
+        .escritorio__pie { font-size: .8rem; color: var(--muted); margin: 0; }
 
         /* ===== Escritorio: el botón de la topbar pliega el menú a una franja
            de iconos (el nombre de cada opción queda en su `title`) ===== */
