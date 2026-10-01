@@ -6,7 +6,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Acceso · {{ config('app.name') }}</title>
     <meta name="description" content="Sistema de sincronización de biométricos del Gobierno Autónomo Departamental del Beni.">
-    <link rel="icon" href="{{ asset('image/icon.png') }}">
+    <link rel="icon" type="image/png" href="{{ asset('image/huella.png') }}">
     <style>
         :root {
             --verde: #00a65a; --verde-osc: #008d4c; --sidebar: #0d3b3e; --sidebar-header: #082628;
