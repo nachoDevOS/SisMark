@@ -8,8 +8,9 @@
     // SIAT no conoce los contratos: ahí esas columnas no tienen sentido.
     $muestraContrato = $fuente === 'mamore';
     $columnas = $muestraContrato ? 7 : 5;
-    // La etiqueta Con/Sin contrato solo aporta cuando la lista está sin filtrar.
-    $muestraEtiqueta = $muestraContrato && $contrato === 'todos';
+    // La etiqueta (tipo de contrato o «Sin contrato») sobra cuando la lista ya
+    // está filtrada por eso mismo.
+    $muestraEtiqueta = $muestraContrato && $contrato !== 'sin' && $tipo === null;
     // «Todos» solo se sabe cuando la API informó las dos situaciones.
     $totalTodos = is_null($totales['con']) || is_null($totales['sin'])
         ? null
@@ -20,7 +21,8 @@
 <div id="totales-contrato" hidden
      data-todos="{{ $totalTodos }}"
      data-con="{{ $totales['con'] }}"
-     data-sin="{{ $totales['sin'] }}"></div>
+     data-sin="{{ $totales['sin'] }}"
+     data-tipos="{{ json_encode($totales['tipos']) }}"></div>
 
 <div class="card">
     <table>
@@ -52,7 +54,7 @@
                                     {{ $persona['nombre'] }}
                                     @if ($muestraEtiqueta && !is_null($persona['conContrato']))
                                         <span class="pill {{ $persona['conContrato'] ? 'pill--ok' : 'pill--no' }}">
-                                            {{ $persona['conContrato'] ? 'Con contrato' : 'Sin contrato' }}
+                                            {{ $persona['conContrato'] ? ($persona['tipoContrato'] ?? 'Con contrato') : 'Sin contrato' }}
                                         </span>
                                     @endif
                                 </div>

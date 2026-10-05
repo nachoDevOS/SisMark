@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator as Paginador;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /**
@@ -50,18 +51,20 @@ class PersonaController extends Controller
         $porPagina = $this->porPagina($request);
         $fuente = $request->query('fuente') === 'siat' ? 'siat' : 'mamore';
         $contrato = $this->contrato($request);
+        $tipo = $this->tipoContrato($request, $contrato);
         $errorFuente = null;
-        $totales = ['con' => null, 'sin' => null];
+        $totales = ['con' => null, 'sin' => null, 'tipos' => []];
 
         if ($fuente === 'siat') {
             // SIAT no conoce los contratos: el filtro es solo de Mamoré.
             $contrato = 'todos';
+            $tipo = null;
             $funcionarios = $this->funcionariosLocales($busqueda, $porPagina);
         } else {
-            [$funcionarios, $errorFuente, $totales] = $this->funcionariosMamore($request, $mamore, $busqueda, $porPagina, $contrato);
+            [$funcionarios, $errorFuente, $totales] = $this->funcionariosMamore($request, $mamore, $busqueda, $porPagina, $contrato, $tipo);
         }
 
-        return view('funcionarios.list', compact('funcionarios', 'fuente', 'contrato', 'totales', 'errorFuente'));
+        return view('funcionarios.list', compact('funcionarios', 'fuente', 'contrato', 'tipo', 'totales', 'errorFuente'));
     }
 
     /**
@@ -325,6 +328,17 @@ class PersonaController extends Controller
     }
 
     /**
+     * Tipo de contrato (id de Mamoré: permanente, eventual…). Solo tiene
+     * sentido dentro de «Con contrato»; en otra situación se ignora.
+     */
+    private function tipoContrato(Request $request, string $contrato): ?int
+    {
+        $tipo = (int) $request->query('tipo', 0);
+
+        return $contrato === 'con' && $tipo > 0 ? $tipo : null;
+    }
+
+    /**
      * Funcionarios de la base local (SIAT), normalizados a la forma común de la
      * tabla.
      */
@@ -349,6 +363,7 @@ class PersonaController extends Controller
                 'cargo' => null,
                 'direccion' => null,
                 'conContrato' => null,
+                'tipoContrato' => null,
                 // SIAT no guarda fotos: solo las tiene Mamoré.
                 'image' => null,
                 'imageThumb' => null,
@@ -374,14 +389,14 @@ class PersonaController extends Controller
      * La API pasó a cruzar todas las palabras contra todos los campos, que es
      * donde corresponde hacerlo: en la base que tiene los datos.
      *
-     * @return array{0: LengthAwarePaginator, 1: ?string, 2: array{con: ?int, sin: ?int}}
+     * @return array{0: LengthAwarePaginator, 1: ?string, 2: array{con: ?int, sin: ?int, tipos: array<int, array{id: int, nombre: string, total: int}>}}
      */
-    private function funcionariosMamore(Request $request, MamoreClient $mamore, string $busqueda, int $porPagina, string $contrato): array
+    private function funcionariosMamore(Request $request, MamoreClient $mamore, string $busqueda, int $porPagina, string $contrato, ?int $tipo): array
     {
         $pagina = max(1, (int) $request->query('page', 1));
 
         try {
-            $respuesta = $mamore->people($pagina, $porPagina, $busqueda, $contrato);
+            $respuesta = $mamore->people($pagina, $porPagina, $busqueda, $contrato, tipo: $tipo);
             $meta = $respuesta['meta'] ?? [];
 
             $paginador = new Paginador(
@@ -394,7 +409,7 @@ class PersonaController extends Controller
 
             return [$paginador, null, $this->totalesPorContrato($meta)];
         } catch (MamoreException $e) {
-            return [$this->paginadorVacio($request, $porPagina), $e->getMessage(), ['con' => null, 'sin' => null]];
+            return [$this->paginadorVacio($request, $porPagina), $e->getMessage(), ['con' => null, 'sin' => null, 'tipos' => []]];
         }
     }
 
@@ -403,6 +418,14 @@ class PersonaController extends Controller
         return [
             'con' => isset($meta['total_con_contrato']) ? (int) $meta['total_con_contrato'] : null,
             'sin' => isset($meta['total_sin_contrato']) ? (int) $meta['total_sin_contrato'] : null,
+            // Mamoré los nombra a su manera («eventual»): se capitaliza para el combo.
+            'tipos' => collect($meta['tipos_contrato'] ?? [])
+                ->map(fn (array $tipo): array => [
+                    'id' => (int) $tipo['id'],
+                    'nombre' => Str::ucfirst((string) $tipo['nombre']),
+                    'total' => (int) $tipo['total'],
+                ])
+                ->all(),
         ];
     }
 

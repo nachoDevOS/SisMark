@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\MamoreException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
  * Directorio de funcionarios servido únicamente por la API de Mamoré: búsqueda
@@ -305,6 +306,10 @@ class DirectorioMamore
             )),
             // `has_contract` lo informa la API; null si no vino en la respuesta.
             'conContrato' => isset($persona['has_contract']) ? (bool) $persona['has_contract'] : null,
+            // Permanente, eventual, consultoría…: el tipo del contrato firmado.
+            'tipoContrato' => filled($contrato['procedure_type'] ?? null)
+                ? Str::ucfirst(trim((string) $contrato['procedure_type']))
+                : null,
             // Haber y vigencia del contrato firmado. Los usa el régimen
             // disciplinario para expresar el descuento en bolivianos: las
             // escalas del RIP hablan de «días de la remuneración mensual», y sin

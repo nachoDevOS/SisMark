@@ -28,10 +28,14 @@
                 <option value="siat">SIAT</option>
             </select>
 
-            {{-- Solo Mamoré conoce los contratos: con SIAT el select se oculta. --}}
+            {{-- Solo Mamoré conoce los contratos: con SIAT el select se oculta.
+                 Dentro de «Con contrato» van los tipos (permanente, eventual…),
+                 que llegan con cada carga junto con su total. --}}
             <select id="f-contrato" aria-label="Situación de contrato">
                 <option value="todos">Todos</option>
-                <option value="con">Con contrato</option>
+                <optgroup label="Con contrato">
+                    <option value="con">Todos con contrato</option>
+                </optgroup>
                 <option value="sin">Sin contrato</option>
             </select>
         </div>
@@ -55,6 +59,7 @@
             const selPaginate = document.getElementById('f-paginate');
             const selFuente = document.getElementById('f-fuente');
             const selContrato = document.getElementById('f-contrato');
+            const grupoCon = selContrato.querySelector('optgroup');
 
             // El filtro por contrato solo aplica a Mamoré (SIAT no tiene contratos).
             function sincronizarContrato() {
@@ -63,24 +68,56 @@
                 if (!esMamore) { selContrato.value = 'todos'; }
             }
 
+            // Un tipo viaja como «tipo:5»: es «con contrato» de ese tipo.
+            function filtroElegido() {
+                const valor = selContrato.value;
+                return valor.startsWith('tipo:')
+                    ? { contrato: 'con', tipo: valor.slice(5) }
+                    : { contrato: valor, tipo: '' };
+            }
+
             // La API devuelve cuántos hay en cada situación (ya con la búsqueda
             // aplicada): se muestran en la etiqueta de cada opción.
-            const etiquetas = { todos: 'Todos', con: 'Con contrato', sin: 'Sin contrato' };
+            const etiquetas = { todos: 'Todos', con: 'Todos con contrato', sin: 'Sin contrato' };
+            const conTotal = (texto, total) => total === '' || total === undefined
+                ? texto
+                : `${texto} (${Number(total).toLocaleString('es-BO')})`;
 
             function actualizarTotales() {
                 const datos = resultados.querySelector('#totales-contrato');
-                for (const opcion of selContrato.options) {
-                    const total = datos ? datos.dataset[opcion.value] : '';
-                    opcion.textContent = total
-                        ? `${etiquetas[opcion.value]} (${Number(total).toLocaleString('es-BO')})`
-                        : etiquetas[opcion.value];
+                for (const valor of Object.keys(etiquetas)) {
+                    const opcion = selContrato.querySelector(`option[value="${valor}"]`);
+                    opcion.textContent = conTotal(etiquetas[valor], datos ? datos.dataset[valor] : '');
                 }
+                actualizarTipos(datos ? JSON.parse(datos.dataset.tipos || '[]') : []);
+            }
+
+            // Los tipos se rearman con cada carga, conservando la elección. La API
+            // omite los tipos sin nadie: si la búsqueda vació el elegido, se
+            // mantiene igual, con (0), para que el select diga lo que se ve.
+            function actualizarTipos(tipos) {
+                const elegido = selContrato.value;
+                const nombreElegido = selContrato.selectedOptions[0]?.dataset.nombre;
+                grupoCon.querySelectorAll('option[value^="tipo:"]').forEach((opcion) => opcion.remove());
+                for (const tipo of tipos) {
+                    const opcion = new Option(conTotal(tipo.nombre, tipo.total), `tipo:${tipo.id}`);
+                    opcion.dataset.nombre = tipo.nombre;
+                    grupoCon.append(opcion);
+                }
+                if (elegido.startsWith('tipo:') && !grupoCon.querySelector(`option[value="${elegido}"]`)) {
+                    const opcion = new Option(conTotal(nombreElegido, 0), elegido);
+                    opcion.dataset.nombre = nombreElegido;
+                    grupoCon.append(opcion);
+                }
+                selContrato.value = elegido;
             }
 
             async function cargar(page = 1) {
+                const { contrato, tipo } = filtroElegido();
                 const params = new URLSearchParams({
                     fuente: selFuente.value,
-                    contrato: selContrato.value,
+                    contrato: contrato,
+                    tipo: tipo,
                     q: inputBuscar.value,
                     por_pagina: selPaginate.value,
                     page: page,

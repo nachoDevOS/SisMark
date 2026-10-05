@@ -47,6 +47,8 @@ class MamoreClient
      *
      * El filtro `$contrato` («todos», «con» o «sin») lo resuelve la propia API
      * con el parámetro `?contrato=`, así que la paginación sigue siendo la suya.
+     * `$tipo` (id del tipo de contrato: permanente, eventual…) recorta a los
+     * que tienen contrato firmado de ese tipo.
      *
      * `$direccion` filtra por dirección administrativa. Con `$desde`/`$hasta`
      * ese filtro pasa a preguntar **quién estuvo ahí durante el rango** —cuenta
@@ -66,6 +68,7 @@ class MamoreClient
         ?string $desde = null,
         ?string $hasta = null,
         ?int $unidad = null,
+        ?int $tipo = null,
     ): array {
         $parametros = ['page' => $page, 'limit' => $limit];
 
@@ -75,6 +78,10 @@ class MamoreClient
 
         if (in_array($contrato, ['con', 'sin'], true)) {
             $parametros['contrato'] = $contrato;
+        }
+
+        if ($tipo !== null) {
+            $parametros['tipo'] = $tipo;
         }
 
         if ($direccion !== null) {
