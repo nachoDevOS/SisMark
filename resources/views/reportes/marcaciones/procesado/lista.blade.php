@@ -1,15 +1,15 @@
 @php
-    use App\Models\Turno;
+    use App\Models\Horario;
     use App\Services\ProcesadorAsistencia as P;
 
     // $persona es la ficha resuelta (Mamoré, con la base local como respaldo).
     $nombreEmpleado = $persona['nombreFormal'] ?: $persona['nombre'];
     $parametros = ['persona' => $persona['ci'], 'desde' => $desde, 'hasta' => $hasta];
 
-    // La tabla en pantalla lista solo los días con turno asignado: los «no
+    // La tabla en pantalla lista solo los días con horario asignado: los «no
     // laborable» no se controlan y llenaban el listado de filas vacías. Siguen
     // contados en «Días por estado» del resumen. El imprimible los saca igual.
-    $diasConTurno = $dias->reject(fn (array $dia): bool => $dia['estado'] === P::NO_LABORABLE);
+    $diasConHorario = $dias->reject(fn (array $dia): bool => $dia['estado'] === P::NO_LABORABLE);
 @endphp
 
 {{-- Partial: se inyecta bajo el filtro del reporte vía AJAX (no lleva layout). --}}
@@ -56,7 +56,7 @@
                 <tr>
                     <th>Fecha</th>
                     <th>Día</th>
-                    <th>Turno</th>
+                    <th>Horario</th>
                     <th>Entró</th>
                     <th>Salió</th>
                     <th>Atraso</th>
@@ -64,20 +64,20 @@
                     <th>Falta</th>
                     <th>Entrada lic.</th>
                     <th>Salida lic.</th>
-                    <th title="Licencia de turno completo">T.C.</th>
+                    <th title="Licencia de horario completo">T.C.</th>
                     <th title="Con goce de haberes">C.G.H.</th>
                     <th>Motivo licencia</th>
                 </tr>
             </thead>
             <tbody>
-                @forelse ($diasConTurno as $dia)
+                @forelse ($diasConHorario as $dia)
                     @php
-                        $nombreDia = Turno::DIAS[$dia['fecha']->dayOfWeek + 1] ?? '—';
+                        $nombreDia = Horario::DIAS[$dia['fecha']->dayOfWeek + 1] ?? '—';
                         $filas = max(1, count($dia['bloques']));
                     @endphp
 
                     @if ($dia['bloques'] === [])
-                        {{-- Día resuelto sin mirar turnos: excepcional o sin turno asignado. --}}
+                        {{-- Día resuelto sin mirar horarios: excepcional o sin horario asignado. --}}
                         <tr>
                             <td><strong>{{ $dia['fecha']->format('d/m/Y') }}</strong></td>
                             <td>{{ $nombreDia }}</td>
@@ -100,10 +100,10 @@
                                     <td rowspan="{{ $filas }}"><strong>{{ $dia['fecha']->format('d/m/Y') }}</strong></td>
                                     <td rowspan="{{ $filas }}">{{ $nombreDia }}</td>
                                 @endif
-                                {{-- Solo el horario: los avisos de configuración del turno
+                                {{-- Solo el horario: los avisos de configuración del horario
                                      (`$bloque['avisos']`) repetían la misma advertencia en cada
                                      fila y tapaban los datos del día. --}}
-                                <td>{{ trim((string) $bloque['turno']->nombreTurno) }}</td>
+                                <td>{{ trim((string) $bloque['horario']->nombreHorario) }}</td>
                                 <td>
                                     {{ $bloque['entrada'] === null ? '' : P::hora($bloque['entrada']) }}
                                     @unless ($bloque['entradaExigida'])
@@ -128,15 +128,15 @@
                         @endforeach
                     @endif
                 @empty
-                    <tr><td colspan="13" class="vacio">Sin días con turno asignado en el rango seleccionado.</td></tr>
+                    <tr><td colspan="13" class="vacio">Sin días con horario asignado en el rango seleccionado.</td></tr>
                 @endforelse
             </tbody>
         </table>
     </div>
 
     <p style="color: var(--muted); font-size: .8rem; margin-bottom: 0;">
-        <strong>T.C.</strong> = licencia de turno completo · <strong>C.G.H.</strong> = con goce de haberes.
-        El atraso se dispara con la tolerancia del turno y se mide contra su hora de entrada.
+        <strong>T.C.</strong> = licencia de horario completo · <strong>C.G.H.</strong> = con goce de haberes.
+        El atraso se dispara con la tolerancia del horario y se mide contra su hora de entrada.
         <strong>Abandono</strong> = se retiró antes de la mínima hora de salida, o no marcó un tramo que la licencia no cubría.
     </p>
 </div>

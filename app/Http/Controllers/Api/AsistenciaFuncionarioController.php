@@ -42,7 +42,7 @@ use Illuminate\Validation\ValidationException;
  * ---
  *
  * El cálculo vive acá y no del lado del consumidor: las reglas de asistencia
- * —turnos nocturnos, turnos partidos, licencias parciales, tolerancias— son de
+ * —horarios nocturnos, horarios partidos, licencias parciales, tolerancias— son de
  * {@see ProcesadorAsistencia}, y duplicarlas garantiza que los dos sistemas
  * terminen dando números distintos para el mismo día.
  */
@@ -58,7 +58,7 @@ class AsistenciaFuncionarioController extends Controller
     /**
      * Marcaciones crudas del funcionario en el rango, en orden cronológico.
      *
-     * Es lo que el reloj registró, sin cruzar contra turnos ni licencias.
+     * Es lo que el reloj registró, sin cruzar contra horarios ni licencias.
      */
     public function marcaciones(Request $request, string $ci): AnonymousResourceCollection
     {
@@ -76,7 +76,7 @@ class AsistenciaFuncionarioController extends Controller
     }
 
     /**
-     * Asistencia procesada: las marcas cruzadas contra el turno asignado, los
+     * Asistencia procesada: las marcas cruzadas contra el horario asignado, los
      * días excepcionales y las licencias, con entradas, salidas, atrasos y horas
      * computadas.
      *
@@ -148,7 +148,7 @@ class AsistenciaFuncionarioController extends Controller
     /**
      * Licencias del funcionario en el rango, **una por pedido**.
      *
-     * Un alta expande el rango a una fila por día y turno, así que un permiso
+     * Un alta expande el rango a una fila por día y horario, así que un permiso
      * del 14 al 15 de agosto son dos filas. Devolverlas sueltas le mostraba al
      * funcionario dos licencias donde pidió una; se agrupan por `solicitud`,
      * igual que las pantallas de Recursos Humanos.
@@ -279,7 +279,7 @@ class AsistenciaFuncionarioController extends Controller
         }
 
         $dias = Licencia::query()
-            ->with('turno')
+            ->with('horario')
             ->deLaSolicitud($licencia)
             ->orderBy('fecha')
             ->get();
@@ -296,7 +296,7 @@ class AsistenciaFuncionarioController extends Controller
             'dias' => $dias->map(fn (Licencia $dia): array => [
                 'fecha' => $dia->fecha?->toDateString(),
                 'diaSemana' => $dia->fecha?->locale('es')->dayName,
-                'turno' => $dia->resumen_turno,
+                'horario' => $dia->resumen_horario,
                 'estado' => $dia->estado,
             ])->all(),
         ]);

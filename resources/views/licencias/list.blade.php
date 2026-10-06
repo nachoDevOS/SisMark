@@ -8,7 +8,7 @@
 @endphp
 
 {{-- Una fila por solicitud, no por día: el alta expande el rango a una fila por
-     día y turno, y sin agrupar «14 al 15 de agosto» se ve como dos licencias
+     día y horario, y sin agrupar «14 al 15 de agosto» se ve como dos licencias
      distintas. El desglose día por día está en la ficha. --}}
 <div class="card">
     <table>
@@ -74,13 +74,13 @@
                         </div>
                     </td>
                     <td>
-                        {{-- Días con turno dentro del rango, que no son los días
+                        {{-- Días con horario dentro del rango, que no son los días
                              corridos: un pedido de viernes a lunes licencia dos. --}}
                         {{ $dias }}
                     </td>
                     <td>
                         @if ($licencia->tCompleto)
-                            <span class="pill pill--info">Turno completo</span>
+                            <span class="pill pill--info">Horario completo</span>
                         @else
                             {{ $licencia->lEntra?->format('H:i') ?? '—' }} – {{ $licencia->lSale?->format('H:i') ?? '—' }}
                         @endif

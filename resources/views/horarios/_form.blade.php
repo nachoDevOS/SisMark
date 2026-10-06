@@ -1,7 +1,7 @@
 {{-- Campos compartidos por alta y edición. $horario puede no existir (alta).
      Réplica del formulario «Añadir/editar horario» del SIA de escritorio.
      Los name="..." del form quedan en PascalCase (claves del request); los
-     valores de precarga leen los atributos camelCase del modelo Turno local. --}}
+     valores de precarga leen los atributos camelCase del modelo Horario local. --}}
 @php
     $horario ??= null;
     $hm = fn ($valor) => $valor?->format('H:i');
@@ -17,13 +17,13 @@
      }"
      x-effect="nombre = (abreviaturas[dia] && hEntrada && hSalida) ? (abreviaturas[dia] + ': ' + hEntrada + ' - ' + hSalida) : ''">
     <div class="tarjeta" style="grid-column: 1 / -1;">
-        <h2>Descripción del turno</h2>
+        <h2>Descripción del horario</h2>
         <div class="grid-2">
             <div class="campo">
                 <label for="Dia">Día <span class="req">*</span></label>
                 <select id="Dia" name="Dia" x-model="dia" required>
                     <option value="">Seleccione una opción</option>
-                    @foreach (\App\Models\Turno::DIAS as $numero => $nombre)
+                    @foreach (\App\Models\Horario::DIAS as $numero => $nombre)
                         <option value="{{ $numero }}" @selected((string) old('Dia', $horario->dia ?? '') === (string) $numero)>{{ $nombre }}</option>
                     @endforeach
                 </select>
@@ -31,11 +31,11 @@
             </div>
 
             <div class="campo">
-                <label for="NombreTurno">Nombre del turno <span class="req">*</span></label>
-                <input type="text" id="NombreTurno" name="NombreTurno" maxlength="25"
+                <label for="nombreHorario">Nombre del horario <span class="req">*</span></label>
+                <input type="text" id="nombreHorario" name="nombreHorario" maxlength="25"
                        :value="nombre" readonly required>
                 <div class="ayuda">Se arma solo con el día y las horas de entrada/salida.</div>
-                @error('NombreTurno') <div class="error">{{ $message }}</div> @enderror
+                @error('nombreHorario') <div class="error">{{ $message }}</div> @enderror
             </div>
         </div>
     </div>
@@ -104,18 +104,6 @@
             <input type="number" id="HTrabajadas" name="HTrabajadas" step="0.01" min="0" max="24"
                    value="{{ old('HTrabajadas', $horario->hTrabajadas ?? '0.00') }}" required>
             @error('HTrabajadas') <div class="error">{{ $message }}</div> @enderror
-        </div>
-
-        <div class="campo check" style="margin-bottom: 0;">
-            <input type="checkbox" id="Sugerido" name="Sugerido" value="1"
-                   @checked(old('Sugerido', $horario->sugerido ?? false))>
-            <label for="Sugerido" style="margin: 0;">
-                Forma parte del horario sugerido
-                <small style="display: block; font-weight: 400; color: #6b7280;">
-                    Es el que se ofrece por defecto al dar de alta un contrato. Marcá un turno por
-                    cada día que se trabaja: el horario semanal son varias filas, una por día.
-                </small>
-            </label>
         </div>
     </div>
 </div>

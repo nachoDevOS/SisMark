@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\MamoreException;
 use App\Http\Requests\RevisarLicenciaRequest;
 use App\Http\Requests\StoreLicenciaRequest;
-use App\Models\AsignacionTurno;
+use App\Models\AsignacionHorario;
 use App\Models\Licencia;
 use App\Services\DirectorioMamore;
 use App\Services\ProcesadorAsistencia;
@@ -23,9 +23,9 @@ use Illuminate\View\View;
 
 /**
  * Licencias/permisos de personal sobre la base local MySQL, con el flujo del
- * sistema de escritorio: se elige el funcionario, se marcan sus turnos
+ * sistema de escritorio: se elige el funcionario, se marcan sus horarios
  * asignados y un rango de fechas, y se anotan las licencias resultantes (una
- * por día y turno). Eliminación lógica, como todo el sistema.
+ * por día y horario). Eliminación lógica, como todo el sistema.
  */
 class LicenciaController extends Controller
 {
@@ -58,7 +58,7 @@ class LicenciaController extends Controller
         $tipo = $this->tipo($request);
 
         // Una fila por solicitud, no por día: el alta expande el rango a una
-        // fila por día y turno, así que sin esto «14 al 15 de agosto» sale como
+        // fila por día y horario, así que sin esto «14 al 15 de agosto» sale como
         // dos licencias y parece que hay que aprobarlas por separado.
         //
         // Va en dos pasos —primero qué solicitudes entran, después la fila que
@@ -88,7 +88,7 @@ class LicenciaController extends Controller
      *
      * Se entra por una fila del listado, pero se muestra la **solicitud entera**
      * —todas las filas hermanas—, porque eso es lo que pidió el funcionario: el
-     * alta expande el rango a una fila por día y turno, y aprobar de a una
+     * alta expande el rango a una fila por día y horario, y aprobar de a una
      * obligaría a abrir cinco fichas para una licencia de una semana.
      *
      * Es el paso previo obligado a resolver: no se aprueba un permiso sin haber
@@ -99,7 +99,7 @@ class LicenciaController extends Controller
         $this->authorize('view', $licencia);
 
         $dias = Licencia::query()
-            ->with(['turno', 'revisor'])
+            ->with(['horario', 'revisor'])
             ->deLaSolicitud($licencia)
             ->orderBy('fecha')
             ->get();
@@ -244,10 +244,10 @@ class LicenciaController extends Controller
 
     /**
      * Pantalla «Licenciar»: combo de funcionario y, si ya hay uno elegido, la
-     * grilla de sus turnos asignados más el formulario del rango.
+     * grilla de sus horarios asignados más el formulario del rango.
      *
      * Los datos personales salen exclusivamente de la API de Mamoré; lo local
-     * son los turnos, que se cruzan por CI.
+     * son los horarios, que se cruzan por CI.
      */
     public function create(Request $request, DirectorioMamore $directorio): View
     {
@@ -265,12 +265,12 @@ class LicenciaController extends Controller
             }
         }
 
-        // Por defecto solo los turnos vigentes: un funcionario antiguo arrastra
+        // Por defecto solo los horarios vigentes: un funcionario antiguo arrastra
         // decenas de asignaciones viejas que solo son ruido.
         $incluirVencidos = $request->boolean('vencidos');
 
         $asignaciones = $persona !== null
-            ? $this->turnosAsignados($persona['ci'], $incluirVencidos)
+            ? $this->horariosAsignados($persona['ci'], $incluirVencidos)
             : collect();
 
         $vencidos = $persona !== null
@@ -322,7 +322,7 @@ class LicenciaController extends Controller
      * el recuadro de «Licenciar»: cuánto lleva en cada mes —y contrato— del
      * rango, cuánto suma lo que se está armando y si se pasa.
      *
-     * Resuelve los días igual que el alta —turnos del rango, los elegidos a
+     * Resuelve los días igual que el alta —horarios del rango, los elegidos a
      * mano, sin los días ya ocupados— y calcula con el mismo servicio que la
      * bloquea al guardar, así lo que se ve es lo que va a pasar.
      *
@@ -350,7 +350,7 @@ class LicenciaController extends Controller
         }
 
         $ci = trim($datos['ci']);
-        $asignaciones = $this->turnosDelRango([$ci], $desde, $hasta, array_map('intval', $datos['asignaciones'] ?? []));
+        $asignaciones = $this->horariosDelRango([$ci], $desde, $hasta, array_map('intval', $datos['asignaciones'] ?? []));
         $fechas = $registro->fechasNuevas($asignaciones, $desde, $hasta)[$ci] ?? [];
 
         // Salida y entrada invertidas no son un pedido: se muestra solo lo usado,
@@ -493,7 +493,7 @@ class LicenciaController extends Controller
 
     /**
      * Anota las licencias del rango, para un funcionario, varios, o la dirección
-     * (o unidad) elegida. La expansión (un registro por funcionario, día y turno)
+     * (o unidad) elegida. La expansión (un registro por funcionario, día y horario)
      * la hace el servicio; la validación, el Request.
      */
     public function store(
@@ -508,16 +508,16 @@ class LicenciaController extends Controller
         $modo = $datos['modo'];
         $desde = Carbon::parse($datos['desde'])->startOfDay();
         $hasta = Carbon::parse($datos['hasta'])->startOfDay();
-        // Los turnos elegidos a mano solo aplican al alta de un funcionario.
+        // Los horarios elegidos a mano solo aplican al alta de un funcionario.
         $elegidas = $modo === 'uno' ? ($datos['asignaciones'] ?? []) : [];
 
         try {
             $cis = match ($modo) {
                 'uno' => [trim((string) $datos['ci'])],
                 'varios' => array_map(trim(...), $datos['cis']),
-                // La dirección se resuelve a carnets antes de tocar los turnos:
+                // La dirección se resuelve a carnets antes de tocar los horarios:
                 // quién la integra lo sabe Mamoré, y acá solo se licencia a quien
-                // además tenga turno asignado en el rango.
+                // además tenga horario asignado en el rango.
                 default => $this->cisDeLaDireccion($directorio, $datos, $desde, $hasta),
             };
         } catch (MamoreException $e) {
@@ -526,8 +526,8 @@ class LicenciaController extends Controller
                 ->with('error', 'No se pudo traer el personal de la dirección desde Mamoré: '.$e->getMessage());
         }
 
-        // Una dirección sin nadie con contrato no llega siquiera a buscar turnos:
-        // con la lista vacía, `turnosDelRango` no acota por carnet y licenciaría
+        // Una dirección sin nadie con contrato no llega siquiera a buscar horarios:
+        // con la lista vacía, `horariosDelRango` no acota por carnet y licenciaría
         // a toda la Gobernación.
         if ($modo === 'direccion' && $cis === []) {
             return back()
@@ -537,12 +537,12 @@ class LicenciaController extends Controller
                     : 'Los funcionarios elegidos no pertenecen a esa dirección, o no tienen contrato firmado en el rango.');
         }
 
-        $asignacionesPorCi = $this->turnosDelRango($cis, $desde, $hasta, $elegidas);
+        $asignacionesPorCi = $this->horariosDelRango($cis, $desde, $hasta, $elegidas);
 
         if ($asignacionesPorCi->isEmpty()) {
             return back()
                 ->withInput()
-                ->with('error', $this->motivoSinTurnos($modo, $elegidas));
+                ->with('error', $this->motivoSinHorarios($modo, $elegidas));
         }
 
         // Tope mensual de permisos por horas, solo para los permisos personales:
@@ -563,8 +563,8 @@ class LicenciaController extends Controller
         }
 
         // El respaldo se sube una sola vez y la ruta se copia a todas las filas
-        // que genere el rango: son la misma licencia partida por día y turno.
-        // Va después de resolver los turnos, para no dejar un archivo huérfano
+        // que genere el rango: son la misma licencia partida por día y horario.
+        // Va después de resolver los horarios, para no dejar un archivo huérfano
         // en el bucket cuando el alta no llega a crear nada.
         [$adjunto, $adjuntoNombre] = $request->hasFile('respaldo')
             ? $respaldos->guardar($request->file('respaldo'), 'licencias', $cis[0] ?? '')
@@ -625,7 +625,7 @@ class LicenciaController extends Controller
      * firmado dentro del rango.
      *
      * Solo los contratados: a quien no tiene contrato no hay jornada que
-     * licenciarle, y meterlo en la lista anotaría permisos sobre turnos que
+     * licenciarle, y meterlo en la lista anotaría permisos sobre horarios que
      * quedaron de una asignación vieja.
      *
      * ---
@@ -668,19 +668,19 @@ class LicenciaController extends Controller
     }
 
     /**
-     * Por qué no hubo ningún turno que licenciar, según el alcance pedido.
+     * Por qué no hubo ningún horario que licenciar, según el alcance pedido.
      *
      * @param  list<int>  $elegidas
      */
-    private function motivoSinTurnos(string $modo, array $elegidas): string
+    private function motivoSinHorarios(string $modo, array $elegidas): string
     {
         if ($elegidas !== []) {
-            return 'Los turnos elegidos no pertenecen a ese funcionario.';
+            return 'Los horarios elegidos no pertenecen a ese funcionario.';
         }
 
         return $modo === 'direccion'
-            ? 'Ningún funcionario con contrato de esa dirección tiene turnos asignados dentro de ese rango de fechas.'
-            : 'El funcionario no tiene ningún turno asignado dentro de ese rango de fechas.';
+            ? 'Ningún funcionario con contrato de esa dirección tiene horarios asignados dentro de ese rango de fechas.'
+            : 'El funcionario no tiene ningún horario asignado dentro de ese rango de fechas.';
     }
 
     /**
@@ -765,23 +765,23 @@ class LicenciaController extends Controller
     }
 
     /**
-     * Turnos asignados al funcionario para la grilla «Turnos asignados a …».
+     * Horarios asignados al funcionario para la grilla «Horarios asignados a …».
      * El orden y el filtro por vigencia viven en el scope del modelo, que es el
      * mismo que usa la ficha del funcionario.
      *
-     * @return Collection<int, AsignacionTurno>
+     * @return Collection<int, AsignacionHorario>
      */
-    private function turnosAsignados(string $ci, bool $incluirVencidos = false): Collection
+    private function horariosAsignados(string $ci, bool $incluirVencidos = false): Collection
     {
-        return AsignacionTurno::query()->delFuncionario($ci, $incluirVencidos)->get();
+        return AsignacionHorario::query()->delFuncionario($ci, $incluirVencidos)->get();
     }
 
     /**
-     * Turnos a licenciar, agrupados por carnet. Sin selección manual se toman
+     * Horarios a licenciar, agrupados por carnet. Sin selección manual se toman
      * las asignaciones cuya vigencia se solapa con el rango pedido: el rango de
      * fechas ya dice qué días son, marcar además los días de la semana sería
      * pedir el mismo dato dos veces. La selección manual queda para el caso de
-     * doble turno en un día.
+     * doble horario en un día.
      *
      * Con `$cis` vacío no se acota por funcionario: es el alcance «todos», donde
      * el rango define a quiénes alcanza. Es una sola consulta para cualquier
@@ -789,11 +789,11 @@ class LicenciaController extends Controller
      *
      * @param  list<string>  $cis
      * @param  list<int>  $elegidas
-     * @return Collection<string, Collection<int, AsignacionTurno>>
+     * @return Collection<string, Collection<int, AsignacionHorario>>
      */
-    private function turnosDelRango(array $cis, Carbon $desde, Carbon $hasta, array $elegidas): Collection
+    private function horariosDelRango(array $cis, Carbon $desde, Carbon $hasta, array $elegidas): Collection
     {
-        return app(RegistroLicencia::class)->turnosDelRango($cis, $desde, $hasta, $elegidas);
+        return app(RegistroLicencia::class)->horariosDelRango($cis, $desde, $hasta, $elegidas);
     }
 
     /**
@@ -802,11 +802,11 @@ class LicenciaController extends Controller
      */
     private function contarVencidos(string $ci): int
     {
-        return AsignacionTurno::query()
-            ->join('turnos', 'turnos.id', '=', 'asignacion_turnos.turno_id')
-            ->whereNull('turnos.deleted_at')
-            ->where('asignacion_turnos.ci', $ci)
-            ->where('asignacion_turnos.hasta', '<', now()->startOfDay())
+        return AsignacionHorario::query()
+            ->join('horarios', 'horarios.id', '=', 'asignacion_horarios.horario_id')
+            ->whereNull('horarios.deleted_at')
+            ->where('asignacion_horarios.ci', $ci)
+            ->where('asignacion_horarios.hasta', '<', now()->startOfDay())
             ->count();
     }
 

@@ -2,15 +2,10 @@
 
 @section('titulo', 'Asignar turno')
 
-@php
-    $abreviar = fn (?int $dia): string => mb_strtoupper(mb_substr(\App\Models\Turno::DIAS[$dia] ?? '—', 0, 3));
-    $turnosPorDia = $turnos->groupBy(fn ($turno) => (int) $turno->dia);
-@endphp
-
 @section('contenido')
     <div class="cabecera">
         <div class="cabecera__titulo">
-            <span class="cabecera__icono"><x-heroicon-o-clock /></span>
+            <span class="cabecera__icono"><x-heroicon-o-rectangle-stack /></span>
             <h1>Asignar turno</h1>
         </div>
         <a href="{{ route('turnos-asignados.index') }}" class="btn btn--gris"><x-heroicon-o-arrow-left />Volver</a>
@@ -112,48 +107,27 @@
         <div class="card card--padded" style="margin-top: 1rem;">
             <h2 style="margin-top: 0;">Turno y vigencia</h2>
 
-            <div class="campo">
-                <label for="turno_id">Turno <span class="req">*</span></label>
-                <select id="turno_id" name="turno_id" class="input" required>
-                    <option value="">Seleccione un turno</option>
-                    @foreach (\App\Models\Turno::DIAS as $numero => $nombreDia)
-                        @if ($turnosPorDia->has($numero))
-                            <optgroup label="{{ $nombreDia }}">
-                                @foreach ($turnosPorDia[$numero] as $turno)
-                                    <option value="{{ $turno->id }}" @selected((string) old('turno_id') === (string) $turno->id)>
-                                        {{ $abreviar((int) $turno->dia) }} · {{ trim((string) $turno->nombreTurno) }}
-                                        ({{ $turno->hEntrada?->format('H:i') }} – {{ $turno->hSalida?->format('H:i') }})
-                                    </option>
-                                @endforeach
-                            </optgroup>
-                        @endif
-                    @endforeach
-                </select>
-                @if ($turnos->isEmpty())
-                    <div class="ayuda">
-                        No hay turnos cargados todavía.
-                        @can('create', \App\Models\Turno::class)
-                            <a href="{{ route('horarios.create') }}">Creá uno primero</a>.
-                        @endcan
-                    </div>
-                @endif
-                @error('turno_id') <div class="error">{{ $message }}</div> @enderror
-            </div>
+            @include('turnos-asignados._selector-turno', ['turnos' => $turnos, 'sufijo' => 'form'])
 
             <div class="grid-2">
                 <div class="campo">
-                    <label for="desde">Desde <span class="req">*</span></label>
+                    <label for="desde">Fecha de inicio <span class="req">*</span></label>
                     <input type="date" id="desde" name="desde" class="input"
                            value="{{ old('desde', now()->toDateString()) }}" required>
                     @error('desde') <div class="error">{{ $message }}</div> @enderror
                 </div>
                 <div class="campo">
-                    <label for="hasta">Hasta <span class="req">*</span></label>
+                    <label for="hasta">Fecha de fin <span class="req">*</span></label>
                     <input type="date" id="hasta" name="hasta" class="input"
                            value="{{ old('hasta', now()->endOfYear()->toDateString()) }}" required>
                     @error('hasta') <div class="error">{{ $message }}</div> @enderror
                 </div>
             </div>
+
+            <p class="ayuda" style="margin-top: 0;">
+                Si el funcionario tiene horarios del sistema anterior que siguen vigentes, terminan
+                el día anterior al inicio del turno.
+            </p>
 
             <div class="campo">
                 <label for="observacion">Observación</label>

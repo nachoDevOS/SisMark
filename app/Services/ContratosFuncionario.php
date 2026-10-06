@@ -9,7 +9,7 @@ use Illuminate\Support\Carbon;
  * Entre qué fechas una persona fue funcionaria, según los contratos de Mamoré.
  *
  * Es la **primera puerta** del control de asistencia: un día que ningún contrato
- * cubre no se procesa, aunque la persona tenga turno asignado y aunque haya
+ * cubre no se procesa, aunque la persona tenga horario asignado y aunque haya
  * marcado. Sin contrato no hay jornada que cumplir, así que no puede haber falta
  * ni atraso ni horas computadas.
  *

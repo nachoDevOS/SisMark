@@ -6,9 +6,9 @@ use App\Models\AsignacionTurno;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Reglas para concluir una asignación de turno: se le cambia la fecha `hasta`,
- * con lo que deja de estar vigente. No borra nada, así el historial sigue
- * explicando qué turno tenía el funcionario en cada período.
+ * Reglas para concluir un turno asignado: se le cambia la fecha `hasta` a él y a
+ * su detalle. No borra nada, así el historial sigue explicando qué jornada
+ * tenía el funcionario en cada período.
  */
 class ConcluirAsignacionTurnoRequest extends FormRequest
 {

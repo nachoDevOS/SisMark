@@ -2,18 +2,18 @@
 
 namespace App\Services;
 
-use App\Models\AsignacionTurno;
+use App\Models\AsignacionHorario;
+use App\Models\Horario;
 use App\Models\Licencia;
-use App\Models\Turno;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
- * Anota licencias expandiendo un rango de fechas contra los turnos asignados de
+ * Anota licencias expandiendo un rango de fechas contra los horarios asignados de
  * cada funcionario: una fila de `licencias` por cada día del rango cuyo día de
- * la semana coincida con el turno y caiga dentro de su vigencia.
+ * la semana coincida con el horario y caiga dentro de su vigencia.
  *
  * Trabaja siempre en lote (uno o muchos funcionarios): los feriados alcanzan a
  * más de 400 personas, así que la existencia se consulta de una sola vez y las
@@ -25,7 +25,7 @@ use Illuminate\Support\Str;
  * pidió y cómo terminó. Por eso el pedido nuevo siempre es una fila nueva, y el
  * índice único incluye `solicitud`.
  *
- * El código de turno del SIA (`idTurno`) no se escribe: el horario va por la FK.
+ * El código de horario del SIA (`idHorario`) no se escribe: el horario va por la FK.
  */
 class RegistroLicencia
 {
@@ -41,25 +41,25 @@ class RegistroLicencia
     private const LOTE = 500;
 
     /**
-     * Turnos asignados que caen dentro del rango, agrupados por carnet: es lo
+     * Horarios asignados que caen dentro del rango, agrupados por carnet: es lo
      * que hace licenciable a un funcionario en esas fechas.
      *
      * Vive acá y no en el controlador porque la usan la pantalla de Recursos
      * Humanos y la API de solicitudes; la regla de solapamiento es sutil y dos
-     * copias que se despeguen licenciarían turnos distintos.
+     * copias que se despeguen licenciarían horarios distintos.
      *
      * Con `$cis` vacío no acota por carnet: el rango define a quiénes alcanza,
      * que es como se anota un feriado para todo el personal.
      *
      * @param  list<string>  $cis
      * @param  list<int>  $elegidas  asignaciones puntuales; sin ellas se toman todas las del rango
-     * @return Collection<string, Collection<int, AsignacionTurno>>
+     * @return Collection<string, Collection<int, AsignacionHorario>>
      */
-    public function turnosDelRango(array $cis, Carbon $desde, Carbon $hasta, array $elegidas = []): Collection
+    public function horariosDelRango(array $cis, Carbon $desde, Carbon $hasta, array $elegidas = []): Collection
     {
-        return AsignacionTurno::query()
-            ->with('turno')
-            ->whereHas('turno')
+        return AsignacionHorario::query()
+            ->with('horario')
+            ->whereHas('horario')
             ->when($cis !== [], fn (Builder $query) => $query->whereIn('ci', $cis))
             ->when($elegidas !== [], fn (Builder $query) => $query->whereIn('id', $elegidas))
             // Solapamiento de rangos: la asignación sirve si empieza antes de
@@ -69,19 +69,19 @@ class RegistroLicencia
                 ->where('desde', '<=', $hasta->copy()->endOfDay())
                 ->where('hasta', '>=', $desde))
             ->get()
-            ->groupBy(fn (AsignacionTurno $asignacion): string => trim((string) $asignacion->ci));
+            ->groupBy(fn (AsignacionHorario $asignacion): string => trim((string) $asignacion->ci));
     }
 
     /**
      * Anota las licencias y devuelve el conteo por resultado.
      *
-     * @param  Collection<string, Collection<int, AsignacionTurno>>  $asignacionesPorCi  turnos a licenciar, agrupados por carnet
+     * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignacionesPorCi  horarios a licenciar, agrupados por carnet
      * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int, estado?: string, origen?: string, tipo: string}  $datos
-     * @return array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, diasSinTurno: list<string>, funcionarios: int}
+     * @return array{creadas: int, existentes: int, fueraDeVigencia: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}
      */
     public function anotar(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array $datos): array
     {
-        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinTurno' => 0, 'diasSinTurno' => [], 'funcionarios' => 0];
+        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
 
         if ($asignacionesPorCi->isEmpty()) {
             return $conteo;
@@ -177,16 +177,16 @@ class RegistroLicencia
     }
 
     /**
-     * Los días que {@see anotar()} crearía para cada carnet: los que tienen turno
+     * Los días que {@see anotar()} crearía para cada carnet: los que tienen horario
      * en el rango y todavía no están ocupados. Es lo que se mide contra el tope
      * mensual de permisos ({@see TopePermisos}) antes de anotar.
      *
-     * @param  Collection<string, Collection<int, AsignacionTurno>>  $asignacionesPorCi
+     * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignacionesPorCi
      * @return array<string, list<string>> fechas `Y-m-d` por carnet
      */
     public function fechasNuevas(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta): array
     {
-        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinTurno' => 0, 'diasSinTurno' => [], 'funcionarios' => 0];
+        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
         $ocupados = $this->ocupados($asignacionesPorCi->keys()->all(), $desde, $hasta);
         $fechas = [];
 
@@ -216,12 +216,12 @@ class RegistroLicencia
     }
 
     /**
-     * Pares (ci, fecha, turno) que corresponde licenciar, ya deduplicados por la
-     * clave natural: dos asignaciones al mismo turno y día son una sola licencia.
+     * Pares (ci, fecha, horario) que corresponde licenciar, ya deduplicados por la
+     * clave natural: dos asignaciones al mismo horario y día son una sola licencia.
      *
-     * @param  Collection<string, Collection<int, AsignacionTurno>>  $asignacionesPorCi
-     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, diasSinTurno: list<string>, funcionarios: int}  $conteo
-     * @return array<string, array{ci: string, fecha: string, turno_id: int}>
+     * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignacionesPorCi
+     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}  $conteo
+     * @return array<string, array{ci: string, fecha: string, horario_id: int}>
      */
     private function candidatos(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array &$conteo): array
     {
@@ -232,22 +232,22 @@ class RegistroLicencia
             $fecha = $desde->copy()->startOfDay();
 
             while ($fecha->lessThanOrEqualTo($fin)) {
-                $tieneTurno = false;
+                $tieneHorario = false;
 
                 foreach ($asignaciones as $asignacion) {
-                    $turno = $asignacion->turno;
+                    $horario = $asignacion->horario;
 
-                    if (! $turno instanceof Turno) {
-                        $conteo['sinTurno']++;
+                    if (! $horario instanceof Horario) {
+                        $conteo['sinHorario']++;
 
                         continue;
                     }
 
-                    if ((int) $turno->dia !== self::diaSia($fecha)) {
+                    if ((int) $horario->dia !== self::diaSia($fecha)) {
                         continue;
                     }
 
-                    $tieneTurno = true;
+                    $tieneHorario = true;
 
                     if (! self::dentroDeVigencia($asignacion, $fecha)) {
                         $conteo['fueraDeVigencia']++;
@@ -255,17 +255,17 @@ class RegistroLicencia
                         continue;
                     }
 
-                    $candidatos[self::clave((string) $ci, $fecha->toDateString(), (int) $turno->id)] = [
+                    $candidatos[self::clave((string) $ci, $fecha->toDateString(), (int) $horario->id)] = [
                         'ci' => (string) $ci,
                         'fecha' => $fecha->toDateString(),
-                        'turno_id' => (int) $turno->id,
+                        'horario_id' => (int) $horario->id,
                     ];
                 }
 
-                // Sin turno ese día de la semana —un sábado, un domingo— no hay
+                // Sin horario ese día de la semana —un sábado, un domingo— no hay
                 // nada que licenciar. Se anota para poder decir por qué.
-                if (! $tieneTurno) {
-                    $conteo['diasSinTurno'][] = $fecha->toDateString();
+                if (! $tieneHorario) {
+                    $conteo['diasSinHorario'][] = $fecha->toDateString();
                 }
 
                 $fecha->addDay();
@@ -298,18 +298,18 @@ class RegistroLicencia
             ->whereIn('ci', $cis)
             ->where('estado', '!=', Licencia::RECHAZADO)
             ->whereBetween('fecha', [$desde->toDateString(), $hasta->toDateString()])
-            ->get(['id', 'ci', 'fecha', 'turno_id'])
+            ->get(['id', 'ci', 'fecha', 'horario_id'])
             ->keyBy(fn (Licencia $licencia): string => self::clave(
                 trim((string) $licencia->ci),
                 $licencia->fecha->toDateString(),
-                (int) $licencia->turno_id,
+                (int) $licencia->horario_id,
             ));
     }
 
     /**
      * Arma el mensaje de resultado a partir del conteo.
      *
-     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinTurno: int, diasSinTurno: list<string>, funcionarios: int}  $conteo
+     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}  $conteo
      */
     public function mensaje(array $conteo): string
     {
@@ -321,17 +321,17 @@ class RegistroLicencia
             $partes[0] .= " para {$conteo['funcionarios']} funcionario(s)";
         }
 
-        if ($conteo['diasSinTurno'] !== []) {
-            $dias = array_values(array_unique($conteo['diasSinTurno']));
+        if ($conteo['diasSinHorario'] !== []) {
+            $dias = array_values(array_unique($conteo['diasSinHorario']));
             sort($dias);
             // Pocos días se nombran; muchos —un feriado para cientos de
             // personas— se cuentan.
             $partes[] = count($dias) <= 3
-                ? 'sin turno asignado el '.implode(', ', array_map(
+                ? 'sin horario asignado el '.implode(', ', array_map(
                     fn (string $dia): string => Carbon::parse($dia)->translatedFormat('l d/m'),
                     $dias,
                 ))
-                : count($conteo['diasSinTurno']).' día(s) sin turno asignado';
+                : count($conteo['diasSinHorario']).' día(s) sin horario asignado';
         }
 
         if ($conteo['existentes'] > 0) {
@@ -339,11 +339,11 @@ class RegistroLicencia
         }
 
         if ($conteo['fueraDeVigencia'] > 0) {
-            $partes[] = "{$conteo['fueraDeVigencia']} fuera de la vigencia del turno";
+            $partes[] = "{$conteo['fueraDeVigencia']} fuera de la vigencia del horario";
         }
 
-        if ($conteo['sinTurno'] > 0) {
-            $partes[] = "{$conteo['sinTurno']} sin horario vinculado";
+        if ($conteo['sinHorario'] > 0) {
+            $partes[] = "{$conteo['sinHorario']} sin horario vinculado";
         }
 
         return ($partes === [] ? 'no había días para anotar' : implode(', ', $partes)).'.';
@@ -359,17 +359,17 @@ class RegistroLicencia
     }
 
     /**
-     * Clave natural de una licencia: ci + fecha + turno.
+     * Clave natural de una licencia: ci + fecha + horario.
      */
-    private static function clave(string $ci, string $fecha, int $turnoId): string
+    private static function clave(string $ci, string $fecha, int $horarioId): string
     {
-        return $ci.'|'.$fecha.'|'.$turnoId;
+        return $ci.'|'.$fecha.'|'.$horarioId;
     }
 
     /**
-     * La fecha debe caer dentro del rango de vigencia de la asignación de turno.
+     * La fecha debe caer dentro del rango de vigencia de la asignación de horario.
      */
-    private static function dentroDeVigencia(AsignacionTurno $asignacion, Carbon $fecha): bool
+    private static function dentroDeVigencia(AsignacionHorario $asignacion, Carbon $fecha): bool
     {
         if ($asignacion->desde && $fecha->lessThan($asignacion->desde->copy()->startOfDay())) {
             return false;

@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Models\Horario;
 use App\Models\Licencia;
-use App\Models\Turno;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -25,9 +25,9 @@ class LicenciaFactory extends Factory
             'usuario' => fake()->name(),
             'fecha' => fake()->dateTimeBetween('-1 year', 'now')->format('Y-m-d'),
             'ci' => (string) fake()->unique()->numberBetween(1000000, 9999999),
-            'turno_id' => Turno::factory(),
-            // El horario va por la FK; `idTurno` solo existe en lo migrado del SIA.
-            'idTurno' => null,
+            'horario_id' => Horario::factory(),
+            // El horario va por la FK; `idHorario` solo existe en lo migrado del SIA.
+            'idHorario' => null,
             'lEntra' => null,
             'lSale' => null,
             'tCompleto' => true,

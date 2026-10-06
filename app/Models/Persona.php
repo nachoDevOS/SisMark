@@ -14,9 +14,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * Funcionario en la base local (MySQL), migrado desde «Personas» del SIA.
  *
- * A diferencia del modelo legado App\Models\Sia\Persona (conexión sqlsrv de
- * solo lectura), este usa la conexión por defecto (MySQL), tiene id propio,
- * timestamps y eliminación lógica. El carnet es la columna única `ci`.
+ * Usa la conexión por defecto (MySQL), tiene id propio, timestamps y
+ * eliminación lógica. El carnet es la columna única `ci`.
  */
 class Persona extends Model
 {

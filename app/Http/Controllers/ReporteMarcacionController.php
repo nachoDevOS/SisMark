@@ -93,7 +93,7 @@ class ReporteMarcacionController extends Controller
     /**
      * Formulario de selección del reporte «marcaciones procesadas»: mismo combo
      * de funcionario que el crudo, pero el resultado cruza las marcas contra el
-     * turno asignado, los días excepcionales y las licencias.
+     * horario asignado, los días excepcionales y las licencias.
      */
     public function procesado(Request $request): View
     {

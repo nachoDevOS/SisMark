@@ -24,7 +24,7 @@ return new class extends Migration
             $table->boolean('en_linea')->default(false);
             $table->timestamp('ultima_sync')->nullable();
             $table->boolean('activo')->default(true);
-            // Sincronización automática: horas y días (`Turno::DIAS`) en que corre.
+            // Sincronización automática: horas y días (`Horario::DIAS`) en que corre.
             $table->boolean('sync_automatica')->default(false);
             $table->json('sync_horarios')->nullable();
             $table->json('sync_dias')->nullable();

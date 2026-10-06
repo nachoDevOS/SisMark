@@ -4,13 +4,13 @@ namespace App\Http\Requests;
 
 use App\Models\AsignacionTurno;
 use App\Models\Turno;
+use App\Services\AsignadorTurnos;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Reglas para asignarle un turno a un funcionario. El turno se elige por su id
- * (`turno_id`, la FK real); el código histórico `idTurno` lo copia el
- * controlador desde el turno elegido y nunca llega del formulario.
+ * Reglas para asignarle un turno a un funcionario, con fecha de inicio y de fin.
  */
 class StoreAsignacionTurnoRequest extends FormRequest
 {
@@ -30,11 +30,7 @@ class StoreAsignacionTurnoRequest extends FormRequest
     {
         return [
             'ci' => ['required', 'string', 'max:12'],
-            'turno_id' => [
-                'required',
-                'integer',
-                Rule::exists('turnos', 'id')->whereNull('deleted_at'),
-            ],
+            'turno_id' => ['required', 'integer', Rule::exists('turnos', 'id')->whereNull('deleted_at')],
             'desde' => ['required', 'date'],
             'hasta' => ['required', 'date', 'after_or_equal:desde'],
             'observacion' => ['nullable', 'string', 'max:1000'],
@@ -42,35 +38,40 @@ class StoreAsignacionTurnoRequest extends FormRequest
     }
 
     /**
-     * La tabla tiene una clave única (ci + idTurno + desde) que **incluye las
-     * filas borradas lógicamente**, así que se comprueba con `withTrashed()`:
-     * si no, el alta reventaría contra la base en vez de avisar.
+     * Que no se pise con otro turno de la persona ni con lo heredado, y que no
+     * choque con la única del detalle ({@see AsignadorTurnos::conflicto()}).
      *
-     * @return array<int, callable>
+     * @return array<int, callable(Validator): void>
      */
     public function after(): array
     {
         return [
-            function ($validator): void {
+            function (Validator $validator): void {
                 if ($validator->errors()->isNotEmpty()) {
                     return;
                 }
 
-                $codigo = Turno::query()->whereKey($this->integer('turno_id'))->value('idTurno');
+                $conflicto = app(AsignadorTurnos::class)->conflicto(
+                    (string) $this->input('ci'),
+                    Turno::query()->with('horarios')->findOrFail($this->integer('turno_id')),
+                    $this->date('desde'),
+                    $this->date('hasta'),
+                );
 
-                $repetida = AsignacionTurno::withTrashed()
-                    ->where('ci', trim((string) $this->input('ci')))
-                    ->where('idTurno', $codigo)
-                    ->whereDate('desde', $this->date('desde'))
-                    ->exists();
-
-                if ($repetida) {
-                    $validator->errors()->add(
-                        'turno_id',
-                        'Ese funcionario ya tiene asignado ese turno desde esa fecha.'
-                    );
+                if ($conflicto !== null) {
+                    $validator->errors()->add('turno_id', $conflicto);
                 }
             },
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'hasta.after_or_equal' => 'La fecha de fin no puede ser anterior a la de inicio.',
         ];
     }
 
@@ -82,8 +83,8 @@ class StoreAsignacionTurnoRequest extends FormRequest
         return [
             'ci' => 'funcionario',
             'turno_id' => 'turno',
-            'desde' => 'fecha desde',
-            'hasta' => 'fecha hasta',
+            'desde' => 'fecha de inicio',
+            'hasta' => 'fecha de fin',
             'observacion' => 'observación',
         ];
     }

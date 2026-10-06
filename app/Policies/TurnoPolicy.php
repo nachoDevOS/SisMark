@@ -9,9 +9,8 @@ use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
 /**
- * Autorización de los horarios locales (MySQL, tabla `turnos`). Usa los mismos
- * permisos que la policy legada (ViewAny:DiaTurno, etc.), así los roles no
- * cambian al pasar la vista de la conexión `sia` a la base local.
+ * Autorización de los turnos. `update` no edita el turno —que no se edita—:
+ * solo cubre marcar o desmarcar el sugerido.
  */
 class TurnoPolicy
 {
@@ -19,26 +18,26 @@ class TurnoPolicy
 
     public function viewAny(AuthUser $authUser): bool
     {
-        return $authUser->can('ViewAny:DiaTurno');
+        return $authUser->can('ViewAny:Turno');
     }
 
     public function view(AuthUser $authUser, Turno $turno): bool
     {
-        return $authUser->can('View:DiaTurno');
+        return $authUser->can('View:Turno');
     }
 
     public function create(AuthUser $authUser): bool
     {
-        return $authUser->can('Create:DiaTurno');
+        return $authUser->can('Create:Turno');
     }
 
     public function update(AuthUser $authUser, Turno $turno): bool
     {
-        return $authUser->can('Update:DiaTurno');
+        return $authUser->can('Update:Turno');
     }
 
     public function delete(AuthUser $authUser, Turno $turno): bool
     {
-        return $authUser->can('Delete:DiaTurno');
+        return $authUser->can('Delete:Turno');
     }
 }

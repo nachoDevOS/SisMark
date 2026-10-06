@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Support\Carbon;
 
 /**
- * Columnas `time` que guardan **solo una hora del día**: la entrada de un turno,
+ * Columnas `time` que guardan **solo una hora del día**: la entrada de un horario,
  * la hora de una marcación, el tramo de una licencia por horas.
  *
  * No alcanza con el cast `datetime` de Eloquent. Al leer anda —Carbon parsea

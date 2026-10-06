@@ -2,41 +2,30 @@
 
 namespace App\Models;
 
-use App\Http\Resources\TurnoSugeridoResource;
 use App\Traits\RegistersUserEvents;
 use Database\Factories\TurnoFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Horario (turno) en la base local (MySQL), migrado desde «DiaTurnos» del SIA.
+ * Turno: la jornada semanal de una persona, armada con los horarios de cada día.
  *
- * Conexión por defecto, con id propio, timestamps y eliminación lógica. Las
- * horas van como datetime sobre la fecha base 1899-12-30 (solo importa la hora),
- * como el SIA real.
+ * `horarios` guarda un día por fila, así que lunes a viernes son cinco horarios;
+ * el turno los junta bajo un nombre y es lo que se asigna.
+ *
+ * **No se edita.** Solo se crea y se elimina: la asistencia se calcula en vivo,
+ * y cambiarle los horarios a un turno ya asignado reescribiría los reportes
+ * pasados de todos los que lo tuvieron. Para cambiar la jornada se crea otro
+ * turno. Lo único que se cambia después es la marca de sugerido, que no toca
+ * ningún cálculo.
  */
 class Turno extends Model
 {
     /** @use HasFactory<TurnoFactory> */
     use HasFactory, RegistersUserEvents, SoftDeletes;
-
-    /**
-     * Días de la semana según el número que guarda la columna `dia`
-     * (1 = Domingo … 7 = Sábado, igual que DATEPART(dw) por defecto en el SIA).
-     *
-     * @var array<int, string>
-     */
-    public const DIAS = [
-        1 => 'Domingo',
-        2 => 'Lunes',
-        3 => 'Martes',
-        4 => 'Miércoles',
-        5 => 'Jueves',
-        6 => 'Viernes',
-        7 => 'Sábado',
-    ];
 
     protected $table = 'turnos';
 
@@ -44,19 +33,7 @@ class Turno extends Model
      * @var list<string>
      */
     protected $fillable = [
-        'idTurno',
-        'dia',
-        'nombreTurno',
-        'hEntrada',
-        'hSalida',
-        'hTolerancia',
-        'eMinima',
-        'eMaxima',
-        'sMinima',
-        'sMaxima',
-        'sTolerancia',
-        'hTrabajadas',
-        'siguienteDia',
+        'nombre',
         'sugerido',
         'observacion',
         'estado',
@@ -68,72 +45,52 @@ class Turno extends Model
     protected function casts(): array
     {
         return [
-            'hEntrada' => 'datetime',
-            'hSalida' => 'datetime',
-            'hTolerancia' => 'datetime',
-            'eMinima' => 'datetime',
-            'eMaxima' => 'datetime',
-            'sMinima' => 'datetime',
-            'sMaxima' => 'datetime',
-            'sTolerancia' => 'datetime',
-            'hTrabajadas' => 'decimal:2',
-            'siguienteDia' => 'boolean',
             'sugerido' => 'boolean',
         ];
     }
 
     /**
-     * Nombre legible del día de la semana del turno.
-     */
-    public function getNombreDiaAttribute(): string
-    {
-        return self::DIAS[(int) $this->dia] ?? '—';
-    }
-
-    /**
-     * Ordena por día de la semana y luego por nombre del turno.
-     */
-    public function scopeOrdenado(Builder $query): Builder
-    {
-        return $query->orderBy('dia')->orderBy('nombreTurno');
-    }
-
-    /**
-     * Los turnos que forman el horario sugerido de la institución, en orden de
-     * día de la semana.
+     * Los horarios del turno, en orden de día de la semana y hora de entrada.
      *
-     * Son varias filas y no una: `turnos` guarda **un día por fila**, así que
-     * un horario semanal de lunes a viernes son cinco turnos distintos. Quien
-     * los consuma tiene que tratarlos como un juego, no como cinco opciones
-     * ({@see TurnoSugeridoResource}).
+     * Incluye los horarios eliminados: el turno no se edita, así que si uno de
+     * sus horarios se da de baja, el turno sigue siendo lo que se creó.
+     */
+    public function horarios(): BelongsToMany
+    {
+        return $this->belongsToMany(Horario::class, 'horario_turno')
+            ->withTrashed()
+            ->withTimestamps()
+            ->orderBy('dia')
+            ->orderBy('hEntrada');
+    }
+
+    /**
+     * Los turnos que se ofrecen al asignar desde Mamoré.
      */
     public function scopeSugeridos(Builder $query): Builder
     {
-        return $query->where('sugerido', true)->orderBy('dia')->orderBy('hEntrada');
+        return $query->where('sugerido', true)->orderBy('nombre');
     }
 
     /**
-     * Clave que junta en un mismo horario semanal a los turnos que solo se
-     * diferencian por el día.
-     *
-     * Se arma con los campos que definen la jornada y **no** con `nombreTurno`,
-     * que trae el día pegado adelante («LUN: 08:00 - 16:00») y además se repite
-     * entre turnos distintos: hay nombres con once filas sobre cinco días, así
-     * que agrupar por texto mezclaría horarios que no son el mismo.
+     * Horas semanales del turno: la suma de las horas trabajadas de sus horarios.
      */
-    public function getClaveHorarioAttribute(): string
+    public function getHorasSemanalesAttribute(): float
     {
-        return implode('|', [
-            $this->hEntrada?->format('H:i:s'),
-            $this->hSalida?->format('H:i:s'),
-            $this->hTolerancia?->format('H:i:s'),
-            $this->eMinima?->format('H:i:s'),
-            $this->eMaxima?->format('H:i:s'),
-            $this->sMinima?->format('H:i:s'),
-            $this->sMaxima?->format('H:i:s'),
-            $this->sTolerancia?->format('H:i:s'),
-            $this->hTrabajadas,
-            $this->siguienteDia ? '1' : '0',
-        ]);
+        return (float) $this->horarios->sum(fn (Horario $horario): float => (float) $horario->hTrabajadas);
+    }
+
+    /**
+     * Días que cubre el turno, abreviados y en orden («Lun, Mar, Mié»).
+     */
+    public function getDiasCubiertosAttribute(): string
+    {
+        return $this->horarios
+            ->pluck('dia')
+            ->map(fn (string $dia): int => (int) $dia)
+            ->unique()
+            ->sort()
+            ->map(fn (int $dia): string => mb_substr(Horario::DIAS[$dia] ?? '?', 0, 3))
+            ->implode(', ');
     }
 }

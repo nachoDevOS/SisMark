@@ -41,17 +41,17 @@ class LicenciaApiResource extends JsonResource
             // `fecha` es el primer día del pedido. Se mantiene el nombre porque
             // es con el que el consumidor ya ordena y rotula la fila.
             'fecha' => $this->fecha?->toDateString(),
-            // Hasta cuándo llega y cuántos días con turno abarca: un pedido del
+            // Hasta cuándo llega y cuántos días con horario abarca: un pedido del
             // 14 al 15 es **una** licencia de dos días, no dos licencias.
             'hasta' => $hasta,
             'dias' => $dias,
             'unSoloDia' => $dias <= 1,
-            'turno' => $this->resumen_turno,
-            'turnoCompleto' => $completo,
+            'horario' => $this->resumen_horario,
+            'horarioCompleto' => $completo,
             'desdeHora' => $completo ? null : $entra,
             'hastaHora' => $completo ? null : $sale,
             'alcance' => $completo
-                ? 'Turno completo'
+                ? 'Horario completo'
                 : trim(($entra ?? '—').' – '.($sale ?? '—')),
             'conGoceDeHaberes' => (bool) $this->goceHaberes,
             // Permiso personal o licencia institucional. Solo el personal

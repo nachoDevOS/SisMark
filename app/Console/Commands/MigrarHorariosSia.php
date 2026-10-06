@@ -18,9 +18,9 @@ class MigrarHorariosSia extends Command
      * @var array<string, string>
      */
     private const MAPA = [
-        'IdTurno' => 'idTurno',
+        'IdTurno' => 'idHorario',
         'Dia' => 'dia',
-        'NombreTurno' => 'nombreTurno',
+        'NombreTurno' => 'nombreHorario',
         'HEntrada' => 'hEntrada',
         'HSalida' => 'hSalida',
         'HTolerancia' => 'hTolerancia',
@@ -34,8 +34,8 @@ class MigrarHorariosSia extends Command
     ];
 
     /**
-     * Copia los horarios del SIA a la tabla local `turnos`. Idempotente:
-     * reejecutarlo no duplica (upsert por idTurno). Recorta el padding char().
+     * Copia los horarios del SIA a la tabla local `horarios`. Idempotente:
+     * reejecutarlo no duplica (upsert por idHorario). Recorta el padding char().
      */
     public function handle(): int
     {
@@ -49,7 +49,7 @@ class MigrarHorariosSia extends Command
         }
 
         $copiadas = 0;
-        $actualizables = [...array_values(array_diff(self::MAPA, ['idTurno'])), 'updated_at'];
+        $actualizables = [...array_values(array_diff(self::MAPA, ['idHorario'])), 'updated_at'];
 
         try {
             DB::connection('sia')->table('DiaTurnos')
@@ -62,8 +62,8 @@ class MigrarHorariosSia extends Command
                         ->map(fn ($fila): array => $this->aLocal((array) $fila) + ['created_at' => $ahora, 'updated_at' => $ahora])
                         ->all();
 
-                    DB::connection($destino)->table('turnos')
-                        ->upsert($registros, ['idTurno'], $actualizables);
+                    DB::connection($destino)->table('horarios')
+                        ->upsert($registros, ['idHorario'], $actualizables);
 
                     $copiadas += count($registros);
                 });

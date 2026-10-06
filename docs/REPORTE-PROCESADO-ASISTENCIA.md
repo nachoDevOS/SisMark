@@ -1,7 +1,7 @@
 # Reporte procesado de asistencia — análisis y reglas
 
 Documento de trabajo previo a la implementación. Define cómo se cruzan
-**marcaciones + turnos + asignación de turnos + días excepcionales + licencias**
+**marcaciones + horarios + asignación de horarios + días excepcionales + licencias**
 para producir el reporte procesado (estilo ZKTeco Attendance).
 
 Fecha de análisis: **2026-07-29**.
@@ -10,7 +10,7 @@ Fecha de análisis: **2026-07-29**.
 
 ## 1. Tablas involucradas
 
-### 1.1 `turnos` (757 filas) — plantilla de horario
+### 1.1 `horarios` (757 filas) — plantilla de horario
 
 Una fila = **un día de la semana**, no una semana entera.
 
@@ -30,24 +30,24 @@ Una fila = **un día de la semana**, no una semana entera.
 
 Las horas se guardan sobre la fecha base `1899-12-30` → comparar solo con `TIME()`.
 
-### 1.2 `asignacion_turnos` (419.408 filas) — quién trabaja qué
+### 1.2 `asignacion_horarios` (419.408 filas) — quién trabaja qué
 
-`ci` + `turno_id` + `desde` … `hasta`. Un funcionario tiene **N filas para el
+`ci` + `horario_id` + `desde` … `hasta`. Un funcionario tiene **N filas para el
 mismo rango**, una por día de la semana.
 
 Ejemplo real (`ci = 1939161`): 5 filas (`dia` 2..6), todas `2026-01-05 → 2026-12-31`.
 
-Resolución del turno del día:
+Resolución del horario del día:
 
 ```sql
-asignacion_turnos a JOIN turnos t ON t.id = a.turno_id
+asignacion_horarios a JOIN horarios t ON t.id = a.horario_id
 WHERE a.ci = ? AND ? BETWEEN a.desde AND a.hasta
   AND t.dia = DAYOFWEEK(?)
 ```
 
 Sin fila = día no laborable → **no es falta**.
 
-Puede devolver **más de un turno** para el mismo día (turno partido, ver §5).
+Puede devolver **más de un horario** para el mismo día (horario partido, ver §5).
 
 ### 1.3 `asistencias` (4.401.523 filas) — marcaciones crudas
 
@@ -65,24 +65,24 @@ Rango `2009-01-01 → 2029-07-31`, **una fila por fecha**. Solo **209** tienen
 Motivos vistos: `HORARIO CONTINUO`, `Mantenimiento Reloj`, `CARNAVAL`,
 `PARO CIVICO`, `LLUVIA TORRENCIAL`, `VIERNES SANTO`…
 
-### 1.5 `licencias` (1.107.748 filas) — permiso por `ci` + `fecha` + `turno_id`
+### 1.5 `licencias` (1.107.748 filas) — permiso por `ci` + `fecha` + `horario_id`
 
 Hay **dos clases de licencia**, y se distinguen por `tCompleto`:
 
 | Campo | Significado |
 |---|---|
-| `tCompleto = 1` | **turno completo** (`lEntra`/`lSale` en `NULL`) |
+| `tCompleto = 1` | **horario completo** (`lEntra`/`lSale` en `NULL`) |
 | `tCompleto = 0` | **por horas**: el tramo va en `lEntra` / `lSale` |
 | `goceHaberes` | con/sin sueldo |
 | `motivo` | texto libre, sin normalizar |
 
-**La licencia de turno completo cubre el día entero**: aunque la fila apunte a un
-`turno_id`, si el funcionario tiene varios turnos asignados ese día, quedan todos
+**La licencia de horario completo cubre el día entero**: aunque la fila apunte a un
+`horario_id`, si el funcionario tiene varios horarios asignados ese día, quedan todos
 licenciados. Por eso se resuelve **a nivel día**, antes de repartir las marcas
-entre turnos, y no se compara el `turno_id`.
+entre horarios, y no se compara el `horario_id`.
 
-La licencia **por horas** sí se evalúa turno por turno: se cruza con el turno por
-`turno_id` (una fila sin `turno_id` aplica a todos los turnos del día).
+La licencia **por horas** sí se evalúa horario por horario: se cruza con el horario por
+`horario_id` (una fila sin `horario_id` aplica a todos los horarios del día).
 
 **Una fila por día**, no por rango: un memo de 3 meses genera ~90 filas.
 
@@ -90,11 +90,11 @@ La licencia **por horas** sí se evalúa turno por turno: se cruza con el turno 
 
 ## 2. Parámetros y línea de tiempo
 
-Turno de referencia usado en todos los ejemplos:
+Horario de referencia usado en todos los ejemplos:
 
 ```
 dia          = 2 (Lunes)
-nombreTurno  = "LUN: 08:00 - 16:00"
+nombreHorario  = "LUN: 08:00 - 16:00"
 hEntrada     = 08:00
 hTolerancia  = 08:10
 eMinima      = 07:00
@@ -128,17 +128,17 @@ se descarta.
 
 ```
 1. ¿dias_excepcionales.motivoInasistencia IS NOT NULL?  → SÍ → CORTA. Fin.
-2. ¿tiene turno asignado ese día?                       → NO → NO LABORABLE
-3. ¿licencia de turno completo (tCompleto = 1)?         → SÍ → LICENCIA (todo el día)
-4. procesar marcaciones turno por turno
+2. ¿tiene horario asignado ese día?                       → NO → NO LABORABLE
+3. ¿licencia de horario completo (tCompleto = 1)?         → SÍ → LICENCIA (todo el día)
+4. procesar marcaciones horario por horario
 ```
 
 **El día excepcional manda sobre todo**: no se procesan marcaciones aunque el
-funcionario tenga uno o varios turnos asignados ese día.
+funcionario tenga uno o varios horarios asignados ese día.
 
-**La licencia de turno completo también corta el día entero**, sin importar a qué
-`turno_id` apunte: si el funcionario tiene dos turnos, quedan los dos licenciados.
-Las licencias **por horas** no cortan — se aplican dentro de cada turno (§3.5).
+**La licencia de horario completo también corta el día entero**, sin importar a qué
+`horario_id` apunte: si el funcionario tiene dos horarios, quedan los dos licenciados.
+Las licencias **por horas** no cortan — se aplican dentro de cada horario (§3.5).
 
 ### 3.2 Atraso
 
@@ -163,12 +163,12 @@ La tolerancia **solo decide si hay atraso**, no cuánto vale.
 inicio = (entrada ≤ hTolerancia) ? hEntrada : entrada
 fin    = (salida  ≥ sTolerancia) ? hSalida  : salida
 
-computable = fin − inicio          (acotado al turno)
+computable = fin − inicio          (acotado al horario)
 ```
 
 Dos ideas:
 
-1. **Se acota al turno.** El que llega 2h antes y se va 2h después no acumula
+1. **Se acota al horario.** El que llega 2h antes y se va 2h después no acumula
    12h. La **permanencia real** se muestra al lado como columna informativa, para
    que RRHH pueda autorizar compensación a mano.
 2. **Dentro de la tolerancia cuenta como llegar a la hora.** Marcar 08:05 con
@@ -201,7 +201,7 @@ Sin entrada válida o sin salida válida → **computable = 0h**.
 ### 3.5 Licencias por horas — corte duro
 
 ```
-tCompleto = 1              →  turno completo: no se exige ninguna marca (todo el día)
+tCompleto = 1              →  horario completo: no se exige ninguna marca (todo el día)
 licencia cubre la entrada  ⟺  lEntra ≤ hEntrada
 licencia cubre la salida   ⟺  lSale  ≥ hSalida
 ```
@@ -219,7 +219,7 @@ justificar y la marca pasa a ser obligatoria.
 | 08:05 | ❌ no | 🔴 **ABANDONO** |
 
 **Cómo se computan las horas.** El tramo licenciado se acredita siempre (recortado
-al turno). Lo que queda del turno son uno o dos tramos de trabajo, y cada uno se
+al horario). Lo que queda del horario son uno o dos tramos de trabajo, y cada uno se
 acredita solo si existe la marca que lo cierra:
 
 ```
@@ -252,12 +252,12 @@ datos reales traen rebotes a 4-5 segundos:
 1052243  2026-07-01  07:44:16 A   ← rebote
 ```
 
-### 3.7 Turnos nocturnos (`siguienteDia = 1`)
+### 3.7 Horarios nocturnos (`siguienteDia = 1`)
 
 La ventana de salida se busca en `fecha + 1`. Solo es válido si
 `hSalida < hEntrada`.
 
-Ejemplo bien configurado (turno `056` real de la BD):
+Ejemplo bien configurado (horario `056` real de la BD):
 
 ```
 LUN 18:00 → 07:00 · tol 18:10 · entrada [16:00–21:00]
@@ -267,7 +267,7 @@ siguienteDia = 1 · hTrabajadas = 13,00
 
 ---
 
-## 4. Batería de casos — turno `08:00–16:00`, salida `[16:00–20:00]`
+## 4. Batería de casos — horario `08:00–16:00`, salida `[16:00–20:00]`
 
 | # | Entrada | Salida | Entrada → | Salida → | Estado | Computable |
 |---|---|---|---|---|---|---|
@@ -280,7 +280,7 @@ siguienteDia = 1 · hTrabajadas = 13,00
 | 7 | 06:59 | 16:00 | ❌ < `eMinima` | ✅ completa | SIN ENTRADA VÁLIDA | 0h |
 | 8 | 07:50 | 15:40 | ✅ puntual | ❌ < `sMinima` | 🔴 ABANDONO | 0h |
 | 9 | 08:12 | 20:08 | ⚠️ atraso 12 min | ❌ > `sMaxima` | SIN SALIDA | 0h |
-| 10 | 07:50 | 19:45 | ✅ puntual | ✅ dentro | CUMPLE (+3h45 fuera de turno) | 8h 00m |
+| 10 | 07:50 | 19:45 | ✅ puntual | ✅ dentro | CUMPLE (+3h45 fuera de horario) | 8h 00m |
 | 11 | — | — | ❌ | ❌ | 🔴 FALTA | 0h |
 | 12 | 07:44:12 + :16 | 16:10:51 + :56 | dedupe → 07:44 | dedupe → 16:10 | CUMPLE | 8h 00m |
 | 13 | 07:59 / 08:29 | 17:56 | ✅ 07:59 puntual (08:29 ignorada) | ✅ completa | CUMPLE | 8h 00m |
@@ -309,12 +309,12 @@ Misma licencia pero desde `08:05` (no cubre `hEntrada`), única marca `16:25`:
 
 ---
 
-## 5. Doble turno el mismo día
+## 5. Doble horario el mismo día
 
-Un funcionario puede tener dos filas de `asignacion_turnos` para el mismo `dia`.
+Un funcionario puede tener dos filas de `asignacion_horarios` para el mismo `dia`.
 
-**Turno A** `LUN 08:00–12:00` · tol `08:10` · entrada `[07:00–10:00]` · salida `[12:00–13:45]` · 4h
-**Turno B** `LUN 14:00–18:00` · tol `14:10` · entrada `[13:15–15:00]` · salida `[17:15–23:59]` · 4h
+**Horario A** `LUN 08:00–12:00` · tol `08:10` · entrada `[07:00–10:00]` · salida `[12:00–13:45]` · 4h
+**Horario B** `LUN 14:00–18:00` · tol `14:10` · entrada `[13:15–15:00]` · salida `[17:15–23:59]` · 4h
 
 ```
 07:00 ═ 08:00 ─ 08:10 ═ 10:00 ▓▓▓ 12:00 ═ 13:45   13:15 ═ 14:00 ─ 14:10 ═ 15:00 ▓▓▓ 17:15 ═════ 23:59
@@ -331,7 +331,7 @@ Un funcionario puede tener dos filas de `asignacion_turnos` para el mismo `dia`.
 | 14:36 | entrada B | 🅱 Entrada B | ⚠️ ATRASO 36 min |
 | 18:53 | salida B | 🅱 Salida B | ✅ CORRECTA |
 
-| | Turno A `08:00–12:00` | Turno B `14:00–18:00` |
+| | Horario A `08:00–12:00` | Horario B `14:00–18:00` |
 |---|---|---|
 | Entrada | **08:00** ✅ puntual | **14:36** ⚠️ atraso |
 | Salida | **12:42** ✅ | **18:53** ✅ |
@@ -350,11 +350,11 @@ Un funcionario puede tener dos filas de `asignacion_turnos` para el mismo `dia`.
 | Computable | **7h 24m** |
 | Esperado | 8h 00m |
 | Déficit | **−36 min** |
-| **ESTADO DÍA** | ⚠️ **ATRASO — 1 de 2 turnos con retraso** |
+| **ESTADO DÍA** | ⚠️ **ATRASO — 1 de 2 horarios con retraso** |
 
 ### Ejemplo 2 — marcas `08:12 11:08`
 
-| | Turno A `08:00–12:00` | Turno B `14:00–18:00` |
+| | Horario A `08:00–12:00` | Horario B `14:00–18:00` |
 |---|---|---|
 | Entrada | **08:12** ⚠️ atraso | ❌ ninguna |
 | Salida | ❌ ninguna válida — 11:08 cae antes de `sMinima 12:00` | ❌ ninguna |
@@ -373,23 +373,23 @@ Un funcionario puede tener dos filas de `asignacion_turnos` para el mismo `dia`.
 | Computable | **0h 00m** |
 | Esperado | 8h 00m |
 | Déficit | **−8h 00m** |
-| **ESTADO DÍA** | 🔴 **ABANDONO + FALTA — 0 de 2 turnos cumplidos** |
+| **ESTADO DÍA** | 🔴 **ABANDONO + FALTA — 0 de 2 horarios cumplidos** |
 
-### Solape entre turnos del mismo día
+### Solape entre horarios del mismo día
 
 ```
-Turno A salida  [12:00 ──────── 13:45]
-Turno B entrada        [13:15 ──────── 15:00]
+Horario A salida  [12:00 ──────── 13:45]
+Horario B entrada        [13:15 ──────── 15:00]
                         └──┬──┘
                      13:15–13:45 SOLAPADAS
 ```
 
 Una marca a las 13:30 es ambigua. **Regla propuesta** (sin confirmar): dentro del
-solape, la marca se asigna al turno que aún no tenga cubierto ese rol.
+solape, la marca se asigna al horario que aún no tenga cubierto ese rol.
 
 ---
 
-## 6. Validaciones que debería exigir el formulario de turnos
+## 6. Validaciones que debería exigir el formulario de horarios
 
 | # | Regla |
 |---|---|
@@ -400,16 +400,16 @@ solape, la marca se asigna al turno que aún no tenga cubierto ese rol.
 | 5 | `siguienteDia = 1` ⟹ `hSalida < hEntrada`; `siguienteDia = 0` ⟹ `hSalida > hEntrada` |
 | 6 | `hTrabajadas ≈ hSalida − hEntrada` (±tolerancia) |
 
-### Defectos ya detectados en los 757 turnos de la BD
+### Defectos ya detectados en los 757 horarios de la BD
 
-| Turno | Problema |
+| Horario | Problema |
 |---|---|
 | `0MH` | `hTrabajadas = 0.0000` con horario real 09:00–13:00 |
 | `0ZX` | `hEntrada 06:00` pero `hTolerancia 10:10`; `sMinima 17:00 > hSalida 16:00` |
 | varios | `sMinima == sTolerancia` → salir 1 min antes cae en zona muerta, no se reporta como anticipada |
 
-El procesador debe **validar el turno antes de evaluar** y marcar la fila como
-«turno mal configurado» en vez de emitir un resultado falso.
+El procesador debe **validar el horario antes de evaluar** y marcar la fila como
+«horario mal configurado» en vez de emitir un resultado falso.
 
 ---
 
@@ -435,10 +435,10 @@ El procesador debe **validar el turno antes de evaluar** y marcar la fila como
 | 2 | Alcance del reporte | un funcionario × rango · todos × rango · ambos |
 | 3 | Persistencia | al vuelo (sin tabla) · tabla `asistencias_procesadas` |
 | 4 | ¿El ABANDONO anula todo el día (0h) o se mantienen las horas con la marca encima? | — |
-| 5 | Horas de un día excepcional | acreditar `hTrabajadas` del turno · 0h con solo la etiqueta |
+| 5 | Horas de un día excepcional | acreditar `hTrabajadas` del horario · 0h con solo la etiqueta |
 | 6 | Marcas de un día excepcional | mostrarlas como referencia · ocultarlas |
-| 7 | Marca ambigua en solape de turnos | regla automática · marcar para revisión manual |
-| 8 | Solape de rangos en `asignacion_turnos` | desempate por `desde` más reciente (propuesto) |
+| 7 | Marca ambigua en solape de horarios | regla automática · marcar para revisión manual |
+| 8 | Solape de rangos en `asignacion_horarios` | desempate por `desde` más reciente (propuesto) |
 | 9 | `siguienteDia` mal configurado | validación dura que no deja guardar · aviso |
 
 ---
@@ -450,5 +450,5 @@ El procesador debe **validar el turno antes de evaluar** y marcar la fila como
 | `app/Http/Controllers/ReporteMarcacionController.php` | patrón selección + generación (pantalla / print / CSV) |
 | `resources/views/reportes/marcaciones/sinProcesar/` | 3 vistas (`report`, `lista`, `print`) |
 | `ReporteMarcacionController::buscarFuncionarios()` | combo select2 con fallback Mamoré → local |
-| `AsignacionTurno::scopeVigenteEn()` | resuelve `desde ≤ fecha ≤ hasta` |
-| `AsignacionTurno::scopeDelFuncionario()` | orden por día y hora de entrada, con join a `turnos` |
+| `AsignacionHorario::scopeVigenteEn()` | resuelve `desde ≤ fecha ≤ hasta` |
+| `AsignacionHorario::scopeDelFuncionario()` | orden por día y hora de entrada, con join a `horarios` |

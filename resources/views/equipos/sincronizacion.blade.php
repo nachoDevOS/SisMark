@@ -21,7 +21,7 @@
 
         // Sin días guardados se marcan los siete: es lo que hace el equipo cuando la
         // lista está vacía, y el formulario tiene que mostrar lo que va a pasar.
-        $diasGuardados = old('sync_dias', $equipo->diasSync() ?: array_keys(\App\Models\Turno::DIAS));
+        $diasGuardados = old('sync_dias', $equipo->diasSync() ?: array_keys(\App\Models\Horario::DIAS));
         $diasGuardados = array_map('intval', (array) $diasGuardados);
     @endphp
 
@@ -52,7 +52,7 @@
                     <label>Días de sincronización</label>
 
                     <div style="display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin-bottom: .2rem;">
-                        @foreach (\App\Models\Turno::DIAS as $numero => $nombre)
+                        @foreach (\App\Models\Horario::DIAS as $numero => $nombre)
                             <div class="check">
                                 <input type="checkbox" id="sync_dia_{{ $numero }}" name="sync_dias[]"
                                        value="{{ $numero }}" @checked(in_array($numero, $diasGuardados, true))>

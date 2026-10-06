@@ -20,7 +20,7 @@
 @endsection
 
 @php
-    use App\Models\Turno;
+    use App\Models\Horario;
     use App\Services\ProcesadorAsistencia as P;
     use Illuminate\Support\Carbon;
 
@@ -44,9 +44,9 @@
         .'Impreso: '.now()->format('d/m/Y H:i:s');
     $qrSvg = preg_replace('/^<\?xml.*?\?>\s*/s', '', \SimpleSoftwareIO\QrCode\Facades\QrCode::format('svg')->size(100)->margin(0)->generate($qrTexto));
 
-    // Solo los días con turno asignado, igual que la tabla en pantalla: los
+    // Solo los días con horario asignado, igual que la tabla en pantalla: los
     // «no laborable» no se controlan y llenaban la hoja de filas vacías.
-    $diasConTurno = $dias->reject(fn (array $dia): bool => $dia['estado'] === P::NO_LABORABLE);
+    $diasConHorario = $dias->reject(fn (array $dia): bool => $dia['estado'] === P::NO_LABORABLE);
 @endphp
 
 @section('content')
@@ -87,7 +87,7 @@
             <tr>
                 <th style="text-align: center">Fecha</th>
                 <th style="text-align: center">Día</th>
-                <th style="text-align: center">Turno</th>
+                <th style="text-align: center">Horario</th>
                 <th style="text-align: center">Entró</th>
                 <th style="text-align: center">Salió</th>
                 <th style="text-align: center">Atraso</th>
@@ -101,9 +101,9 @@
             </tr>
         </thead>
         <tbody>
-            @forelse ($diasConTurno as $dia)
+            @forelse ($diasConHorario as $dia)
                 @php
-                    $nombreDia = Turno::DIAS[$dia['fecha']->dayOfWeek + 1] ?? '—';
+                    $nombreDia = Horario::DIAS[$dia['fecha']->dayOfWeek + 1] ?? '—';
                     $filas = max(1, count($dia['bloques']));
                 @endphp
 
@@ -124,7 +124,7 @@
                                 <td style="text-align: center" rowspan="{{ $filas }}">{{ $dia['fecha']->format('j/n/Y') }}</td>
                                 <td style="text-align: center" rowspan="{{ $filas }}">{{ $nombreDia }}</td>
                             @endif
-                            <td>{{ trim((string) $bloque['turno']->nombreTurno) }}</td>
+                            <td>{{ trim((string) $bloque['horario']->nombreHorario) }}</td>
                             <td style="text-align: center">{{ ! $bloque['entradaExigida'] ? 'licencia' : ($bloque['entrada'] === null ? '' : P::hora($bloque['entrada'])) }}</td>
                             <td style="text-align: center">{{ ! $bloque['salidaExigida'] ? 'licencia' : ($bloque['salida'] === null ? '' : P::hora($bloque['salida'])) }}</td>
                             <td style="text-align: center">{{ $bloque['atraso'] > 0 ? P::desvio($bloque['atraso']) : '' }}</td>
@@ -140,7 +140,7 @@
                 @endif
             @empty
                 <tr>
-                    <td colspan="13" style="text-align: center">No hay días con turno asignado en el rango.</td>
+                    <td colspan="13" style="text-align: center">No hay días con horario asignado en el rango.</td>
                 </tr>
             @endforelse
             <tr>

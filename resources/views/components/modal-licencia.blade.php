@@ -7,21 +7,21 @@
 @php
     $ciFijo = trim((string) $ci);
     $sufijo = 'ci'.preg_replace('/\W/', '', $ciFijo);
-    // Si la validación rebotó (o no había turnos en el rango), el modal se
+    // Si la validación rebotó (o no había horarios en el rango), el modal se
     // reabre con lo que se había cargado. El marcador `_form` distingue cuál de
     // los formularios de la ficha fue, porque comparten nombres de campo.
     $abierto = old('_form') === 'licencia' ? 'true' : 'false';
     $tipoInicial = old('tipo', \App\Models\Licencia::TIPO_PERSONAL);
     $completoInicial = $tipoInicial !== \App\Models\Licencia::TIPO_PERSONAL && (bool) old('tCompleto', 1);
-    $verTurnos = auth()->user()?->can('viewAny', \App\Models\AsignacionTurno::class) ?? false;
-    // `acciones=0`: acá los turnos se muestran solo como referencia, sin los
+    $verHorarios = auth()->user()?->can('viewAny', \App\Models\AsignacionHorario::class) ?? false;
+    // `acciones=0`: acá los horarios se muestran solo como referencia, sin los
     // botones de concluir ni eliminar de la solapa de la ficha.
-    $urlTurnos = route('funcionarios.turnos.list', ['ci' => $ciFijo, 'situacion' => 'vigentes', 'por_pagina' => 100, 'acciones' => 0]);
+    $urlHorarios = route('funcionarios.horarios.list', ['ci' => $ciFijo, 'situacion' => 'vigentes', 'por_pagina' => 100, 'acciones' => 0]);
 @endphp
 
 {{-- Alta de licencia para **un** funcionario ya conocido: el mismo alcance
      «uno» de la pantalla «Licenciar», pero sin el combo ni los modos de varios
-     o todos, y con sus turnos vigentes a la vista. La pantalla general sigue
+     o todos, y con sus horarios vigentes a la vista. La pantalla general sigue
      existiendo para los feriados y las altas en lote. --}}
 @can('create', \App\Models\Licencia::class)
     <div x-data="{
@@ -29,22 +29,22 @@
              cargado: false,
              tipo: @js($tipoInicial),
              {{-- El personal es siempre por horas; el institucional arranca en
-                  turno completo y puede pasar a por horas. --}}
+                  horario completo y puede pasar a por horas. --}}
              completo: {{ $completoInicial ? 'true' : 'false' }},
              async abrir() {
                  this.abierto = true;
                  if (this.cargado) { return; }
                  this.cargado = true;
-                 await this.cargarTurnos(@js($urlTurnos));
+                 await this.cargarHorarios(@js($urlHorarios));
              },
-             async cargarTurnos(url) {
-                 if (! this.$refs.turnos) { return; }
-                 this.$refs.turnos.innerHTML = `<div class='vacio'>Cargando…</div>`;
+             async cargarHorarios(url) {
+                 if (! this.$refs.horarios) { return; }
+                 this.$refs.horarios.innerHTML = `<div class='vacio'>Cargando…</div>`;
                  try {
                      const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-                     this.$refs.turnos.innerHTML = await resp.text();
+                     this.$refs.horarios.innerHTML = await resp.text();
                  } catch (e) {
-                     this.$refs.turnos.innerHTML = `<div class='aviso aviso--error'>No se pudieron cargar los turnos vigentes.</div>`;
+                     this.$refs.horarios.innerHTML = `<div class='aviso aviso--error'>No se pudieron cargar los horarios vigentes.</div>`;
                  }
              },
          }"
@@ -58,15 +58,15 @@
             <div class="modal-caja" style="max-width: 46rem;">
                 <h2>Licenciar a CI {{ $ciFijo }}</h2>
 
-                @if ($verTurnos)
+                @if ($verHorarios)
                     <p class="ayuda" style="margin-top: 0;">
                         Se anota una licencia por cada día del rango en que el funcionario
-                        tenga turno. Estos son sus <strong>turnos vigentes</strong>:
+                        tenga horario. Estos son sus <strong>horarios vigentes</strong>:
                     </p>
-                    <div x-ref="turnos" class="modal-licencia__turnos"
+                    <div x-ref="horarios" class="modal-licencia__horarios"
                          x-on:click="
                              const enlace = $event.target.closest('a.pag__link');
-                             if (enlace) { $event.preventDefault(); cargarTurnos(enlace.href); }
+                             if (enlace) { $event.preventDefault(); cargarHorarios(enlace.href); }
                          ">
                         <div class="vacio">Cargando…</div>
                     </div>
@@ -114,7 +114,7 @@
                     </div>
 
                     {{-- Alcance. El permiso personal es siempre por horas; la licencia
-                         institucional es de turno completo o por horas. Lo valida
+                         institucional es de horario completo o por horas. Lo valida
                          también `StoreLicenciaRequest`. --}}
                     <input type="hidden" name="tCompleto" :value="completo ? 1 : 0">
                     <div class="campo">
@@ -122,10 +122,10 @@
                         {{-- Sin tildar, es por horas. --}}
                         <div class="campo check" style="margin: 0;" x-show="tipo !== 'personal'" x-cloak>
                             <input type="checkbox" id="lic-alcance-completo-{{ $sufijo }}" x-model="completo">
-                            <label for="lic-alcance-completo-{{ $sufijo }}" style="margin: 0;">Turno completo</label>
+                            <label for="lic-alcance-completo-{{ $sufijo }}" style="margin: 0;">Horario completo</label>
                         </div>
                         <p class="ayuda" style="margin: 0;" x-show="tipo === 'personal'">
-                            <strong>Por horas.</strong> El permiso personal no puede ser de turno completo
+                            <strong>Por horas.</strong> El permiso personal no puede ser de horario completo
                             y cuenta contra el tope mensual de permisos.
                         </p>
                         @error('tCompleto') <div class="error">{{ $message }}</div> @enderror

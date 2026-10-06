@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Horario;
 use App\Models\SistemaExterno;
 use App\Models\Turno;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
@@ -13,10 +14,10 @@ use Laravel\Sanctum\PersonalAccessToken;
  * Deja la integración con Mamoré lista para usar después de un `migrate:fresh`,
  * **solo fuera de producción**.
  *
- * Un `migrate:fresh` se lleva los sistemas consumidores, sus tokens y las marcas
- * de horario sugerido. Sin esto, cada vez hay que volver a emitir el token, ir a
- * pegarlo al `.env` de Mamoré y marcar a mano los cinco turnos, y hasta que eso
- * pase el alta de contrato de allá contesta 401 primero y 422 después.
+ * Un `migrate:fresh` se lleva los sistemas consumidores, sus tokens y el turno
+ * sugerido. Sin esto, cada vez hay que volver a emitir el token, ir a pegarlo al
+ * `.env` de Mamoré y armar a mano el turno, y hasta que eso pase el alta de
+ * contrato de allá contesta 401 primero y 422 después.
  *
  * ---
  * **El token es de texto fijo, a propósito.** Sanctum no guarda el texto sino su
@@ -60,9 +61,9 @@ class IntegracionMamoreSeeder extends Seeder
 
         $sistema = $this->sistema();
         $completo = $this->sembrarToken($sistema);
-        $marcados = $this->marcarSugeridos();
+        $turno = $this->sembrarTurnoSugerido();
 
-        $this->informar($completo, $marcados);
+        $this->informar($completo, $turno);
     }
 
     private function sistema(): SistemaExterno
@@ -112,26 +113,23 @@ class IntegracionMamoreSeeder extends Seeder
     }
 
     /**
-     * Marca el horario general —lunes a viernes, 08:00 a 16:00— como sugerido.
+     * Crea el turno general —lunes a viernes, 08:00 a 16:00— como sugerido.
      *
-     * Son cinco filas y no una: `turnos` guarda un día por fila. No pisa lo que
-     * ya esté marcado: si alguien eligió otro horario desde la pantalla, esa
-     * decisión vale más que el default de este seeder.
-     *
-     * @return int cuántos turnos quedaron marcados
+     * No pisa lo que ya exista: si alguien dejó otro turno como sugerido desde
+     * la pantalla, esa decisión vale más que el default de este seeder.
      */
-    private function marcarSugeridos(): int
+    private function sembrarTurnoSugerido(): ?Turno
     {
-        $yaMarcados = Turno::query()->sugeridos()->count();
+        $existente = Turno::query()->sugeridos()->with('horarios')->first();
 
-        if ($yaMarcados > 0) {
-            return $yaMarcados;
+        if ($existente !== null) {
+            return $existente;
         }
 
-        // Un turno por día hábil: el de entrada 08:00 y salida 16:00, que en la
+        // Un horario por día hábil: el de entrada 08:00 y salida 16:00, que en la
         // tabla del SIA es único por día.
         $ids = collect(['2', '3', '4', '5', '6'])
-            ->map(fn (string $dia): ?int => Turno::query()
+            ->map(fn (string $dia): ?int => Horario::query()
                 ->where('dia', $dia)
                 ->whereTime('hEntrada', '08:00:00')
                 ->whereTime('hSalida', '16:00:00')
@@ -141,24 +139,30 @@ class IntegracionMamoreSeeder extends Seeder
             ->all();
 
         if ($ids === []) {
-            return 0;
+            return null;
         }
 
-        return Turno::query()->whereIn('id', $ids)->update(['sugerido' => true]);
+        $turno = Turno::create([
+            'nombre' => 'Horario general L-V 08:00 - 16:00',
+            'sugerido' => true,
+        ]);
+        $turno->horarios()->attach($ids);
+
+        return $turno->load('horarios');
     }
 
-    private function informar(string $token, int $marcados): void
+    private function informar(string $token, ?Turno $turno): void
     {
         $this->command?->newLine();
         $this->command?->info('Integración con Mamoré lista (solo desarrollo).');
         $this->command?->line('  SISMARK_API_TOKEN="'.$token.'"');
 
-        if ($marcados === 0) {
-            $this->command?->warn('  Sin horario sugerido: no se encontró el turno 08:00–16:00. Marcalo desde Turnos.');
+        if ($turno === null) {
+            $this->command?->warn('  Sin turno sugerido: no se encontró el horario 08:00–16:00. Crealo desde Turnos.');
 
             return;
         }
 
-        $this->command?->line("  Horario sugerido: {$marcados} turnos marcados.");
+        $this->command?->line("  Turno sugerido: «{$turno->nombre}» ({$turno->horarios->count()} horarios).");
     }
 }

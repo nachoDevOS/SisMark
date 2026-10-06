@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\MamoreException;
-use App\Models\AsignacionTurno;
+use App\Models\AsignacionHorario;
 use App\Models\Asistencia;
 use App\Models\Licencia;
 use App\Models\Persona;
@@ -69,7 +69,7 @@ class PersonaController extends Controller
 
     /**
      * Ficha de detalle de un funcionario local (SIAT). Marcaciones, licencias y
-     * turnos no van en esta respuesta: son las tres solapas del pie de la
+     * horarios no van en esta respuesta: son las tres solapas del pie de la
      * ficha, y cada una carga su tabla por AJAX cuando se la abre.
      */
     public function show(Request $request, Persona $persona, ResolutorNombres $resolutor): View
@@ -129,13 +129,13 @@ class PersonaController extends Controller
         $ci = trim((string) $request->query('ci', ''));
 
         // Una fila por solicitud, igual que el listado general: el alta expande
-        // el rango a una fila por día y turno, y mostrarlas sueltas hacía que un
+        // el rango a una fila por día y horario, y mostrarlas sueltas hacía que un
         // permiso de cinco días pareciera cinco licencias. Importa además porque
         // la baja de esta pantalla alcanza a la solicitud entera.
         //
-        // Sin `with('turno')`: la tabla ya no muestra el horario —un pedido de
-        // cinco días puede abarcar turnos distintos y poner el del primer día
-        // engañaba—. El desglose día por día, con su turno, está en la ficha.
+        // Sin `with('horario')`: la tabla ya no muestra el horario —un pedido de
+        // cinco días puede abarcar horarios distintos y poner el del primer día
+        // engañaba—. El desglose día por día, con su horario, está en la ficha.
         //
         // Con `mes` («2026-09») salen las solicitudes con algún día en ese mes;
         // una que cruza de un mes al otro aparece en los dos. Sin mes, todas.
@@ -178,7 +178,7 @@ class PersonaController extends Controller
     }
 
     /**
-     * Parcial de los turnos asignados de una cédula para la solapa de la ficha.
+     * Parcial de los horarios asignados de una cédula para la solapa de la ficha.
      *
      * Por defecto salen todos, con los que siguen en pie primero; el filtro
      * permite quedarse solo con los vigentes o mirar solo los vencidos.
@@ -189,14 +189,15 @@ class PersonaController extends Controller
      * Con los períodos de la página en mano se traen sus asignaciones de un
      * viaje y se agrupan para que la vista arme un bloque por vigencia.
      */
-    public function turnosList(Request $request): View
+    public function horariosList(Request $request): View
     {
-        $this->authorize('viewAny', AsignacionTurno::class);
+        // Igual que la solapa: con cualquiera de los dos permisos de listado.
+        abort_unless((bool) $request->user()?->canAny(['ViewAny:AsignacionTurno', 'ViewAny:AsignacionHorario']), 403);
 
         $ci = trim((string) $request->query('ci', ''));
-        $situacion = $this->situacionTurnos($request);
+        $situacion = $this->situacionHorarios($request);
         // De qué ficha se pidió la tabla: los botones de la fila lo devuelven
-        // al concluir un turno, para volver a esta misma solapa.
+        // al concluir un horario, para volver a esta misma solapa.
         $origenFicha = in_array($request->query('origen'), ['local', 'mamore'], true)
             ? (string) $request->query('origen')
             : '';
@@ -205,9 +206,9 @@ class PersonaController extends Controller
         $conAcciones = $request->boolean('acciones', true);
 
         $incluirVencidas = $situacion !== 'vigentes';
-        $soloVencidas = fn (Builder $query) => $query->whereDate('asignacion_turnos.hasta', '<', today());
+        $soloVencidas = fn (Builder $query) => $query->whereDate('asignacion_horarios.hasta', '<', today());
 
-        $periodos = AsignacionTurno::query()
+        $periodos = AsignacionHorario::query()
             ->periodosDelFuncionario($ci, incluirVencidas: $incluirVencidas)
             ->when($situacion === 'vencidas', $soloVencidas)
             ->paginate($this->porPagina($request))
@@ -215,27 +216,28 @@ class PersonaController extends Controller
 
         $asignaciones = $periodos->isEmpty()
             ? collect()
-            : AsignacionTurno::query()
+            : AsignacionHorario::query()
                 ->delFuncionario($ci, incluirVencidas: $incluirVencidas)
+                ->with('asignacionTurno.turno')
                 ->when($situacion === 'vencidas', $soloVencidas)
                 ->where(function (Builder $query) use ($periodos): void {
                     foreach ($periodos as $periodo) {
                         $query->orWhere(fn (Builder $par) => $par
-                            ->where('asignacion_turnos.desde', $periodo->desde)
-                            ->where('asignacion_turnos.hasta', $periodo->hasta));
+                            ->where('asignacion_horarios.desde', $periodo->desde)
+                            ->where('asignacion_horarios.hasta', $periodo->hasta));
                     }
                 })
                 ->get()
-                ->groupBy(fn (AsignacionTurno $asignacion): string => $asignacion->clave_periodo);
+                ->groupBy(fn (AsignacionHorario $asignacion): string => $asignacion->clave_periodo);
 
-        return view('funcionarios.turnos-list', compact('periodos', 'asignaciones', 'origenFicha', 'conAcciones'));
+        return view('funcionarios.horarios-list', compact('periodos', 'asignaciones', 'origenFicha', 'conAcciones'));
     }
 
     /**
-     * Filtro de la solapa de turnos: «todas» (por defecto), «vigentes» o
+     * Filtro de la solapa de horarios: «todas» (por defecto), «vigentes» o
      * «vencidas». Un valor desconocido cae en «todas».
      */
-    private function situacionTurnos(Request $request): string
+    private function situacionHorarios(Request $request): string
     {
         $situacion = (string) $request->query('situacion', 'todas');
 

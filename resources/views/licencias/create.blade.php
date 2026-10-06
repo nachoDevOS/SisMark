@@ -4,7 +4,7 @@
 
 @php
     /** Abreviatura del día de la semana, como la grilla del sistema de escritorio. */
-    $abreviar = fn (?int $dia): string => mb_strtoupper(mb_substr(\App\Models\Turno::DIAS[$dia] ?? '—', 0, 3));
+    $abreviar = fn (?int $dia): string => mb_strtoupper(mb_substr(\App\Models\Horario::DIAS[$dia] ?? '—', 0, 3));
     $nombre = $persona['nombre'] ?? '';
     $modoInicial = old('modo', 'uno');
 
@@ -49,7 +49,7 @@
           x-data="{
               modo: @js($modoInicial),
               completo: {{ old('tCompleto', 1) ? 'true' : 'false' }},
-              porTurno: {{ old('asignaciones') !== null ? 'true' : 'false' }},
+              porHorario: {{ old('asignaciones') !== null ? 'true' : 'false' }},
               elegidos: @js($elegidos),
               {{-- El rango vive en Alpine además de en los inputs: el catálogo de
                    direcciones y el personal se piden para esas fechas. --}}
@@ -89,7 +89,7 @@
                        parece que se perdió la selección. --}}
                   if (this.modo === 'direccion') { this.cargarDirecciones(); }
                   {{-- Todo lo que cambia los días o las horas del permiso recalcula
-                       el saldo. Los turnos elegidos a mano avisan desde su checkbox. --}}
+                       el saldo. Los horarios elegidos a mano avisan desde su checkbox. --}}
                   {{-- El permiso personal es solo para un funcionario: varios o por
                        dirección son siempre licencia institucional. --}}
                   this.$watch('modo', (modo) => {
@@ -97,11 +97,11 @@
                       else if (! this.tipoElegido) { this.tipo = 'personal'; }
                   });
                   {{-- El personal es siempre por horas; el institucional arranca en
-                       turno completo y puede pasar a por horas. --}}
+                       horario completo y puede pasar a por horas. --}}
                   this.$watch('tipo', (tipo) => { this.completo = tipo !== 'personal'; });
                   if (this.modo !== 'uno') { this.tipo = 'institucional'; }
                   if (this.tipo === 'personal') { this.completo = false; }
-                  ['modo', 'tipo', 'completo', 'desde', 'hasta', 'lEntra', 'lSale', 'porTurno']
+                  ['modo', 'tipo', 'completo', 'desde', 'hasta', 'lEntra', 'lSale', 'porHorario']
                       .forEach((campo) => this.$watch(campo, () => this.consultarSaldo()));
                   this.consultarSaldo();
               },
@@ -125,7 +125,7 @@
                       const params = new URLSearchParams({ ci: this.ci, desde: this.desde, hasta: this.hasta });
                       if (this.lEntra) { params.set('lEntra', this.lEntra); }
                       if (this.lSale) { params.set('lSale', this.lSale); }
-                      if (this.porTurno) {
+                      if (this.porHorario) {
                           this.$root.querySelectorAll('input[name^=asignaciones]:checked')
                               .forEach((casilla) => params.append('asignaciones[]', casilla.value));
                       }
@@ -306,7 +306,7 @@
                   }, 300);
               },
               cerrar() { this.abierto = false; this.resultados = []; this.errorApi = ''; this.q = ''; },
-              {{-- Un funcionario: se recarga con ?ci= para traer sus turnos del servidor. --}}
+              {{-- Un funcionario: se recarga con ?ci= para traer sus horarios del servidor. --}}
               elegirUno(item) { window.location = `{{ route('licencias.create') }}?ci=${encodeURIComponent(item.id)}`; },
               {{-- Varios: se agregan fichas del lado del cliente, sin recargar. --}}
               agregar(item) {
@@ -416,7 +416,7 @@
                         </div>
                     </dl>
                 @else
-                    <p class="vacio" style="margin: 0; padding: 1rem;">Elegí un funcionario para ver sus turnos asignados.</p>
+                    <p class="vacio" style="margin: 0; padding: 1rem;">Elegí un funcionario para ver sus horarios asignados.</p>
                 @endif
             </div>
 
@@ -541,7 +541,7 @@
                 <p class="ayuda">
                     El conteo de cada opción es la gente que tuvo contrato en el rango elegido,
                     así que cambia si cambiás las fechas. Se licencia solo a quien además tenga
-                    turno asignado en esos días, según su propio horario.
+                    horario asignado en esos días, según su propio horario.
                 </p>
 
                 {{-- Quiénes van a quedar licenciados. El alcance anota sin elegir
@@ -618,12 +618,12 @@
             </div>
         </div>
 
-        {{-- Paso 2: turnos del funcionario (solo cuando hay uno cargado). --}}
+        {{-- Paso 2: horarios del funcionario (solo cuando hay uno cargado). --}}
         @if ($persona)
             <div class="card card--padded" style="margin-top: 1rem;" x-show="modo === 'uno'" x-cloak>
                 <div class="cabecera" style="margin: 0 0 .75rem;">
                     <h2 style="margin: 0;">
-                        Turnos {{ $incluirVencidos ? '' : 'vigentes' }} de {{ $nombre ?: 'el funcionario' }}
+                        Horarios {{ $incluirVencidos ? '' : 'vigentes' }} de {{ $nombre ?: 'el funcionario' }}
                     </h2>
                     @if ($incluirVencidos)
                         <a class="btn btn--gris" href="{{ route('licencias.create', ['ci' => $ci]) }}">
@@ -639,17 +639,17 @@
                 @if ($asignaciones->isEmpty())
                     <div class="aviso aviso--error">
                         @if ($vencidos > 0 && ! $incluirVencidos)
-                            El funcionario no tiene turnos vigentes; sí tiene {{ $vencidos }} vencido(s).
+                            El funcionario no tiene horarios vigentes; sí tiene {{ $vencidos }} vencido(s).
                             <a href="{{ route('licencias.create', ['ci' => $ci, 'vencidos' => 1]) }}">Mostrarlos</a>
                             para anotar una licencia retroactiva.
                         @else
-                            El funcionario no tiene turnos asignados: no se le puede anotar una licencia.
+                            El funcionario no tiene horarios asignados: no se le puede anotar una licencia.
                         @endif
                     </div>
                 @else
                     <p class="ayuda" style="margin-top: 0;">
                         El rango de fechas define qué días se licencian: se anota una licencia por cada
-                        día del rango en que el funcionario tenga turno. No hace falta marcar nada.
+                        día del rango en que el funcionario tenga horario. No hace falta marcar nada.
                     </p>
 
                     @error('asignaciones') <div class="error">{{ $message }}</div> @enderror
@@ -657,9 +657,9 @@
                     <table>
                         <thead>
                             <tr>
-                                <th style="width: 2.5rem;" x-show="porTurno" x-cloak></th>
+                                <th style="width: 2.5rem;" x-show="porHorario" x-cloak></th>
                                 <th>Día</th>
-                                <th>Turno</th>
+                                <th>Horario</th>
                                 <th>Entrada</th>
                                 <th>Salida</th>
                                 <th>Día siguiente</th>
@@ -671,7 +671,7 @@
                         <tbody>
                             @foreach ($asignaciones as $asignacion)
                                 @php
-                                    $turno = $asignacion->turno;
+                                    $horario = $asignacion->horario;
                                     $vencida = (bool) $asignacion->hasta?->isPast();
                                     $futura = (bool) $asignacion->desde?->isFuture();
                                     // Sin envío previo van todos marcados: al abrir la
@@ -680,19 +680,19 @@
                                         || in_array((string) $asignacion->id, (array) old('asignaciones', []), true);
                                 @endphp
                                 <tr @class(['fila--inactiva' => $vencida])>
-                                    <td x-show="porTurno" x-cloak>
+                                    <td x-show="porHorario" x-cloak>
                                         {{-- Deshabilitado fuera del modo manual: así no viaja ninguna
-                                             asignación y el servidor resuelve los turnos por el rango. --}}
+                                             asignación y el servidor resuelve los horarios por el rango. --}}
                                         <input type="checkbox" name="asignaciones[]" value="{{ $asignacion->id }}"
-                                               @checked($marcada) :disabled="! porTurno || modo !== 'uno'"
+                                               @checked($marcada) :disabled="! porHorario || modo !== 'uno'"
                                                x-on:change="consultarSaldo()"
-                                               aria-label="Elegir turno {{ $turno->nombreTurno }}">
+                                               aria-label="Elegir horario {{ $horario->nombreHorario }}">
                                     </td>
-                                    <td>{{ $abreviar((int) $turno->dia) }}</td>
-                                    <td>{{ $turno->nombreTurno }}</td>
-                                    <td>{{ $turno->hEntrada?->format('H:i') ?? '—' }}</td>
-                                    <td>{{ $turno->hSalida?->format('H:i') ?? '—' }}</td>
-                                    <td>{{ $turno->siguienteDia ? 'Sí' : '' }}</td>
+                                    <td>{{ $abreviar((int) $horario->dia) }}</td>
+                                    <td>{{ $horario->nombreHorario }}</td>
+                                    <td>{{ $horario->hEntrada?->format('H:i') ?? '—' }}</td>
+                                    <td>{{ $horario->hSalida?->format('H:i') ?? '—' }}</td>
+                                    <td>{{ $horario->siguienteDia ? 'Sí' : '' }}</td>
                                     <td>
                                         {{ $asignacion->desde?->format('d/m/Y') ?? '—' }} al
                                         {{ $asignacion->hasta?->format('d/m/Y') ?? '—' }}
@@ -706,18 +706,18 @@
                                             <span class="pill pill--ok">Vigente</span>
                                         @endif
                                     </td>
-                                    <td>{{ rtrim(rtrim(number_format((float) $turno->hTrabajadas, 2, '.', ''), '0'), '.') }}</td>
+                                    <td>{{ rtrim(rtrim(number_format((float) $horario->hTrabajadas, 2, '.', ''), '0'), '.') }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
                     </table>
 
                     <div class="campo check" style="margin: .75rem 0 0;">
-                        <input type="checkbox" id="porTurno" x-model="porTurno">
-                        <label for="porTurno" style="margin: 0;">
-                            Licenciar solo algunos turnos
+                        <input type="checkbox" id="porHorario" x-model="porHorario">
+                        <label for="porHorario" style="margin: 0;">
+                            Licenciar solo algunos horarios
                             <span class="ayuda" style="font-weight: 400;">
-                                (para quien tiene doble turno en un día y falta solo a uno de ellos)
+                                (para quien tiene doble horario en un día y falta solo a uno de ellos)
                             </span>
                         </label>
                     </div>
@@ -746,7 +746,7 @@
                 </div>
                 <p class="ayuda" style="margin-bottom: 0;">
                     <span x-show="tipo === 'personal'">Lo pide el funcionario para su uso (trámite, médico, asunto familiar). Es siempre por horas y cuenta contra el tope mensual de permisos.</span>
-                    <span x-show="tipo === 'institucional'" x-cloak>La dispone la institución (feriado, actividad, capacitación, comisión). Puede ser de turno completo o por horas, y no cuenta contra el tope.</span>
+                    <span x-show="tipo === 'institucional'" x-cloak>La dispone la institución (feriado, actividad, capacitación, comisión). Puede ser de horario completo o por horas, y no cuenta contra el tope.</span>
                     <span x-show="modo !== 'uno'" x-cloak><br>Para varios funcionarios o una dirección se anota siempre licencia institucional.</span>
                 </p>
                 @error('tipo') <div class="error">{{ $message }}</div> @enderror
@@ -774,17 +774,17 @@
             </div>
 
             {{-- Alcance. El permiso personal es siempre por horas; la licencia
-                 institucional es de turno completo o por horas. Lo valida también
+                 institucional es de horario completo o por horas. Lo valida también
                  `StoreLicenciaRequest`. --}}
             <input type="hidden" name="tCompleto" :value="completo ? 1 : 0">
             <div class="campo">
                 <label>Alcance <span class="req">*</span></label>
                 {{-- El alcance y los haberes van en la misma fila: son las dos
-                     casillas del permiso. Sin tildar «Turno completo», es por horas. --}}
+                     casillas del permiso. Sin tildar «Horario completo», es por horas. --}}
                 <div class="toolbar" style="gap: 1.5rem; align-items: center;">
                     <div class="campo check" style="margin: 0;" x-show="tipo !== 'personal'" x-cloak>
                         <input type="checkbox" id="alcance-completo" x-model="completo">
-                        <label for="alcance-completo" style="margin: 0;">Turno completo</label>
+                        <label for="alcance-completo" style="margin: 0;">Horario completo</label>
                     </div>
                     <span class="pill pill--info" x-show="tipo === 'personal'">Por horas</span>
                     <div class="campo check" style="margin: 0;">
@@ -793,10 +793,10 @@
                     </div>
                 </div>
                 <p class="ayuda" style="margin: .35rem 0 0;" x-show="tipo === 'personal'">
-                    El permiso personal no puede ser de turno completo y cuenta contra el tope mensual de permisos.
+                    El permiso personal no puede ser de horario completo y cuenta contra el tope mensual de permisos.
                 </p>
                 <p class="ayuda" style="margin: .35rem 0 0;" x-show="tipo !== 'personal'" x-cloak>
-                    Si no marcará en todo el día, dejá «Turno completo». Si llegará tarde o se irá
+                    Si no marcará en todo el día, dejá «Horario completo». Si llegará tarde o se irá
                     temprano, destildalo y cargá desde qué hora hasta qué hora.
                 </p>
                 @error('tCompleto') <div class="error">{{ $message }}</div> @enderror
@@ -838,9 +838,9 @@
             </div>
 
             {{-- Saldo de permisos por horas contra el tope mensual (Configuración).
-                 Solo con un funcionario y sin turno completo: en «varios» y «por
+                 Solo con un funcionario y sin horario completo: en «varios» y «por
                  dirección» no entra un recuadro por persona, y el control queda al
-                 guardar. Se recalcula al cambiar fechas, horas o turnos. --}}
+                 guardar. Se recalcula al cambiar fechas, horas o horarios. --}}
             @if ($persona)
                 <div x-show="modo === 'uno' && tipo === 'personal' && ! completo && (cargandoSaldo || errorSaldo || (saldo && saldo.activo))" x-cloak
                      style="margin: .75rem 0; border: 1px solid var(--border); border-radius: .4rem; padding: .6rem .75rem;"
@@ -886,7 +886,7 @@
                                 Cargá la hora de entrada y la de salida para ver cuánto suma este permiso.
                             </p>
                             <p x-show="! saldo.excede && lEntra && lSale && saldo.dias === 0" class="ayuda" style="margin: .4rem 0 0;">
-                                En el rango no hay días para licenciar: no tiene turno o ya tiene licencia esos días.
+                                En el rango no hay días para licenciar: no tiene horario o ya tiene licencia esos días.
                             </p>
                         </div>
                     </template>

@@ -1,10 +1,10 @@
 @extends('layouts.app')
 
-@section('titulo', 'Nuevo turno')
+@section('titulo', 'Nuevo horario')
 
 @section('contenido')
     <div class="cabecera">
-        <h1>Nuevo turno</h1>
+        <h1>Nuevo horario</h1>
         <a href="{{ route('horarios.index') }}" class="btn btn--gris"><x-heroicon-o-arrow-left />Volver</a>
     </div>
 
@@ -13,7 +13,7 @@
         @include('horarios._form')
 
         <div class="form-acciones">
-            <button type="submit" class="btn"><x-heroicon-o-check />Guardar turno</button>
+            <button type="submit" class="btn"><x-heroicon-o-check />Guardar horario</button>
             <a href="{{ route('horarios.index') }}" class="btn btn--gris"><x-heroicon-o-x-mark />Cancelar</a>
         </div>
     </form>

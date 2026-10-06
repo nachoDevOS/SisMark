@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Turno;
+use App\Models\Horario;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -37,12 +37,12 @@ class ActualizarSincronizacionEquipoRequest extends FormRequest
             'sync_horarios' => ['array', 'max:24', 'required_if:sync_automatica,true'],
             'sync_horarios.*' => ['required', 'date_format:H:i'],
             // Días de la semana en los que corre, con la numeración de
-            // `Turno::DIAS`. A diferencia de las horas **no** es obligatorio:
+            // `Horario::DIAS`. A diferencia de las horas **no** es obligatorio:
             // sin días elegidos el equipo trabaja todos, que es la conducta que
             // ya tenían los equipos configurados antes de que existiera el
             // campo.
             'sync_dias' => ['array', 'max:7'],
-            'sync_dias.*' => [Rule::in(array_keys(Turno::DIAS))],
+            'sync_dias.*' => [Rule::in(array_keys(Horario::DIAS))],
         ];
     }
 
@@ -50,7 +50,7 @@ class ActualizarSincronizacionEquipoRequest extends FormRequest
      * El checkbox ausente no llega en la petición: se normaliza a booleano
      * antes de validar. Las horas vacías del repetidor se descartan acá para
      * que no cuenten como una hora inválida, y los días se pasan a enteros para
-     * que la comparación con `Turno::DIAS` no dependa de que el formulario
+     * que la comparación con `Horario::DIAS` no dependa de que el formulario
      * mande «3» o 3.
      */
     protected function prepareForValidation(): void

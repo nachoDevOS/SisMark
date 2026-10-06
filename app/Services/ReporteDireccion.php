@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\MamoreException;
-use App\Models\Turno;
+use App\Models\Horario;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -187,7 +187,7 @@ class ReporteDireccion
             // persona.
             //
             // Se le pregunta al contrato y no al estado del día: un día sin
-            // cubrir sale «sin contrato» solo si además tenía turno, y los
+            // cubrir sale «sin contrato» solo si además tenía horario, y los
             // sábados y domingos van «no laborable» estén cubiertos o no. Mirar
             // los estados dejaba pasar cualquier mes que tuviera un fin de
             // semana, que son todos.
@@ -209,7 +209,7 @@ class ReporteDireccion
     /**
      * Nombre corto de cada mes, como los escribe el reporte impreso. Va acá y no
      * por localización de Carbon porque el resto del sistema nombra sus períodos
-     * con arreglos propios ({@see Turno::DIAS}).
+     * con arreglos propios ({@see Horario::DIAS}).
      *
      * @var array<int, string>
      */

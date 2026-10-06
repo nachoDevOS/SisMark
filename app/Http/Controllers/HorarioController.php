@@ -2,22 +2,24 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreDiaTurnoRequest;
-use App\Http\Requests\UpdateDiaTurnoRequest;
+use App\Http\Requests\StoreHorarioRequest;
+use App\Http\Requests\UpdateHorarioRequest;
+use App\Models\Horario;
 use App\Models\Turno;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /**
- * CRUD clásico (MVC) de los horarios (turnos): el «Administrador de horarios».
- * Trabaja sobre la tabla local MySQL `turnos` (migrada de DiaTurnos del SIA).
+ * CRUD clásico (MVC) de los horarios: el «Administrador de horarios».
+ * Trabaja sobre la tabla local MySQL `horarios` (migrada de DiaTurnos del SIA).
  */
-class DiaTurnoController extends Controller
+class HorarioController extends Controller
 {
     /**
      * Campos hora del formulario (clave del request, PascalCase) → atributo del
@@ -42,14 +44,13 @@ class DiaTurnoController extends Controller
      */
     public function index(Request $request): View
     {
-        $this->authorize('viewAny', Turno::class);
+        $this->authorize('viewAny', Horario::class);
 
         $buscar = trim((string) $request->query('buscar', ''));
         $dia = (string) $request->query('dia', '');
-        $sugerido = $this->filtroSugerido($request);
         $porPagina = $this->porPagina($request);
 
-        return view('horarios.index', compact('buscar', 'dia', 'sugerido', 'porPagina'));
+        return view('horarios.index', compact('buscar', 'dia', 'porPagina'));
     }
 
     /**
@@ -57,20 +58,15 @@ class DiaTurnoController extends Controller
      */
     public function list(Request $request): View
     {
-        $this->authorize('viewAny', Turno::class);
+        $this->authorize('viewAny', Horario::class);
 
         $buscar = trim((string) $request->query('q', ''));
         $dia = (string) $request->query('dia', '');
-        $sugerido = $this->filtroSugerido($request);
         $porPagina = $this->porPagina($request);
 
-        $horarios = Turno::query()
-            ->when($buscar !== '', fn (Builder $query) => $query->where('nombreTurno', 'like', "%{$buscar}%"))
+        $horarios = Horario::query()
+            ->when($buscar !== '', fn (Builder $query) => $query->where('nombreHorario', 'like', "%{$buscar}%"))
             ->when($dia !== '', fn (Builder $query) => $query->where('dia', $dia))
-            ->when($sugerido !== '', fn (Builder $query) => $query->where('sugerido', $sugerido === '1'))
-            // Los sugeridos arriba: son los pocos que se consultan seguido entre
-            // los cientos que arrastra el SIA.
-            ->orderByDesc('sugerido')
             ->ordenado()
             ->paginate($porPagina)
             ->withQueryString();
@@ -81,7 +77,7 @@ class DiaTurnoController extends Controller
     /**
      * Ficha de solo lectura de un horario.
      */
-    public function show(Turno $horario): View
+    public function show(Horario $horario): View
     {
         $this->authorize('view', $horario);
 
@@ -93,33 +89,33 @@ class DiaTurnoController extends Controller
      */
     public function create(): View
     {
-        $this->authorize('create', Turno::class);
+        $this->authorize('create', Horario::class);
 
         return view('horarios.create');
     }
 
     /**
-     * Guarda un horario nuevo. El código del turno (idTurno, char(3)) se genera
+     * Guarda un horario nuevo. El código del horario (idHorario, char(3)) se genera
      * automático como en el sistema de escritorio: el formulario no lo pide.
      */
-    public function store(StoreDiaTurnoRequest $request): RedirectResponse
+    public function store(StoreHorarioRequest $request): RedirectResponse
     {
-        $this->authorize('create', Turno::class);
+        $this->authorize('create', Horario::class);
 
-        $horario = new Turno;
-        $horario->idTurno = $this->generarCodigo();
+        $horario = new Horario;
+        $horario->idHorario = $this->generarCodigo();
         $this->asignarDatos($horario, $request->validated());
         $horario->save();
 
         return redirect()
             ->route('horarios.index')
-            ->with('estado', 'Turno registrado correctamente.');
+            ->with('estado', 'Horario registrado correctamente.');
     }
 
     /**
      * Formulario de edición.
      */
-    public function edit(Turno $horario): View
+    public function edit(Horario $horario): View
     {
         $this->authorize('update', $horario);
 
@@ -127,9 +123,9 @@ class DiaTurnoController extends Controller
     }
 
     /**
-     * Actualiza un horario. El idTurno (código) no se toca.
+     * Actualiza un horario. El idHorario (código) no se toca.
      */
-    public function update(UpdateDiaTurnoRequest $request, Turno $horario): RedirectResponse
+    public function update(UpdateHorarioRequest $request, Horario $horario): RedirectResponse
     {
         $this->authorize('update', $horario);
 
@@ -138,44 +134,45 @@ class DiaTurnoController extends Controller
 
         return redirect()
             ->route('horarios.index')
-            ->with('estado', 'Turno actualizado correctamente.');
+            ->with('estado', 'Horario actualizado correctamente.');
     }
 
     /**
-     * Elimina un horario (eliminación lógica: SoftDeletes en el modelo Turno).
+     * Elimina un horario (eliminación lógica: SoftDeletes en el modelo Horario).
      */
-    public function destroy(Turno $horario): RedirectResponse
+    public function destroy(Horario $horario): RedirectResponse
     {
         $this->authorize('delete', $horario);
+
+        // Un horario dado de baja no se procesa: si está dentro de un turno, ese
+        // día dejaría de controlarse para todos los que lo tienen, sin aviso. Se
+        // cuentan también los turnos eliminados, porque sus asignaciones pasadas
+        // siguen explicando los reportes de esas fechas.
+        $turnos = Turno::withTrashed()
+            ->whereIn('id', DB::table('horario_turno')->where('horario_id', $horario->id)->select('turno_id'))
+            ->orderBy('nombre')
+            ->pluck('nombre');
+
+        if ($turnos->isNotEmpty()) {
+            return redirect()
+                ->route('horarios.index')
+                ->with('error', 'No se puede eliminar el horario: está en uso por el turno «'.$turnos->implode('», «').'».');
+        }
 
         try {
             $horario->delete();
         } catch (QueryException) {
-            // La tabla `turnos` está referenciada por licencias y asignaciones
-            // (FK turno_id). Si el turno está en uso, la base rechaza el borrado:
+            // La tabla `horarios` está referenciada por licencias y asignaciones
+            // (FK horario_id). Si el horario está en uso, la base rechaza el borrado:
             // se avisa en vez de reventar con un error 500.
             return redirect()
                 ->route('horarios.index')
-                ->with('error', 'No se puede eliminar el turno: está en uso por licencias o asignaciones.');
+                ->with('error', 'No se puede eliminar el horario: está en uso por licencias o asignaciones.');
         }
 
         return redirect()
             ->route('horarios.index')
-            ->with('estado', 'Turno eliminado.');
-    }
-
-    /**
-     * Valor del filtro «horario sugerido»: «1», «0» o cadena vacía (sin filtrar).
-     *
-     * Solo se aceptan esos tres: cualquier otra cosa que llegue por la URL se
-     * trata como «sin filtrar», así un valor manipulado no cambia el listado por
-     * un camino no previsto.
-     */
-    private function filtroSugerido(Request $request): string
-    {
-        $valor = (string) $request->query('sugerido', '');
-
-        return in_array($valor, ['0', '1'], true) ? $valor : '';
+            ->with('estado', 'Horario eliminado.');
     }
 
     /**
@@ -184,10 +181,10 @@ class DiaTurnoController extends Controller
      *
      * @param  array<string, mixed>  $datos
      */
-    private function asignarDatos(Turno $horario, array $datos): void
+    private function asignarDatos(Horario $horario, array $datos): void
     {
         $horario->dia = $datos['Dia'];
-        $horario->nombreTurno = $datos['NombreTurno'];
+        $horario->nombreHorario = $datos['nombreHorario'];
 
         foreach (self::CAMPOS_HORA as $campoForm => $campoModelo) {
             $horario->{$campoModelo} = Carbon::createFromFormat('Y-m-d H:i', '1899-12-30 '.$datos[$campoForm]);
@@ -195,18 +192,17 @@ class DiaTurnoController extends Controller
 
         $horario->hTrabajadas = $datos['HTrabajadas'];
         $horario->siguienteDia = $datos['SiguienteDia'] ?? false;
-        $horario->sugerido = $datos['Sugerido'] ?? false;
     }
 
     /**
-     * Genera un código de turno único de 3 caracteres [A-Z0-9], como los que
+     * Genera un código de horario único de 3 caracteres [A-Z0-9], como los que
      * ya usa la tabla (ej. 011, 0A4, 0ZX).
      */
     private function generarCodigo(): string
     {
         do {
             $codigo = Str::upper(Str::random(3));
-        } while (Turno::query()->where('idTurno', $codigo)->exists());
+        } while (Horario::query()->where('idHorario', $codigo)->exists());
 
         return $codigo;
     }

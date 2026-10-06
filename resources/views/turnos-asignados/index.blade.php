@@ -13,7 +13,6 @@
         @endcan
     </div>
 
-    {{-- Filtros del listado (browse): disparan la carga AJAX de la tabla. --}}
     <div class="tabla-filtros">
         <label class="tabla-filtros__mostrar">
             Mostrar
@@ -26,13 +25,6 @@
         </label>
 
         <div class="tabla-filtros__extra">
-            <select id="f-dia" aria-label="Día de la semana del turno">
-                <option value="">Todos los días</option>
-                @foreach (\App\Models\Turno::DIAS as $numero => $nombre)
-                    <option value="{{ $numero }}" @selected($dia === (string) $numero)>{{ $nombre }}</option>
-                @endforeach
-            </select>
-
             <select id="f-situacion" aria-label="Situación de la asignación">
                 <option value="todas">Todas</option>
                 @foreach (\App\Http\Controllers\AsignacionTurnoController::SITUACIONES as $valor => $etiqueta)
@@ -58,12 +50,10 @@
             const resultados = document.getElementById('div-results');
             const inputBuscar = document.getElementById('f-buscar');
             const selPaginate = document.getElementById('f-paginate');
-            const selDia = document.getElementById('f-dia');
             const selSituacion = document.getElementById('f-situacion');
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
-                    dia: selDia.value,
                     situacion: selSituacion.value,
                     q: inputBuscar.value,
                     por_pagina: selPaginate.value,
@@ -80,8 +70,6 @@
                 }
             }
 
-            // Paginación: los enlaces del parcial se inyectan dinámicamente, se
-            // delega el click sobre el contenedor.
             resultados.addEventListener('click', function (e) {
                 const enlace = e.target.closest('a.pag__link');
                 if (!enlace) { return; }
@@ -91,9 +79,7 @@
             });
 
             selPaginate.addEventListener('change', () => cargar(1));
-            selDia.addEventListener('change', () => cargar(1));
             selSituacion.addEventListener('change', () => cargar(1));
-            // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }
             });

@@ -14,14 +14,14 @@ use Illuminate\Validation\Rule;
  * los tres alcances: un funcionario, varios elegidos a mano, o una dirección
  * administrativa —o una de sus unidades—, que es como se anota un feriado o una
  * tolerancia general. El servicio expande eso a una fila de `licencias` por
- * funcionario, día y turno.
+ * funcionario, día y horario.
  */
 class StoreLicenciaRequest extends FormRequest
 {
     /**
      * Alcances posibles del alta.
      *
-     * Ya no existe «todos»: alcanzaba a cualquiera que tuviera un turno asignado
+     * Ya no existe «todos»: alcanzaba a cualquiera que tuviera un horario asignado
      * en el rango, sin mirar si seguía contratado, y no había forma de acotarlo a
      * una parte de la Gobernación. Lo reemplaza «direccion», que parte del
      * personal con contrato firmado de esa dirección o unidad.
@@ -43,7 +43,7 @@ class StoreLicenciaRequest extends FormRequest
         return [
             'modo' => ['required', Rule::in(self::MODOS)],
             // Los carnets vienen del directorio de Mamoré, no de la base local:
-            // no se valida contra `personas`. Que el CI tenga turnos asignados
+            // no se valida contra `personas`. Que el CI tenga horarios asignados
             // (lo único que hace licenciable a alguien) lo comprueba el controlador.
             'ci' => ['required_if:modo,uno', 'nullable', 'string', 'max:12'],
             'cis' => ['required_if:modo,varios', 'nullable', 'array'],
@@ -53,10 +53,10 @@ class StoreLicenciaRequest extends FormRequest
             // lo resuelve el controlador cuando pide el personal.
             'direccion' => ['required_if:modo,direccion', 'nullable', 'integer', 'min:1'],
             'unidad' => ['nullable', 'integer', 'min:1'],
-            // Opcional y solo en modo «uno»: sin turnos elegidos se licencian
+            // Opcional y solo en modo «uno»: sin horarios elegidos se licencian
             // todos los que el funcionario tenga asignados dentro del rango.
             'asignaciones' => ['nullable', 'array'],
-            'asignaciones.*' => ['integer', 'exists:asignacion_turnos,id'],
+            'asignaciones.*' => ['integer', 'exists:asignacion_horarios,id'],
             'desde' => ['required', 'date'],
             'hasta' => ['required', 'date', 'after_or_equal:desde'],
             // Permiso personal (lo pide el funcionario, cuenta contra el tope) o
@@ -92,7 +92,7 @@ class StoreLicenciaRequest extends FormRequest
 
     /**
      * Un rango desmedido generaría miles de filas por un error de tipeo, y un
-     * permiso personal no puede ser de turno completo.
+     * permiso personal no puede ser de horario completo.
      */
     public function withValidator(Validator $validator): void
     {
@@ -108,11 +108,11 @@ class StoreLicenciaRequest extends FormRequest
             }
         });
 
-        // El permiso personal es siempre por horas: el turno completo lo dispone
+        // El permiso personal es siempre por horas: el horario completo lo dispone
         // la institución. Sin esto quedaría un personal que no cuenta en el tope.
         $validator->after(function (Validator $validator): void {
             if ($this->input('tipo') === Licencia::TIPO_PERSONAL && $this->boolean('tCompleto')) {
-                $validator->errors()->add('tCompleto', 'El permiso personal es por horas. Si es por el turno completo, elegí «Licencia institucional».');
+                $validator->errors()->add('tCompleto', 'El permiso personal es por horas. Si es por el horario completo, elegí «Licencia institucional».');
             }
 
             // El permiso personal lo pide una persona: para varios funcionarios o
@@ -135,8 +135,8 @@ class StoreLicenciaRequest extends FormRequest
             'tipo.required' => 'Indicá si es un permiso personal o una licencia institucional.',
             'tipo.in' => 'Indicá si es un permiso personal o una licencia institucional.',
             'hasta.after_or_equal' => 'La fecha «Hasta» no puede ser anterior a «Desde».',
-            'lEntra.required_if' => 'Indicá la hora de entrada o marcá «Turno completo».',
-            'lSale.required_if' => 'Indicá la hora de salida o marcá «Turno completo».',
+            'lEntra.required_if' => 'Indicá la hora de entrada o marcá «Horario completo».',
+            'lSale.required_if' => 'Indicá la hora de salida o marcá «Horario completo».',
             'lSale.after' => 'La hora de salida debe ser posterior a la de entrada.',
             'respaldo.mimes' => 'El respaldo debe ser una imagen (JPG o PNG) o un PDF.',
             'respaldo.max' => 'El respaldo no puede pesar más de 5 MB.',

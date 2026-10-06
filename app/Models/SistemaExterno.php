@@ -80,8 +80,8 @@ class SistemaExterno extends Model
         'asistencia:read' => 'Leer marcaciones y asistencia procesada de un funcionario',
         'licencias:read' => 'Leer las licencias de un funcionario y sus respaldos',
         'licencias:write' => 'Registrar y dar de baja solicitudes de licencia',
-        'turnos:read' => 'Leer el horario sugerido',
-        'turnos:write' => 'Asignar el horario al dar de alta un contrato',
+        'horarios:read' => 'Leer los turnos sugeridos y el horario de un funcionario',
+        'horarios:write' => 'Asignar el turno al dar de alta un contrato',
     ];
 
     public function scopeActivo(Builder $query): Builder

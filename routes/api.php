@@ -1,9 +1,10 @@
 <?php
 
+use App\Http\Controllers\Api\AsignacionHorarioApiController;
 use App\Http\Controllers\Api\AsignacionTurnoApiController;
 use App\Http\Controllers\Api\AsistenciaFuncionarioController;
 use App\Http\Controllers\Api\SolicitudLicenciaController;
-use App\Http\Controllers\Api\TurnoSugeridoController;
+use App\Http\Controllers\Api\TurnoApiController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -49,11 +50,11 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', 'throttle:api'])
     ->prefix('v1')
     ->group(function (): void {
-        // El horario que SisMark sugiere para un contrato nuevo. Es el único
-        // endpoint que no cuelga de una cédula: es un catálogo, no el dato de
-        // una persona.
-        Route::get('turnos/sugeridos', [TurnoSugeridoController::class, 'index'])
-            ->middleware('abilities:turnos:read')
+        // Los turnos que se ofrecen para elegir la jornada de un contrato nuevo
+        // (los sugeridos). Es el único endpoint que no cuelga de una cédula: es
+        // un catálogo, no el dato de una persona.
+        Route::get('turnos/sugeridos', [TurnoApiController::class, 'index'])
+            ->middleware('abilities:horarios:read')
             ->name('api.turnos.sugeridos');
 
         Route::get('funcionarios/{ci}/marcaciones', [AsistenciaFuncionarioController::class, 'marcaciones'])
@@ -99,18 +100,18 @@ Route::middleware(['auth:sanctum', 'throttle:api'])
             ->name('api.funcionarios.licencias.destroy');
 
         // El horario que ya tiene asignado el funcionario, para que lo vea desde
-        // el sistema del consumidor. Va con `turnos:read` y no con `write`:
+        // el sistema del consumidor. Va con `horarios:read` y no con `write`:
         // mostrarle a alguien su horario no es asignárselo.
-        Route::get('funcionarios/{ci}/turnos', [AsignacionTurnoApiController::class, 'index'])
-            ->middleware('abilities:turnos:read')
-            ->name('api.funcionarios.turnos.index');
+        Route::get('funcionarios/{ci}/horarios', [AsignacionHorarioApiController::class, 'index'])
+            ->middleware('abilities:horarios:read')
+            ->name('api.funcionarios.horarios.index');
 
-        // Asigna el horario al dar de alta un contrato en Mamoré, con el rango
+        // Asigna el turno al dar de alta un contrato en Mamoré, con el rango
         // del contrato. A diferencia de la licencia, esta escritura sí surte
         // efecto sola: un turno crea la obligación de marcar, no la borra. El
         // motivo largo está en el controlador.
         Route::post('funcionarios/{ci}/turnos', [AsignacionTurnoApiController::class, 'store'])
-            ->middleware('abilities:turnos:write')
+            ->middleware('abilities:horarios:write')
             ->name('api.funcionarios.turnos.store');
 
         // Mueve la vigencia de lo ya asignado cuando el contrato cambia de
@@ -118,14 +119,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])
         // corregida. Sin esto, extender un contrato dejaba los días nuevos sin
         // turno y por lo tanto sin control de asistencia.
         Route::put('funcionarios/{ci}/turnos', [AsignacionTurnoApiController::class, 'update'])
-            ->middleware('abilities:turnos:write')
+            ->middleware('abilities:horarios:write')
             ->name('api.funcionarios.turnos.update');
 
-        // Baja lógica del horario cuando el contrato se anula. La fila se queda
-        // con `deleted_at`: el turno es el respaldo de por qué se le exigió
-        // marcar a esa persona en esas fechas, y borrarlo dejaría sin
-        // explicación las faltas que ya se le imputaron.
+        // Baja lógica del turno cuando el contrato se anula. La fila se queda
+        // con `deleted_at`: es el respaldo de por qué se le exigió marcar a esa
+        // persona en esas fechas.
         Route::delete('funcionarios/{ci}/turnos', [AsignacionTurnoApiController::class, 'destroy'])
-            ->middleware('abilities:turnos:write')
+            ->middleware('abilities:horarios:write')
             ->name('api.funcionarios.turnos.destroy');
     });

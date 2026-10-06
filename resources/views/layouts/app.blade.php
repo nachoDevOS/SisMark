@@ -236,10 +236,10 @@
         tbody td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
         tbody tr:last-child td { border-bottom: 0; }
         tbody tr:hover { background: #f9fafb; }
-        /* Fila de solo lectura (p. ej. asignación de turno vencida). */
+        /* Fila de solo lectura (p. ej. asignación de horario vencida). */
         tbody tr.fila--inactiva td { color: var(--muted); background: var(--bg); }
         /* Cabecera de bloque dentro del cuerpo: agrupa las filas que comparten
-           un período de vigencia (los días de un mismo turno asignado). */
+           un período de vigencia (los días de un mismo horario asignado). */
         tbody tr.fila--periodo th { text-align: left; background: var(--bg); padding: .3rem .75rem;
             border-bottom: 1px solid var(--border); border-top: 2px solid var(--border); font-weight: 600; }
         tbody tr.fila--periodo:first-child th { border-top: 0; }
@@ -386,65 +386,65 @@
         .modal-bajada { margin: 0 0 1rem; color: var(--muted); font-size: .8125rem; line-height: 1.45; }
         .modal-acciones { display: flex; gap: .6rem; justify-content: flex-end; margin-top: 1.25rem; flex-wrap: wrap; }
         .modal-acciones form { margin: 0; }
-        /* Turnos vigentes dentro del modal de licencia: la caja no crece con
+        /* Horarios vigentes dentro del modal de licencia: la caja no crece con
            quien tiene muchos, la tabla se desplaza sola. */
-        .modal-licencia__turnos { max-height: 13rem; overflow-y: auto; margin-bottom: 1rem; }
-        .modal-licencia__turnos table { font-size: .75rem; }
-        .modal-licencia__turnos .paginacion { margin-top: .5rem; }
+        .modal-licencia__horarios { max-height: 13rem; overflow-y: auto; margin-bottom: 1rem; }
+        .modal-licencia__horarios table { font-size: .75rem; }
+        .modal-licencia__horarios .paginacion { margin-top: .5rem; }
 
-        /* ===== Selector de turno (modal de asignar turno) =====
-           Un turno se reconoce por su horario, no por su nombre, así que en vez
+        /* ===== Selector de horario (modal de asignar horario) =====
+           Un horario se reconoce por su horario, no por su nombre, así que en vez
            de un <select> se listan tarjetas con día, entrada y salida a la vista. */
-        .modal-caja--turnos { max-width: 38rem; }
-        .turno-picker { border: 1px solid var(--border); border-radius: .55rem; background: #fff; overflow: hidden; }
-        .turno-picker__buscador { display: flex; align-items: center; gap: .45rem; padding: .5rem .7rem;
+        .modal-caja--horarios { max-width: 38rem; }
+        .horario-picker { border: 1px solid var(--border); border-radius: .55rem; background: #fff; overflow: hidden; }
+        .horario-picker__buscador { display: flex; align-items: center; gap: .45rem; padding: .5rem .7rem;
             border-bottom: 1px solid var(--border); color: var(--muted); }
-        .turno-picker__buscador > svg { width: 1rem; height: 1rem; flex-shrink: 0; }
-        .turno-picker__buscador input { flex: 1; min-width: 0; border: 0; outline: 0; padding: .1rem 0;
+        .horario-picker__buscador > svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+        .horario-picker__buscador input { flex: 1; min-width: 0; border: 0; outline: 0; padding: .1rem 0;
             background: none; font-family: inherit; font-size: .85rem; color: var(--fg); }
-        .turno-picker__buscador input::-webkit-search-cancel-button { display: none; }
-        .turno-picker__buscador:focus-within { color: var(--verde); }
-        .turno-picker__limpiar { display: inline-flex; background: none; border: 0; cursor: pointer;
+        .horario-picker__buscador input::-webkit-search-cancel-button { display: none; }
+        .horario-picker__buscador:focus-within { color: var(--verde); }
+        .horario-picker__limpiar { display: inline-flex; background: none; border: 0; cursor: pointer;
             color: var(--muted); padding: .1rem; }
-        .turno-picker__limpiar:hover { color: var(--fg); }
-        .turno-picker__limpiar svg { width: .95rem; height: .95rem; }
-        .turno-picker__dias { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap;
+        .horario-picker__limpiar:hover { color: var(--fg); }
+        .horario-picker__limpiar svg { width: .95rem; height: .95rem; }
+        .horario-picker__dias { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap;
             padding: .55rem .6rem; border-bottom: 1px solid var(--border); background: var(--bg); }
         /* El conteo se va al extremo: dice cuántos quedaron tras filtrar. */
-        .turno-picker__conteo { margin-left: auto; font-size: .7rem; color: var(--muted); white-space: nowrap; }
+        .horario-picker__conteo { margin-left: auto; font-size: .7rem; color: var(--muted); white-space: nowrap; }
         .chip { border: 1px solid var(--border); background: #fff; border-radius: 999px;
             padding: .22rem .7rem; font-size: .72rem; font-family: inherit; color: var(--muted); cursor: pointer; }
         .chip:hover { border-color: var(--verde); color: var(--verde); }
         .chip--activo { background: var(--verde); border-color: var(--verde); color: #fff; font-weight: 600; }
         .chip--activo:hover { background: var(--verde-osc); border-color: var(--verde-osc); color: #fff; }
-        .turno-picker__lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr));
+        .horario-picker__lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr));
             gap: .5rem; padding: .6rem; max-height: 17rem; overflow-y: auto; }
-        .turno-opcion { display: block; position: relative; padding: .6rem .7rem; cursor: pointer;
+        .horario-opcion { display: block; position: relative; padding: .6rem .7rem; cursor: pointer;
             border: 1px solid var(--border); border-radius: .5rem; background: #fff; }
         /* El radio queda oculto pero enfocable: la tarjeta entera es el control. */
-        .turno-opcion input { position: absolute; opacity: 0; width: 0; height: 0; }
-        .turno-opcion:hover { border-color: var(--verde); background: #f0fdf4; }
-        .turno-opcion:has(input:focus-visible) { outline: 2px solid var(--verde); outline-offset: 2px; }
-        .turno-opcion--elegido { border-color: var(--verde); background: #f0fdf4;
+        .horario-opcion input { position: absolute; opacity: 0; width: 0; height: 0; }
+        .horario-opcion:hover { border-color: var(--verde); background: #f0fdf4; }
+        .horario-opcion:has(input:focus-visible) { outline: 2px solid var(--verde); outline-offset: 2px; }
+        .horario-opcion--elegido { border-color: var(--verde); background: #f0fdf4;
             box-shadow: inset 0 0 0 1px var(--verde); }
-        .turno-opcion__cuerpo { display: flex; flex-direction: column; gap: .25rem; }
-        .turno-opcion__titulo { display: flex; align-items: center; gap: .4rem;
+        .horario-opcion__cuerpo { display: flex; flex-direction: column; gap: .25rem; }
+        .horario-opcion__titulo { display: flex; align-items: center; gap: .4rem;
             font-size: .8125rem; font-weight: 600; line-height: 1.25; }
-        .turno-opcion__dia { flex-shrink: 0; background: var(--bg); border: 1px solid var(--border);
+        .horario-opcion__dia { flex-shrink: 0; background: var(--bg); border: 1px solid var(--border);
             border-radius: .3rem; padding: .05rem .35rem; font-size: .65rem; letter-spacing: .03em; color: var(--muted); }
-        .turno-opcion--elegido .turno-opcion__dia { background: #dcfce7; border-color: #86efac; color: #166534; }
-        .turno-opcion__horario { font-size: .95rem; font-weight: 700; color: var(--verde);
+        .horario-opcion--elegido .horario-opcion__dia { background: #dcfce7; border-color: #86efac; color: #166534; }
+        .horario-opcion__horario { font-size: .95rem; font-weight: 700; color: var(--verde);
             font-variant-numeric: tabular-nums; }
-        .turno-opcion__meta { display: flex; flex-wrap: wrap; gap: .35rem .6rem;
+        .horario-opcion__meta { display: flex; flex-wrap: wrap; gap: .35rem .6rem;
             font-size: .7rem; color: var(--muted); }
-        .turno-picker__lista .vacio { grid-column: 1 / -1; }
+        .horario-picker__lista .vacio { grid-column: 1 / -1; }
 
         /* Confirmación de lo elegido, al pie del selector: es el dato que se
            mira antes de dar Asignar. */
-        .turno-elegido { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap;
+        .horario-elegido { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap;
             margin: .55rem 0 0; padding: .5rem .7rem; border-radius: .5rem;
             background: #f0fdf4; border: 1px solid #86efac; color: #166534; font-size: .8125rem; }
-        .turno-elegido svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+        .horario-elegido svg { width: 1rem; height: 1rem; flex-shrink: 0; }
 
         /* Atajos de rango: evitan tipear las dos fechas en los casos de siempre. */
         .rangos-rapidos { display: flex; gap: .35rem; flex-wrap: wrap; margin: -.35rem 0 .25rem; }
@@ -677,6 +677,8 @@
                 'marcaciones' => request()->routeIs('marcaciones.*'),
                 'dias-excepcionales' => request()->routeIs('dias-excepcionales.*'),
                 'horarios' => request()->routeIs('horarios.*'),
+                'turnos' => request()->routeIs('turnos.*'),
+                'horarios-asignados' => request()->routeIs('horarios-asignados.*'),
                 'turnos-asignados' => request()->routeIs('turnos-asignados.*'),
                 'licencias' => request()->routeIs('licencias.*'),
                 'reportes' => request()->routeIs('reportes.*'),
@@ -692,7 +694,7 @@
             // El grupo «Parámetros» arranca desplegado cuando la pantalla actual
             // es una de las suyas; si no, el ítem activo quedaría escondido.
             $enParametros = $enMenu['dias-excepcionales'] || $enMenu['horarios']
-                || $enMenu['turnos-asignados'] || $enMenu['licencias'];
+                || $enMenu['turnos'] || $enMenu['turnos-asignados'] || $enMenu['horarios-asignados'] || $enMenu['licencias'];
         @endphp
 
         {{-- El texto de cada opción va en su propio span: plegado queda solo el
@@ -702,7 +704,7 @@
              enteros cuando ninguna de sus opciones está permitida. --}}
         @php
             $puedeParametros = auth()->user()?->canAny([
-                'ViewAny:DiaExcepcional', 'ViewAny:DiaTurno', 'ViewAny:AsignacionTurno', 'ViewAny:Licencia',
+                'ViewAny:DiaExcepcional', 'ViewAny:Horario', 'ViewAny:Turno', 'ViewAny:AsignacionTurno', 'ViewAny:AsignacionHorario', 'ViewAny:Licencia',
             ]);
         @endphp
 
@@ -738,14 +740,24 @@
                             <x-heroicon-o-calendar-days /><span class="sidebar__texto">Días excepcionales</span>
                         </a>
                     @endcan
-                    @can('ViewAny:DiaTurno')
-                        <a href="{{ route('horarios.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['horarios']]) title="Turnos"@if ($enMenu['horarios']) aria-current="page"@endif>
-                            <x-heroicon-o-clock /><span class="sidebar__texto">Turnos</span>
+                    @can('ViewAny:Horario')
+                        <a href="{{ route('horarios.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['horarios']]) title="Horarios"@if ($enMenu['horarios']) aria-current="page"@endif>
+                            <x-heroicon-o-clock /><span class="sidebar__texto">Horarios</span>
+                        </a>
+                    @endcan
+                    @can('ViewAny:Turno')
+                        <a href="{{ route('turnos.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['turnos']]) title="Turnos"@if ($enMenu['turnos']) aria-current="page"@endif>
+                            <x-heroicon-o-rectangle-stack /><span class="sidebar__texto">Turnos</span>
                         </a>
                     @endcan
                     @can('ViewAny:AsignacionTurno')
                         <a href="{{ route('turnos-asignados.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['turnos-asignados']]) title="Turnos asignados"@if ($enMenu['turnos-asignados']) aria-current="page"@endif>
-                            <x-heroicon-o-user-group /><span class="sidebar__texto">Turnos asignados</span>
+                            <x-heroicon-o-user-plus /><span class="sidebar__texto">Turnos asignados</span>
+                        </a>
+                    @endcan
+                    @can('ViewAny:AsignacionHorario')
+                        <a href="{{ route('horarios-asignados.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['horarios-asignados']]) title="Horarios asignados"@if ($enMenu['horarios-asignados']) aria-current="page"@endif>
+                            <x-heroicon-o-user-group /><span class="sidebar__texto">Horarios asignados</span>
                         </a>
                     @endcan
                     @can('ViewAny:Licencia')
@@ -757,9 +769,9 @@
             </div>
             {{-- Reportes: mismo patrón colapsable que «Parámetros». --}}
             <div x-data="{ abierto: {{ $enMenu['reportes'] ? 'true' : 'false' }} }" @cannot('ViewAny:Reporte') hidden @endcannot>
-                <button type="button" @class(['sidebar__grouptoggle', 'activo' => $enMenu['reportes']]) title="Reportes"
+                <button type="button" @class(['sidebar__grouptoggle', 'activo' => $enMenu['reportes']]) title="Reporte de marcaciones"
                         x-on:click="sidebarPlegado ? (alternarMenu(), abierto = true) : (abierto = !abierto)" :aria-expanded="abierto">
-                    <x-heroicon-o-document-chart-bar /><span class="sidebar__texto">Reportes</span>
+                    <x-heroicon-o-document-chart-bar /><span class="sidebar__texto">Reporte de marcaciones</span>
                     <span class="sidebar__chevron" :style="abierto ? 'transform: rotate(180deg)' : ''"><x-heroicon-o-chevron-down /></span>
                 </button>
                 <div class="sidebar__submenu" x-show="abierto" x-cloak>
@@ -957,11 +969,11 @@
     </div>
 
     {{--
-        Modal global para concluir una asignación de turno. Mismo mecanismo que
+        Modal global para concluir una asignación de horario. Mismo mecanismo que
         el de eliminación (store de Alpine + un solo formulario), porque los
         botones también viajan en tablas que se cargan por AJAX.
 
-        Concluir no borra: le pone fecha de fin a la asignación, así el turno
+        Concluir no borra: le pone fecha de fin a la asignación, así el horario
         deja de estar vigente pero sigue explicando la historia del funcionario.
     --}}
     <script>
@@ -994,7 +1006,7 @@
          x-on:keydown.escape.window="$store.concluir.cerrar()"
          role="dialog" aria-modal="true" aria-labelledby="titulo-concluir-global">
         <div class="modal-caja">
-            <h2 id="titulo-concluir-global">Concluir el turno</h2>
+            <h2 id="titulo-concluir-global">Concluir el horario</h2>
             <p class="modal-bajada" x-text="$store.concluir.mensaje"></p>
 
             <form method="POST" :action="$store.concluir.url" x-on:submit="$store.concluir.enviando = true">
@@ -1006,7 +1018,7 @@
                     <input type="date" id="hasta-concluir-global" name="hasta" required
                            x-model="$store.concluir.hasta">
                     <p class="ayuda">
-                        Desde el día siguiente el funcionario deja de tener este turno.
+                        Desde el día siguiente el funcionario deja de tener este horario.
                         La asignación no se borra: queda como historia.
                     </p>
                 </div>

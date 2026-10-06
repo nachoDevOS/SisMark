@@ -10,11 +10,6 @@ use Illuminate\Foundation\Auth\User as AuthUser;
 
 /**
  * Autorización de los turnos asignados (tabla `asignacion_turnos`).
- *
- * Tiene permisos propios (`*:AsignacionTurno`). Antes reutilizaba los de los
- * turnos (`*:DiaTurno`), y eso ataba las dos pantallas: no había forma de dar
- * el catálogo de turnos sin dar también a qué funcionario está asignado cada
- * uno, que es un dato de personal y no de configuración.
  */
 class AsignacionTurnoPolicy
 {

@@ -1,38 +1,31 @@
 @php
-    $pillPorSituacion = [
-        'vigente' => 'pill--ok',
-        'vencida' => 'pill--no',
-        'futura' => 'pill--info',
-    ];
-    $etiquetaSituacion = [
-        'vigente' => 'Vigente',
-        'vencida' => 'Vencida',
-        'futura' => 'Aún no vigente',
-    ];
+    $pillPorSituacion = ['vigente' => 'pill--ok', 'vencida' => 'pill--no', 'futura' => 'pill--info'];
+    $etiquetaSituacion = ['vigente' => 'Vigente', 'vencida' => 'Vencida', 'futura' => 'Aún no vigente'];
 @endphp
 <div class="card">
     <table>
         <thead>
             <tr>
+                <th style="width: 2rem;"></th>
                 <th>Funcionario</th>
                 <th>Turno</th>
-                <th>Día</th>
-                <th>Entrada</th>
-                <th>Salida</th>
                 <th>Desde</th>
                 <th>Hasta</th>
                 <th>Situación</th>
                 <th></th>
             </tr>
         </thead>
-        <tbody>
-            @forelse ($asignaciones as $asignacion)
-                <tr>
+        {{-- Un tbody por asignación: al hacer clic se despliegan los horarios del turno. --}}
+        @forelse ($asignaciones as $asignacion)
+            @php($ficha = $fichas[trim((string) $asignacion->ci)] ?? null)
+            <tbody x-data="{ abierto: false }">
+                <tr x-on:click="abierto = ! abierto" style="cursor: pointer;" :aria-expanded="abierto">
                     <td>
-                        @php($ficha = $fichas[trim((string) $asignacion->ci)] ?? null)
+                        <span style="display: inline-flex; width: 1rem; transition: transform .15s;"
+                              :style="abierto ? 'transform: rotate(90deg)' : ''"><x-heroicon-o-chevron-right /></span>
+                    </td>
+                    <td>
                         <div class="persona-celda">
-                            {{-- La foto solo la tiene Mamoré; con el respaldo local
-                                 (o sin ficha) queda el ícono genérico. --}}
                             <x-persona-avatar :thumb="$ficha['imageThumb'] ?? null"
                                               :full="$ficha['image'] ?? null"
                                               :nombre="$ficha['nombre'] ?? ''" />
@@ -51,18 +44,13 @@
                             </div>
                         </div>
                     </td>
-                    {{-- El turno viene por la FK turno_id; queda en null cuando la
-                         copia del SIA no pudo cruzar el código histórico. --}}
                     <td>
-                        @if ($asignacion->turno)
-                            {{ trim((string) $asignacion->turno->nombreTurno) }}
-                        @else
-                            <span class="pill pill--advertencia">Sin turno vinculado</span>
-                        @endif
+                        <strong>{{ $asignacion->turno?->nombre ?? '—' }}</strong>
+                        <div class="ayuda">
+                            {{ $asignacion->turno?->dias_cubiertos }}
+                            · {{ number_format($asignacion->turno?->horas_semanales ?? 0, 2) }} h semanales
+                        </div>
                     </td>
-                    <td>{{ $asignacion->turno?->nombre_dia ?? '—' }}</td>
-                    <td>{{ $asignacion->turno?->hEntrada?->format('H:i') ?? '—' }}</td>
-                    <td>{{ $asignacion->turno?->hSalida?->format('H:i') ?? '—' }}</td>
                     <td>{{ $asignacion->desde?->format('d/m/Y') ?? '—' }}</td>
                     <td>{{ $asignacion->hasta?->format('d/m/Y') ?? '—' }}</td>
                     <td>
@@ -71,30 +59,36 @@
                         </span>
                     </td>
                     <td>
-                        <div class="acciones">
-                            {{-- Concluir cuando el funcionario dejó el turno; eliminar,
-                                 solo si la asignación se cargó mal. --}}
+                        <div class="acciones" x-on:click.stop>
                             @if ($asignacion->situacion !== 'vencida')
                                 @can('update', $asignacion)
                                     <x-boton-concluir :accion="route('turnos-asignados.concluir', $asignacion)"
-                                                      :mensaje="'Turno «'.trim((string) $asignacion->turno?->nombreTurno).'» de CI '.trim((string) $asignacion->ci).'.'" />
+                                                      :mensaje="'Turno «'.$asignacion->turno?->nombre.'» de CI '.trim((string) $asignacion->ci).'.'" />
                                 @endcan
                             @endif
                             @can('delete', $asignacion)
                                 <x-boton-eliminar :accion="route('turnos-asignados.destroy', $asignacion)"
-                                                  :mensaje="'Se elimina la asignación del turno «'.trim((string) $asignacion->turno?->nombreTurno).'». Si el funcionario dejó ese turno, concluilo en vez de borrarlo.'" />
+                                                  :mensaje="'Se elimina la asignación del turno «'.$asignacion->turno?->nombre.'». Si el funcionario dejó ese turno, concluilo en vez de borrarlo.'" />
                             @endcan
                         </div>
                     </td>
                 </tr>
-            @empty
+                <tr x-show="abierto" x-cloak>
+                    <td></td>
+                    <td colspan="6" style="padding-top: 0;">
+                        @include('turnos._horarios', ['horarios' => $asignacion->turno?->horarios ?? collect()])
+                    </td>
+                </tr>
+            </tbody>
+        @empty
+            <tbody>
                 <tr>
-                    <td colspan="9" class="vacio">
+                    <td colspan="7" class="vacio">
                         {{ $buscar !== '' ? 'Sin turnos asignados para la búsqueda.' : 'Aún no hay turnos asignados.' }}
                     </td>
                 </tr>
-            @endforelse
-        </tbody>
+            </tbody>
+        @endforelse
     </table>
 </div>
 

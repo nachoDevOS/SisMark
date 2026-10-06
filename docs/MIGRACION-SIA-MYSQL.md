@@ -26,7 +26,7 @@ instanciar un modelo por fila (Asistencia ~4.4M filas).
 
 | | SIA (origen) | Local (MySQL) |
 |---|---|---|
-| Tablas | PascalCase (`Personas`, `DiaTurnos`) | **minúscula plural** (`personas`, `turnos`) |
+| Tablas | PascalCase (`Personas`, `DiaTurnos`) | **minúscula plural** (`personas`, `horarios`) |
 | Columnas | PascalCase (`CodigoProfesion`, `IdPersona`) | **camelCase** (`codigoProfesion`, `ci`) |
 
 Renombres fijos: `IdPersona` → `ci`, `CorreoE` → `correo`. Cada comando lleva un
@@ -83,7 +83,7 @@ php artisan db:seed --class=MigrarSiaSeeder
 ```
 
 > ⚠️ **Este seeder arranca con `migrate:fresh --force`: BORRA todas las tablas.**
-> Se lleva usuarios, roles, tokens de API, turnos asignados a mano, días
+> Se lleva usuarios, roles, tokens de API, horarios asignados a mano, días
 > excepcionales y **las licencias que pidieron los funcionarios desde Mamoré** —
 > todo lo que no venga del SIA—. Es para **armar la base la primera vez**, no
 > para actualizar una que ya está en uso. Ahí va la versión paso a paso de abajo.
@@ -131,18 +131,18 @@ escribir.
 ```bash
 php artisan sia:migrar-profesiones        # catálogo (rápido)
 php artisan sia:migrar-personas           # funcionarios
-php artisan sia:migrar-horarios           # turnos (antes de asignacion-turnos)
+php artisan sia:migrar-horarios           # horarios (antes de asignacion-horarios)
 php artisan sia:migrar-marcaciones        # ~4.4M filas — tarda
 php artisan sia:migrar-licencias          # permisos/vacaciones
-php artisan sia:migrar-asignacion-turnos  # asignaciones (resuelve turno_id)
+php artisan sia:migrar-asignacion-horarios  # asignaciones (resuelve horario_id)
 php artisan sia:migrar-dias-excepcionales # feriados/tolerancias (Calendario)
 ```
 
 Cada uno acepta `--chunk=N` (filas por lote, 500 por defecto). Si algo falla, se
 reejecuta sin duplicar.
 
-El **orden importa**: `licencias` y `asignacion_turnos` resuelven su FK
-`turno_id` cruzando `idTurno` contra `turnos`, así que los horarios van antes o
+El **orden importa**: `licencias` y `asignacion_horarios` resuelven su FK
+`horario_id` cruzando `idHorario` contra `horarios`, así que los horarios van antes o
 esa columna queda en null.
 
 Se pueden correr de a uno y en días distintos. Para traer solo lo nuevo de una
@@ -150,7 +150,7 @@ tabla, se corre nada más el comando de esa tabla; no hace falta el resto.
 
 > **Sobre una base en uso:** el `upsert` pisa con lo del SIA las filas que
 > existen **en el SIA**. Lo que nació en SisMark —los pedidos de licencia que
-> llegan de Mamoré, los turnos asignados a mano— no tiene contraparte allá y
+> llegan de Mamoré, los horarios asignados a mano— no tiene contraparte allá y
 > queda intacto. Lo que sí se pierde es una fila del SIA editada a mano de este
 > lado: vuelve al valor de origen.
 
@@ -160,26 +160,26 @@ tabla, se corre nada más el comando de esa tabla; no hace falta el resto.
 php artisan db:seed --class=IntegracionMamoreSeeder
 ```
 
-Deja el consumidor «Mamoré» con un token de texto fijo y marca como sugerido el
-horario de lunes a viernes 08:00–16:00. Va al final porque necesita los turnos ya
+Deja el consumidor «Mamoré» con un token de texto fijo y crea como sugerido el turno
+de lunes a viernes 08:00–16:00. Va al final porque necesita los horarios ya
 copiados: antes de `sia:migrar-horarios` la tabla está vacía.
 
 **En producción no corre**: se planta con un mensaje y no hace nada, porque
 sembraría una credencial conocida y escrita en el repositorio. Allá el token se
 emite una vez desde «Tokens de API» o con `php artisan sismark:token`, y el
-horario sugerido se marca desde la pantalla de Turnos.
+turno sugerido se crea desde la pantalla de Turnos.
 
 ### Verificar
 
 ```bash
 php artisan tinker --execute '
-foreach (["personas","asistencias","profesiones","turnos","licencias","asignacion_turnos","dias_excepcionales"] as $t) {
+foreach (["personas","asistencias","profesiones","horarios","licencias","asignacion_horarios","dias_excepcionales"] as $t) {
     echo str_pad($t, 20).DB::table($t)->count()."\n";
 }'
 ```
 
 Una tabla en cero es un comando que no se corrió o que falló. Si `licencias` o
-`asignacion_turnos` tienen filas pero con `turno_id` en null, faltó correr
+`asignacion_horarios` tienen filas pero con `horario_id` en null, faltó correr
 `sia:migrar-horarios` antes; se arregla corriéndolo y reejecutando esos dos.
 
 ---
@@ -191,20 +191,20 @@ Una tabla en cero es un comando que no se corrió o que falló. Si `licencias` o
 | `Personas` | `personas` | `sia:migrar-personas` | `ci` |
 | `Asistencia` | `asistencias` | `sia:migrar-marcaciones` | `ci + fecha + hora` |
 | `Profesiones` | `profesiones` | `sia:migrar-profesiones` | `codigoProfesion` |
-| `DiaTurnos` | `turnos` | `sia:migrar-horarios` | `idTurno` |
-| `Licencias` | `licencias` | `sia:migrar-licencias` | `ci + fecha + idTurno` |
-| `AsignacionTurnos` | `asignacion_turnos` | `sia:migrar-asignacion-turnos` | `ci + idTurno + desde` |
+| `DiaTurnos` | `horarios` | `sia:migrar-horarios` | `idHorario` |
+| `Licencias` | `licencias` | `sia:migrar-licencias` | `ci + fecha + idHorario` |
+| `AsignacionTurnos` | `asignacion_horarios` | `sia:migrar-asignacion-horarios` | `ci + idHorario + desde` |
 
-`licencias` y `asignacion_turnos` conservan `idTurno` **y** tienen la FK `turno_id`
-→ `turnos.id`, que el comando resuelve cruzando `idTurno` contra `turnos` (por eso
-los horarios se migran antes; si no cruza, `turno_id` queda null).
+`licencias` y `asignacion_horarios` conservan `idHorario` **y** tienen la FK `horario_id`
+→ `horarios.id`, que el comando resuelve cruzando `idHorario` contra `horarios` (por eso
+los horarios se migran antes; si no cruza, `horario_id` queda null).
 | `Calendario` | `dias_excepcionales` | `sia:migrar-dias-excepcionales` | `fecha` |
 
 Modelos locales (conexión MySQL por defecto): `App\Models\Persona`,
-`App\Models\Asistencia`, `App\Models\Profesion`, `App\Models\Turno`,
-`App\Models\Licencia`, `App\Models\AsignacionTurno`, `App\Models\DiaExcepcional`.
+`App\Models\Asistencia`, `App\Models\Profesion`, `App\Models\Horario`,
+`App\Models\Licencia`, `App\Models\AsignacionHorario`, `App\Models\DiaExcepcional`.
 
-> Algunas tablas locales cambian de nombre respecto al SIA: `DiaTurnos`→`turnos`,
+> Algunas tablas locales cambian de nombre respecto al SIA: `DiaTurnos`→`horarios`,
 > `Calendario`→`dias_excepcionales`.
 
 > **Tests:** al agregar una tabla del SIA, replicarla también en
@@ -273,7 +273,7 @@ institución espera recibir las marcaciones nuevas por ahí.
 
 Consecuencia práctica: si hay que reconstruir la base local de cero,
 `db:seed --class=MigrarSiaSeeder` la deja entera —él mismo hace el
-`migrate:fresh`— con personas, marcaciones, licencias, turnos, asignaciones y
+`migrate:fresh`— con personas, marcaciones, licencias, horarios, asignaciones y
 días excepcionales. Para **actualizar** una base que ya está en uso, en cambio, va
 el paso a paso de la sección 2: el seeder completo la borraría primero.
 

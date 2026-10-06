@@ -97,7 +97,7 @@ class Configuracion extends Model
             'etiqueta' => 'Tope mensual de permisos por horas',
             'ayuda' => 'Cuánto tiempo de permiso por horas puede sumar un funcionario en el mes. Cada mes '
                 .'arranca de cero. Cuentan los permisos personales aprobados y los pendientes: no se puede pedir '
-                .'más de lo que cabe. Las licencias de turno completo y las institucionales no descuentan. En 0 '
+                .'más de lo que cabe. Las licencias de horario completo y las institucionales no descuentan. En 0 '
                 .'horas y 0 minutos no hay tope.',
             'tipo' => self::TIPO_DURACION,
             // Un mes laboral ronda las 176 horas: más que eso no es un tope.

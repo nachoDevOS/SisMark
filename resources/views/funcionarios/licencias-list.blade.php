@@ -9,7 +9,7 @@
 
 {{-- Saldo de permisos por horas del mes elegido contra el tope de Configuración:
      cuánto lleva aprobado, cuánto pendiente y cuánto le queda (restan los dos); las
-     licencias de turno completo no descuentan. Solo con un mes y tope configurado. --}}
+     licencias de horario completo no descuentan. Solo con un mes y tope configurado. --}}
 @if ($saldo)
     <div class="card card--padded" style="margin-bottom: .75rem;">
         <div style="display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; flex-wrap: wrap; margin-bottom: .4rem;">
@@ -55,7 +55,7 @@
 @endif
 
 {{-- Una fila por solicitud, como el listado general: el alta expande el rango a
-     una fila por día y turno, y sueltas un permiso de cinco días parecería cinco
+     una fila por día y horario, y sueltas un permiso de cinco días parecería cinco
      licencias. --}}
 <div class="card">
     <table>
@@ -99,7 +99,7 @@
                     <td>{{ $dias }}</td>
                     <td>
                         @if ($licencia->tCompleto)
-                            <span class="pill pill--info">Turno completo</span>
+                            <span class="pill pill--info">Horario completo</span>
                         @else
                             {{ $licencia->lEntra?->format('H:i') ?? '—' }} – {{ $licencia->lSale?->format('H:i') ?? '—' }}
                         @endif

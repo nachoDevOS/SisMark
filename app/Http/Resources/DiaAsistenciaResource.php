@@ -2,8 +2,8 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Horario;
 use App\Models\Licencia;
-use App\Models\Turno;
 use App\Services\ProcesadorAsistencia;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -20,7 +20,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * que se duplique.
  *
  * **No se exponen los avisos** que arma el procesador («ventana de entrada
- * invertida», «el turno no declara horas trabajadas»): son diagnósticos de
+ * invertida», «el horario no declara horas trabajadas»): son diagnósticos de
  * configuración para Recursos Humanos, y al funcionario no le dicen nada sobre
  * su asistencia.
  */
@@ -53,20 +53,20 @@ class DiaAsistenciaResource extends JsonResource
     }
 
     /**
-     * Un turno del día con lo que se leyó de él.
+     * Un horario del día con lo que se leyó de él.
      *
      * @param  array<string, mixed>  $bloque
      * @return array<string, mixed>
      */
     private function bloque(array $bloque): array
     {
-        $turno = $bloque['turno'];
+        $horario = $bloque['horario'];
         $licencia = $bloque['licencia'];
 
         return [
-            'turno' => $turno instanceof Turno ? trim((string) $turno->nombreTurno) : null,
-            'horario' => $turno instanceof Turno
-                ? $turno->hEntrada?->format('H:i').' - '.$turno->hSalida?->format('H:i')
+            'horario' => $horario instanceof Horario ? trim((string) $horario->nombreHorario) : null,
+            'rango' => $horario instanceof Horario
+                ? $horario->hEntrada?->format('H:i').' - '.$horario->hSalida?->format('H:i')
                 : null,
             'entrada' => ProcesadorAsistencia::hora($bloque['entrada']),
             'salida' => ProcesadorAsistencia::hora($bloque['salida']),
@@ -90,7 +90,7 @@ class DiaAsistenciaResource extends JsonResource
                 'motivo' => $licencia->motivo ?: null,
                 'entrada' => $licencia->lEntra?->format('H:i'),
                 'salida' => $licencia->lSale?->format('H:i'),
-                'turnoCompleto' => (bool) $licencia->tCompleto,
+                'horarioCompleto' => (bool) $licencia->tCompleto,
                 'conGoceDeHaberes' => (bool) $licencia->goceHaberes,
             ] : null,
         ];

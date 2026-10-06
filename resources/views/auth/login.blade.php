@@ -161,7 +161,7 @@
             <div>
                 <h1 class="marca__titulo">Sistema de sincronización de <span>biométricos</span></h1>
                 <p class="marca__bajada">
-                    Reúne las marcas de los relojes de cada oficina y las cruza con los turnos,
+                    Reúne las marcas de los relojes de cada oficina y las cruza con los horarios,
                     las licencias y los contratos vigentes en Mamoré para armar la asistencia
                     del personal del Gobierno Departamental.
                 </p>

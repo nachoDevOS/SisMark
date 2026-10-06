@@ -341,7 +341,7 @@
 
             <p x-show="generando" x-cloak style="color: var(--muted); margin-bottom: 0;">
                 Se está procesando la dirección entera: cada funcionario se cruza contra su
-                turno, sus licencias y sus contratos. Puede tardar.
+                horario, sus licencias y sus contratos. Puede tardar.
             </p>
         </div>
 

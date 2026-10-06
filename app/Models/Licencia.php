@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
  * el sistema las consume con `->format('H:i')`—; la fecha que Carbon les pone
  * es la de hoy y no se usa en ninguna parte.
  *
- * El horario se referencia siempre por la FK `turno_id`. La columna `idTurno`
+ * El horario se referencia siempre por la FK `horario_id`. La columna `idHorario`
  * (código del SIA) sobrevive solo como dato histórico de lo migrado: no se
  * escribe ni se consulta desde el sistema.
  */
@@ -107,7 +107,7 @@ class Licencia extends Model
     protected $fillable = [
         'fechaPedido',
         // De qué alta salió la fila. Todas las de un mismo pedido —un rango
-        // expandido a un día y turno por fila— comparten este valor, que es lo
+        // expandido a un día y horario por fila— comparten este valor, que es lo
         // que permite mostrarlas como una sola licencia. En lo migrado del SIA
         // cada fila lleva la suya, porque allá la fila es la licencia: ver la
         // migración `create_licencias_table`.
@@ -119,9 +119,9 @@ class Licencia extends Model
         'usuario',
         'fecha',
         'ci',
-        // `idTurno` queda fuera a propósito: es histórico del SIA, el sistema
-        // referencia el horario por la FK `turno_id`.
-        'turno_id',
+        // `idHorario` queda fuera a propósito: es histórico del SIA, el sistema
+        // referencia el horario por la FK `horario_id`.
+        'horario_id',
         'lEntra',
         'lSale',
         'tCompleto',
@@ -178,9 +178,9 @@ class Licencia extends Model
         return $this->belongsTo(Persona::class, 'ci', 'ci');
     }
 
-    public function turno(): BelongsTo
+    public function horario(): BelongsTo
     {
-        return $this->belongsTo(Turno::class, 'turno_id');
+        return $this->belongsTo(Horario::class, 'horario_id');
     }
 
     /**
@@ -194,7 +194,7 @@ class Licencia extends Model
     /**
      * Las filas hermanas de una misma solicitud, la propia incluida.
      *
-     * Un alta expande el rango a una fila por día y turno, así que «la licencia»
+     * Un alta expande el rango a una fila por día y horario, así que «la licencia»
      * que pidió el funcionario son varias filas. `solicitud` las marca a todas
      * con el mismo valor: lo escribe {@see RegistroLicencia} una vez por alta y
      * por carnet.
@@ -225,7 +225,7 @@ class Licencia extends Model
      * corta temprano, pero con una búsqueda poco frecuente recorre el millón de
      * filas y no vuelve (>45 s medidos). Acotada corre diez veces y es instantánea.
      *
-     * Se compara por `id` y no por `fecha` porque un turno partido deja dos filas
+     * Se compara por `id` y no por `fecha` porque un horario partido deja dos filas
      * del mismo pedido en el mismo día: comparando la fecha entrarían las dos y la
      * licencia saldría repetida.
      *
@@ -360,7 +360,7 @@ class Licencia extends Model
     }
 
     /**
-     * La fila que abre cada clave, con el turno ya cargado: el día más temprano
+     * La fila que abre cada clave, con el horario ya cargado: el día más temprano
      * de cada pedido, y la fila misma en lo migrado del SIA, donde cada fila
      * **es** su propia licencia.
      *
@@ -382,7 +382,7 @@ class Licencia extends Model
         }
 
         if ($delSia !== []) {
-            $filas = $filas->concat(static::query()->with('turno')->whereKey($delSia)->get());
+            $filas = $filas->concat(static::query()->with('horario')->whereKey($delSia)->get());
         }
 
         return $filas;
@@ -390,7 +390,7 @@ class Licencia extends Model
 
     /**
      * La fila que abre cada una de las solicitudes dadas: su día más temprano,
-     * con el turno ya cargado.
+     * con el horario ya cargado.
      *
      * No usa `iniciosDeSolicitud()`, y la razón está medida. Ese scope compara
      * el `id` de la fila contra un subquery correlacionado que termina en
@@ -411,7 +411,7 @@ class Licencia extends Model
     private static function iniciosDe(array $solicitudes): Collection
     {
         return static::query()
-            ->with('turno')
+            ->with('horario')
             ->whereIn('solicitud', $solicitudes)
             ->orderBy('solicitud')
             ->orderBy('fecha')
@@ -794,44 +794,44 @@ class Licencia extends Model
     }
 
     /**
-     * Etiqueta legible del turno licenciado: «MIE: 08:00 – 16:00».
+     * Etiqueta legible del horario licenciado: «MIE: 08:00 – 16:00».
      *
-     * Los turnos que vienen del SIA **ya se llaman con su horario** —el
-     * `nombreTurno` es literalmente «MIE: 08:00 - 16:00»—, así que pegarle las
+     * Los horarios que vienen del SIA **ya se llaman con su horario** —el
+     * `nombreHorario` es literalmente «MIE: 08:00 - 16:00»—, así que pegarle las
      * horas otra vez daba «MIE: 08:00 - 16:00: 08:00 – 16:00». Si el nombre ya
      * trae una hora adentro se lo usa tal cual; si no, se le agrega el horario,
-     * que es lo que hace falta para los turnos con nombre propio.
+     * que es lo que hace falta para los horarios con nombre propio.
      */
-    public function getResumenTurnoAttribute(): string
+    public function getResumenHorarioAttribute(): string
     {
-        $turno = $this->turno;
+        $horario = $this->horario;
 
-        if (! $turno instanceof Turno) {
+        if (! $horario instanceof Horario) {
             return '—';
         }
 
-        $nombre = trim((string) $turno->nombreTurno);
-        $horario = ($turno->hEntrada?->format('H:i') ?? '—').' – '
-            .($turno->hSalida?->format('H:i') ?? '—');
+        $nombre = trim((string) $horario->nombreHorario);
+        $rango = ($horario->hEntrada?->format('H:i') ?? '—').' – '
+            .($horario->hSalida?->format('H:i') ?? '—');
 
         if ($nombre === '') {
-            return $horario;
+            return $rango;
         }
 
         // ¿El nombre ya dice la hora? Basta con encontrar un «08:00» adentro.
         return preg_match('/\d{1,2}:\d{2}/', $nombre) === 1
             ? $nombre
-            : "{$nombre}: {$horario}";
+            : "{$nombre}: {$rango}";
     }
 
     /**
-     * Qué parte del turno cubre la licencia de **este día**.
+     * Qué parte del horario cubre la licencia de **este día**.
      *
      * Cada fila es un día y puede tener su propio alcance: el alta expande el
      * rango, pero nada obliga a que todos los días se pidan iguales. Por eso se
      * lee de la fila y no de la solicitud.
      *
-     * `null` cuando cubre el turno entero, para que quien la muestre decida cómo
+     * `null` cuando cubre el horario entero, para que quien la muestre decida cómo
      * decirlo.
      */
     public function getAlcanceDelDiaAttribute(): ?string

@@ -60,7 +60,12 @@ class RolePolicy
      * pantallas sin tabla propia, y se autorizan por nombre de permiso en vez
      * de por policy de modelo (ver {@see DashboardController}).
      *
-     * @var array<string, array{etiqueta: string, habilidades: list<string>}>
+     * `aclaraciones` dice qué significa una habilidad en ese módulo cuando no
+     * es lo que dice la columna: «Editar» un turno no lo edita —solo marca el
+     * sugerido— y «Editar» una asignación es concluirla. Sale debajo de la
+     * casilla en la matriz de roles.
+     *
+     * @var array<string, array{etiqueta: string, habilidades: list<string>, aclaraciones?: array<string, string>}>
      */
     public const MODULOS = [
         'Escritorio' => [
@@ -85,16 +90,31 @@ class RolePolicy
             // sistema y por eso se puede dar por separado de verlos en pantalla.
             'habilidades' => ['ViewAny', 'Export'],
         ],
-        'DiaTurno' => [
-            'etiqueta' => 'Turnos',
+        'Horario' => [
+            'etiqueta' => 'Horarios',
             'habilidades' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
+        ],
+        'Turno' => [
+            'etiqueta' => 'Turnos',
+            // Sin edición: un turno se crea o se elimina. `Update` es solo
+            // marcar o desmarcar el sugerido.
+            'habilidades' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
+            'aclaraciones' => ['Update' => 'Marcar sugerido'],
         ],
         'AsignacionTurno' => [
             'etiqueta' => 'Turnos asignados',
-            // Módulo propio: antes compartía los permisos de `DiaTurno`, así que
-            // no había forma de dar los turnos sin dar también a quién están
-            // asignados.
+            // Asignar un turno a un funcionario, desde la pantalla o su ficha.
+            // `Update` es concluir: ponerle fecha de fin al turno asignado.
             'habilidades' => ['ViewAny', 'Create', 'Update', 'Delete'],
+            'aclaraciones' => ['Create' => 'Asignar', 'Update' => 'Concluir'],
+        ],
+        'AsignacionHorario' => [
+            'etiqueta' => 'Horarios asignados (historial)',
+            // Historial día por día. Sin alta: se asigna un turno. `Update` y
+            // `Delete` son concluir y eliminar lo heredado del sistema anterior;
+            // lo de un turno se maneja desde el turno.
+            'habilidades' => ['ViewAny', 'Update', 'Delete'],
+            'aclaraciones' => ['Update' => 'Concluir (sistema anterior)', 'Delete' => 'Sistema anterior'],
         ],
         'Licencia' => [
             'etiqueta' => 'Licencias',

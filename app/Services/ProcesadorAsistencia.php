@@ -2,41 +2,41 @@
 
 namespace App\Services;
 
-use App\Models\AsignacionTurno;
+use App\Models\AsignacionHorario;
 use App\Models\Asistencia;
 use App\Models\DiaExcepcional;
+use App\Models\Horario;
 use App\Models\Licencia;
-use App\Models\Turno;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
- * Procesa las marcaciones crudas de un funcionario contra su turno asignado,
+ * Procesa las marcaciones crudas de un funcionario contra su horario asignado,
  * los días excepcionales y sus licencias, y devuelve una ficha por día con
  * entradas, salidas, atrasos y horas computadas.
  *
  * Las reglas están documentadas en `docs/REPORTE-PROCESADO-ASISTENCIA.md`. Las
  * cuatro que mandan sobre el resto:
  *
- * 1. **Prioridad**: día excepcional → sin turno → licencia de día completo →
+ * 1. **Prioridad**: día excepcional → sin horario → licencia de día completo →
  *    recién ahí se miran las marcaciones.
  * 2. **Atraso**: se cuenta en **minutos completos** desde `hEntrada`, la hora
  *    nominal, y lo dispara `hTolerancia` medida en la misma unidad. Con entrada
  *    08:00 y tolerancia 08:10, el minuto 08:10 entero está adentro: a las
  *    08:10:59 no hay atraso; a las 08:11:00 hay 11 min. Los segundos se
  *    descartan: la tolerancia se concede en minutos.
- * 3. **Horas computadas**: se acotan al turno. Llegar dentro de la tolerancia
+ * 3. **Horas computadas**: se acotan al horario. Llegar dentro de la tolerancia
  *    cuenta como llegar a la hora; quedarse de más no suma. La permanencia real
  *    viaja aparte, como dato.
- * 4. **Licencia parcial**: si tapa el borde del turno no se exige marcar ahí. Si
+ * 4. **Licencia parcial**: si tapa el borde del horario no se exige marcar ahí. Si
  *    deja un hueco (empieza después de `hEntrada`), la marca es obligatoria y su
  *    ausencia es abandono.
  *
  * Todas las horas se manejan en **segundos desde medianoche**: las columnas de
- * `turnos` y `asistencias` guardan la hora sobre la fecha base 1899-12-30, así
+ * `horarios` y `asistencias` guardan la hora sobre la fecha base 1899-12-30, así
  * que el día calendario de esas columnas no significa nada.
  *
- * @phpstan-type Bloque array{turno: Turno, entrada: ?int, salida: ?int, entradaExigida: bool, salidaExigida: bool, atraso: int, anticipo: int, permanencia: ?int, licenciado: int, computado: int, esperado: int, estado: string, licencia: ?Licencia, avisos: list<string>}
+ * @phpstan-type Bloque array{horario: Horario, entrada: ?int, salida: ?int, entradaExigida: bool, salidaExigida: bool, atraso: int, anticipo: int, permanencia: ?int, licenciado: int, computado: int, esperado: int, estado: string, licencia: ?Licencia, avisos: list<string>}
  * @phpstan-type Dia array{fecha: Carbon, estado: string, motivo: ?string, bloques: list<Bloque>, marcas: list<int>, marcasUsadas: int, atraso: int, anticipo: int, computado: int, esperado: int}
  */
 class ProcesadorAsistencia
@@ -61,7 +61,7 @@ class ProcesadorAsistencia
 
     public const NO_LABORABLE = 'no_laborable';
 
-    public const TURNO_INVALIDO = 'turno_invalido';
+    public const HORARIO_INVALIDO = 'horario_invalido';
 
     /**
      * El día no lo cubre ningún contrato de Mamoré.
@@ -89,7 +89,7 @@ class ProcesadorAsistencia
         self::EXCEPCIONAL => 'Día excepcional',
         self::NO_LABORABLE => 'No laborable',
         self::SIN_CONTRATO => 'Sin contrato',
-        self::TURNO_INVALIDO => 'Turno mal configurado',
+        self::HORARIO_INVALIDO => 'Horario mal configurado',
     ];
 
     /**
@@ -102,7 +102,7 @@ class ProcesadorAsistencia
         self::FALTA => 'FALTA',
         self::SIN_ENTRADA => 'SIN ENTRADA',
         self::SIN_SALIDA => 'SIN SALIDA',
-        self::TURNO_INVALIDO => 'TURNO MAL CONFIGURADO',
+        self::HORARIO_INVALIDO => 'HORARIO MAL CONFIGURADO',
     ];
 
     /**
@@ -121,7 +121,7 @@ class ProcesadorAsistencia
         self::EXCEPCIONAL => 'pill--info',
         self::NO_LABORABLE => 'pill--info',
         self::SIN_CONTRATO => 'pill--advertencia',
-        self::TURNO_INVALIDO => 'pill--advertencia',
+        self::HORARIO_INVALIDO => 'pill--advertencia',
     ];
 
     /**
@@ -132,7 +132,7 @@ class ProcesadorAsistencia
 
     /**
      * Gravedad de cada estado, para elegir el del día cuando hay más de un
-     * turno. Gana el más grave.
+     * horario. Gana el más grave.
      *
      * @var array<string, int>
      */
@@ -146,7 +146,7 @@ class ProcesadorAsistencia
         self::ATRASO => 4,
         self::SIN_SALIDA => 5,
         self::SIN_ENTRADA => 6,
-        self::TURNO_INVALIDO => 7,
+        self::HORARIO_INVALIDO => 7,
         self::ABANDONO => 8,
         self::FALTA => 9,
     ];
@@ -160,8 +160,8 @@ class ProcesadorAsistencia
     {
         $ci = trim($ci);
 
-        // **La primera puerta es el contrato**, antes que el turno: un día que
-        // ningún contrato cubre no se controla, aunque haya turno asignado y
+        // **La primera puerta es el contrato**, antes que el horario: un día que
+        // ningún contrato cubre no se controla, aunque haya horario asignado y
         // aunque la persona haya marcado. Va acá adentro y no en cada pantalla
         // para que lo hereden todos los consumidores —el reporte procesado, su
         // imprimible, el Excel, la API de asistencia y el régimen del RIP— sin
@@ -200,7 +200,7 @@ class ProcesadorAsistencia
         $asignaciones = $this->asignacionesDelRango($ci, $desde, $hasta);
         $excepcionales = $this->excepcionalesDelRango($desde, $hasta);
         $licencias = $this->licenciasDelRango($ci, $desde, $hasta);
-        // Un día más: la salida de un turno nocturno cae en la fecha siguiente.
+        // Un día más: la salida de un horario nocturno cae en la fecha siguiente.
         $marcas = $this->marcasDelRango($ci, $desde, $hasta->copy()->addDay());
 
         $dias = collect();
@@ -289,7 +289,7 @@ class ProcesadorAsistencia
     /**
      * Resuelve un día concreto siguiendo el orden de prioridad.
      *
-     * @param  Collection<int, AsignacionTurno>  $asignaciones
+     * @param  Collection<int, AsignacionHorario>  $asignaciones
      * @param  Collection<string, DiaExcepcional>  $excepcionales
      * @param  Collection<string, Collection<int, Licencia>>  $licencias
      * @param  Collection<string, list<int>>  $marcas
@@ -318,7 +318,7 @@ class ProcesadorAsistencia
         if (! $this->contratos->cubierto($tramos, $fecha)) {
             return $this->dia(
                 $fecha,
-                $this->turnosDelDia($fecha, $asignaciones) === [] ? self::NO_LABORABLE : self::SIN_CONTRATO,
+                $this->horariosDelDia($fecha, $asignaciones) === [] ? self::NO_LABORABLE : self::SIN_CONTRATO,
                 null,
                 [],
                 $delDia,
@@ -326,42 +326,42 @@ class ProcesadorAsistencia
         }
 
         // 1. El día excepcional manda sobre todo: no se procesan marcaciones ni
-        //    turnos, aunque el funcionario tenga varios asignados.
+        //    horarios, aunque el funcionario tenga varios asignados.
         if ($excepcionales->has($clave)) {
             return $this->dia($fecha, self::EXCEPCIONAL, $excepcionales->get($clave)->motivoInasistencia, [], $delDia);
         }
 
-        $turnos = $this->turnosDelDia($fecha, $asignaciones);
+        $horarios = $this->horariosDelDia($fecha, $asignaciones);
 
-        // 2. Sin turno asignado ese día no hay nada que controlar: no es falta.
-        if ($turnos === []) {
+        // 2. Sin horario asignado ese día no hay nada que controlar: no es falta.
+        if ($horarios === []) {
             return $this->dia($fecha, self::NO_LABORABLE, null, [], $delDia);
         }
 
         $delFuncionario = $licencias->get($clave, collect());
 
-        // 3. La licencia de turno completo cubre el día entero, aunque apunte a
-        //    un solo `turno_id`: no se exige marcar en ninguno de los turnos.
-        //    Igual se arma un bloque por turno, para que el reporte muestre el
+        // 3. La licencia de horario completo cubre el día entero, aunque apunte a
+        //    un solo `horario_id`: no se exige marcar en ninguno de los horarios.
+        //    Igual se arma un bloque por horario, para que el reporte muestre el
         //    horario licenciado con su T.C., su goce de haberes y su motivo. Van
         //    con `esperado = 0`: el día no suma ni resta horas.
         $completa = $delFuncionario->first(fn (Licencia $licencia): bool => (bool) $licencia->tCompleto);
 
         if ($completa instanceof Licencia) {
             $bloques = array_map(
-                fn (Turno $turno): array => $this->bloque($turno, $completa, 0, self::LICENCIA, [], [
+                fn (Horario $horario): array => $this->bloque($horario, $completa, 0, self::LICENCIA, [], [
                     'entradaExigida' => false,
                     'salidaExigida' => false,
                 ]),
-                $turnos,
+                $horarios,
             );
 
             return $this->dia($fecha, self::LICENCIA, $completa->motivo, $bloques, $delDia);
         }
 
         // 4. Recién acá se miran las marcaciones.
-        $bloques = $this->evaluarTurnos(
-            $turnos,
+        $bloques = $this->evaluarHorarios(
+            $horarios,
             $delFuncionario,
             $delDia,
             $marcas->get($fecha->copy()->addDay()->toDateString(), []),
@@ -371,29 +371,29 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Evalúa cada turno del día repartiendo las marcas entre ellos. Cada marca
-     * se consume una sola vez: la que ya fue entrada de un turno no puede ser
+     * Evalúa cada horario del día repartiendo las marcas entre ellos. Cada marca
+     * se consume una sola vez: la que ya fue entrada de un horario no puede ser
      * después la salida de otro.
      *
-     * @param  list<Turno>  $turnos
+     * @param  list<Horario>  $horarios
      * @param  Collection<int, Licencia>  $licencias
      * @param  list<int>  $delDia
      * @param  list<int>  $delDiaSiguiente
      * @return list<Bloque>
      */
-    private function evaluarTurnos(array $turnos, Collection $licencias, array $delDia, array $delDiaSiguiente): array
+    private function evaluarHorarios(array $horarios, Collection $licencias, array $delDia, array $delDiaSiguiente): array
     {
-        $ventanas = $this->ventanas($turnos);
+        $ventanas = $this->ventanas($horarios);
         $usadas = [];
         $bloques = [];
 
-        foreach ($turnos as $indice => $turno) {
-            $bloques[] = $this->evaluarTurno(
-                $turno,
+        foreach ($horarios as $indice => $horario) {
+            $bloques[] = $this->evaluarHorario(
+                $horario,
                 $ventanas[$indice],
-                $licencias->first(fn (Licencia $licencia): bool => $licencia->turno_id === null || $licencia->turno_id === $turno->id),
+                $licencias->first(fn (Licencia $licencia): bool => $licencia->horario_id === null || $licencia->horario_id === $horario->id),
                 $delDia,
-                $turno->siguienteDia ? $delDiaSiguiente : $delDia,
+                $horario->siguienteDia ? $delDiaSiguiente : $delDia,
                 $usadas,
             );
         }
@@ -402,27 +402,27 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Ventanas de entrada y salida de cada turno, ya recortadas para que no se
-     * pisen entre turnos consecutivos del mismo día.
+     * Ventanas de entrada y salida de cada horario, ya recortadas para que no se
+     * pisen entre horarios consecutivos del mismo día.
      *
-     * Cuando la ventana de salida de un turno se solapa con la de entrada del
-     * siguiente (pasa en los turnos partidos), la marca del medio sería ambigua.
+     * Cuando la ventana de salida de un horario se solapa con la de entrada del
+     * siguiente (pasa en los horarios partidos), la marca del medio sería ambigua.
      * El corte va en el punto medio del solape: por debajo es salida del primero,
      * por encima es entrada del segundo.
      *
-     * @param  list<Turno>  $turnos
+     * @param  list<Horario>  $horarios
      * @return list<array{eMin: int, eMax: int, sMin: int, sMax: int, avisos: list<string>}>
      */
-    private function ventanas(array $turnos): array
+    private function ventanas(array $horarios): array
     {
         $ventanas = [];
 
-        foreach ($turnos as $turno) {
+        foreach ($horarios as $horario) {
             $ventanas[] = [
-                'eMin' => $this->segundos($turno->eMinima) ?? 0,
-                'eMax' => $this->segundos($turno->eMaxima) ?? 86399,
-                'sMin' => $this->segundos($turno->sMinima) ?? 0,
-                'sMax' => $this->segundos($turno->sMaxima) ?? 86399,
+                'eMin' => $this->segundos($horario->eMinima) ?? 0,
+                'eMax' => $this->segundos($horario->eMaxima) ?? 86399,
+                'sMin' => $this->segundos($horario->sMinima) ?? 0,
+                'sMax' => $this->segundos($horario->sMaxima) ?? 86399,
                 'avisos' => [],
             ];
         }
@@ -430,7 +430,7 @@ class ProcesadorAsistencia
         foreach (array_keys($ventanas) as $indice) {
             $siguiente = $indice + 1;
 
-            if (! isset($ventanas[$siguiente]) || $turnos[$indice]->siguienteDia) {
+            if (! isset($ventanas[$siguiente]) || $horarios[$indice]->siguienteDia) {
                 continue;
             }
 
@@ -439,7 +439,7 @@ class ProcesadorAsistencia
             }
 
             $corte = intdiv($ventanas[$indice]['sMax'] + $ventanas[$siguiente]['eMin'], 2);
-            $aviso = 'Ventanas solapadas con el otro turno del día: el corte quedó en '.self::hora($corte).'.';
+            $aviso = 'Ventanas solapadas con el otro horario del día: el corte quedó en '.self::hora($corte).'.';
 
             $ventanas[$indice]['sMax'] = $corte;
             $ventanas[$indice]['avisos'][] = $aviso;
@@ -451,48 +451,48 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Evalúa un turno contra las marcas del día.
+     * Evalúa un horario contra las marcas del día.
      *
      * @param  array{eMin: int, eMax: int, sMin: int, sMax: int, avisos: list<string>}  $ventana
      * @param  list<int>  $marcasEntrada
      * @param  list<int>  $marcasSalida
-     * @param  list<int>  $usadas  marcas ya consumidas por otro turno (por referencia)
+     * @param  list<int>  $usadas  marcas ya consumidas por otro horario (por referencia)
      * @return Bloque
      */
-    private function evaluarTurno(
-        Turno $turno,
+    private function evaluarHorario(
+        Horario $horario,
         array $ventana,
         ?Licencia $licencia,
         array $marcasEntrada,
         array $marcasSalida,
         array &$usadas,
     ): array {
-        $hEntrada = $this->segundos($turno->hEntrada) ?? 0;
-        $hSalida = $this->segundos($turno->hSalida) ?? 0;
-        $hTolerancia = $this->segundos($turno->hTolerancia) ?? $hEntrada;
-        $sTolerancia = $this->segundos($turno->sTolerancia) ?? $hSalida;
-        $esperado = $this->esperado($turno, $hEntrada, $hSalida);
-        $avisos = array_merge($ventana['avisos'], $this->revisarTurno($turno, $hEntrada, $hSalida, $hTolerancia, $sTolerancia, $ventana));
+        $hEntrada = $this->segundos($horario->hEntrada) ?? 0;
+        $hSalida = $this->segundos($horario->hSalida) ?? 0;
+        $hTolerancia = $this->segundos($horario->hTolerancia) ?? $hEntrada;
+        $sTolerancia = $this->segundos($horario->sTolerancia) ?? $hSalida;
+        $esperado = $this->esperado($horario, $hEntrada, $hSalida);
+        $avisos = array_merge($ventana['avisos'], $this->revisarHorario($horario, $hEntrada, $hSalida, $hTolerancia, $sTolerancia, $ventana));
 
         if ($ventana['eMin'] > $ventana['eMax'] || $ventana['sMin'] > $ventana['sMax']) {
-            return $this->bloque($turno, $licencia, $esperado, self::TURNO_INVALIDO, $avisos);
+            return $this->bloque($horario, $licencia, $esperado, self::HORARIO_INVALIDO, $avisos);
         }
 
-        // Tramo licenciado recortado al turno. Fuera de él quedan uno o dos
+        // Tramo licenciado recortado al horario. Fuera de él quedan uno o dos
         // tramos de trabajo, y solo esos exigen marca.
-        [$licEntra, $licSale] = $this->tramoLicencia($licencia, $hEntrada, $hSalida + ($turno->siguienteDia ? 86400 : 0));
+        [$licEntra, $licSale] = $this->tramoLicencia($licencia, $hEntrada, $hSalida + ($horario->siguienteDia ? 86400 : 0));
         $conLicencia = $licEntra !== null && $licSale !== null;
         $entradaExigida = ! $conLicencia || $licEntra > $hEntrada;
-        $salidaExigida = ! $conLicencia || $licSale < $hSalida + ($turno->siguienteDia ? 86400 : 0);
+        $salidaExigida = ! $conLicencia || $licSale < $hSalida + ($horario->siguienteDia ? 86400 : 0);
 
         $entrada = $entradaExigida ? $this->primeraMarca($marcasEntrada, $ventana['eMin'], $ventana['eMax'], $usadas) : null;
         $salida = $salidaExigida ? $this->ultimaMarca($marcasSalida, $ventana['sMin'], $ventana['sMax'], $usadas) : null;
 
-        // En el turno nocturno la salida es del día siguiente: para las cuentas
+        // En el horario nocturno la salida es del día siguiente: para las cuentas
         // se corre un día entero, así la resta con la entrada da positivo. Las
         // ventanas siguen crudas, porque se comparan contra marcas de ese día.
-        $cruce = $turno->siguienteDia ? 86400 : 0;
-        $finTurno = $hSalida + $cruce;
+        $cruce = $horario->siguienteDia ? 86400 : 0;
+        $finHorario = $hSalida + $cruce;
         $toleranciaSalida = $sTolerancia + $cruce;
         $salidaReal = $salida === null ? null : $salida + $cruce;
 
@@ -517,8 +517,8 @@ class ProcesadorAsistencia
         // minuto en punto del atraso y no la marca cruda: si el descuento dice
         // once minutos, las horas computadas tienen que descontar esos once y no
         // once y medio.
-        $inicio = $entrada === null ? null : ($enTolerancia ? $hEntrada : min($hEntrada + $atraso, $finTurno));
-        $fin = $salidaReal === null ? null : ($salidaReal >= $toleranciaSalida ? $finTurno : max($salidaReal, $hEntrada));
+        $inicio = $entrada === null ? null : ($enTolerancia ? $hEntrada : min($hEntrada + $atraso, $finHorario));
+        $fin = $salidaReal === null ? null : ($salidaReal >= $toleranciaSalida ? $finHorario : max($salidaReal, $hEntrada));
 
         $licenciado = $conLicencia ? $licSale - $licEntra : 0;
         $trabajado = $conLicencia
@@ -538,7 +538,7 @@ class ProcesadorAsistencia
             $avisos,
         );
 
-        return $this->bloque($turno, $licencia, $esperado, $estado, $avisos, [
+        return $this->bloque($horario, $licencia, $esperado, $estado, $avisos, [
             'entrada' => $entrada,
             'salida' => $salida,
             'entradaExigida' => $entradaExigida,
@@ -576,7 +576,7 @@ class ProcesadorAsistencia
      * Estado del bloque a partir de lo que se pudo leer.
      *
      * `abandono` es siempre irse antes de tiempo: hay una marca real por debajo
-     * de `sMinima`, o la licencia dejó un hueco al principio del turno que había
+     * de `sMinima`, o la licencia dejó un hueco al principio del horario que había
      * que marcar y nadie marcó. Marcar después de `sMaxima` no es abandono: el
      * funcionario se quedó de más, la falta es no haber marcado en la ventana.
      *
@@ -634,14 +634,14 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Revisiones de configuración del turno. No frenan el cálculo (salvo las
+     * Revisiones de configuración del horario. No frenan el cálculo (salvo las
      * ventanas invertidas, que sí lo hacen), pero se muestran junto al día para
-     * que no se lea como un resultado limpio lo que es un turno mal cargado.
+     * que no se lea como un resultado limpio lo que es un horario mal cargado.
      *
      * @param  array{eMin: int, eMax: int, sMin: int, sMax: int, avisos: list<string>}  $ventana
      * @return list<string>
      */
-    private function revisarTurno(Turno $turno, int $hEntrada, int $hSalida, int $hTolerancia, int $sTolerancia, array $ventana): array
+    private function revisarHorario(Horario $horario, int $hEntrada, int $hSalida, int $hTolerancia, int $sTolerancia, array $ventana): array
     {
         $avisos = [];
 
@@ -661,28 +661,28 @@ class ProcesadorAsistencia
             $avisos[] = 'Mínima hora de salida igual a la tolerancia: nunca se reporta salida anticipada.';
         }
 
-        if ($turno->siguienteDia && $hSalida > $hEntrada) {
+        if ($horario->siguienteDia && $hSalida > $hEntrada) {
             $avisos[] = 'Marcado como salida al día siguiente, pero la salida es posterior a la entrada.';
         }
 
-        if (! $turno->siguienteDia && $hSalida < $hEntrada) {
-            $avisos[] = 'La salida es anterior a la entrada, pero el turno no cruza medianoche.';
+        if (! $horario->siguienteDia && $hSalida < $hEntrada) {
+            $avisos[] = 'La salida es anterior a la entrada, pero el horario no cruza medianoche.';
         }
 
-        if ((float) $turno->hTrabajadas <= 0) {
-            $avisos[] = 'El turno no declara horas trabajadas.';
+        if ((float) $horario->hTrabajadas <= 0) {
+            $avisos[] = 'El horario no declara horas trabajadas.';
         }
 
         return $avisos;
     }
 
     /**
-     * Horas esperadas del turno. `hTrabajadas` manda, pero hay turnos migrados
+     * Horas esperadas del horario. `hTrabajadas` manda, pero hay horarios migrados
      * con 0 aunque tengan horario real: ahí se calcula del horario.
      */
-    private function esperado(Turno $turno, int $hEntrada, int $hSalida): int
+    private function esperado(Horario $horario, int $hEntrada, int $hSalida): int
     {
-        $declarado = (int) round(((float) $turno->hTrabajadas) * 3600);
+        $declarado = (int) round(((float) $horario->hTrabajadas) * 3600);
 
         if ($declarado > 0) {
             return $declarado;
@@ -692,11 +692,11 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Tramo licenciado recortado al turno, en segundos desde medianoche.
-     * `[null, null]` si la licencia no acota horas o no toca el turno.
+     * Tramo licenciado recortado al horario, en segundos desde medianoche.
+     * `[null, null]` si la licencia no acota horas o no toca el horario.
      *
      * La licencia que termina justo a la hora de entrada (la iza de bandera de
-     * 07:00 a 08:00 con turno de 08:00) o empieza justo a la de salida no suma
+     * 07:00 a 08:00 con horario de 08:00) o empieza justo a la de salida no suma
      * horas, pero sí cubre esa marca: tiene prioridad sobre el reloj. Vuelve
      * como un tramo de largo cero pegado a ese borde.
      *
@@ -731,7 +731,7 @@ class ProcesadorAsistencia
 
     /**
      * Primera marca sin usar dentro de la ventana. La marca elegida se agrega a
-     * `$usadas` para que ningún otro turno la vuelva a tomar.
+     * `$usadas` para que ningún otro horario la vuelva a tomar.
      *
      * @param  list<int>  $marcas
      * @param  list<int>  $usadas
@@ -812,10 +812,10 @@ class ProcesadorAsistencia
      * @param  array<string, mixed>  $datos
      * @return Bloque
      */
-    private function bloque(Turno $turno, ?Licencia $licencia, int $esperado, string $estado, array $avisos, array $datos = []): array
+    private function bloque(Horario $horario, ?Licencia $licencia, int $esperado, string $estado, array $avisos, array $datos = []): array
     {
         return array_merge([
-            'turno' => $turno,
+            'horario' => $horario,
             'entrada' => null,
             'salida' => null,
             'entradaExigida' => true,
@@ -833,38 +833,38 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Turnos que le tocan al funcionario esa fecha, ordenados por hora de
-     * entrada. Si dos asignaciones vigentes traen el mismo turno (rangos
+     * Horarios que le tocan al funcionario esa fecha, ordenados por hora de
+     * entrada. Si dos asignaciones vigentes traen el mismo horario (rangos
      * solapados del SIA), gana la que empieza más tarde.
      *
-     * @param  Collection<int, AsignacionTurno>  $asignaciones
-     * @return list<Turno>
+     * @param  Collection<int, AsignacionHorario>  $asignaciones
+     * @return list<Horario>
      */
-    private function turnosDelDia(Carbon $fecha, Collection $asignaciones): array
+    private function horariosDelDia(Carbon $fecha, Collection $asignaciones): array
     {
         // `dia` guarda 1=Domingo … 7=Sábado, igual que DAYOFWEEK() de MySQL.
         $dia = $fecha->dayOfWeek + 1;
 
         return $asignaciones
-            ->filter(fn (AsignacionTurno $asignacion): bool => $asignacion->turno instanceof Turno
-                && (int) $asignacion->turno->dia === $dia
+            ->filter(fn (AsignacionHorario $asignacion): bool => $asignacion->horario instanceof Horario
+                && (int) $asignacion->horario->dia === $dia
                 && $asignacion->desde?->copy()->startOfDay()->lessThanOrEqualTo($fecha)
                 && $asignacion->hasta?->copy()->startOfDay()->greaterThanOrEqualTo($fecha))
-            ->sortByDesc(fn (AsignacionTurno $asignacion): string => $asignacion->desde?->toDateString() ?? '')
-            ->unique('turno_id')
-            ->map(fn (AsignacionTurno $asignacion): Turno => $asignacion->turno)
-            ->sortBy(fn (Turno $turno): int => $this->segundos($turno->hEntrada) ?? 0)
+            ->sortByDesc(fn (AsignacionHorario $asignacion): string => $asignacion->desde?->toDateString() ?? '')
+            ->unique('horario_id')
+            ->map(fn (AsignacionHorario $asignacion): Horario => $asignacion->horario)
+            ->sortBy(fn (Horario $horario): int => $this->segundos($horario->hEntrada) ?? 0)
             ->values()
             ->all();
     }
 
     /**
-     * @return Collection<int, AsignacionTurno>
+     * @return Collection<int, AsignacionHorario>
      */
     private function asignacionesDelRango(string $ci, Carbon $desde, Carbon $hasta): Collection
     {
-        return AsignacionTurno::query()
-            ->with('turno')
+        return AsignacionHorario::query()
+            ->with('horario')
             ->where('ci', $ci)
             ->whereDate('desde', '<=', $hasta)
             ->whereDate('hasta', '>=', $desde)
@@ -952,7 +952,7 @@ class ProcesadorAsistencia
 
     /**
      * Segundos desde medianoche de una columna horaria. La fecha se descarta:
-     * `turnos` y `asistencias` guardan la hora sobre la base 1899-12-30.
+     * `horarios` y `asistencias` guardan la hora sobre la base 1899-12-30.
      */
     private function segundos(?Carbon $hora): ?int
     {

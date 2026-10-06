@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\AsignacionTurno;
+use App\Models\AsignacionHorario;
 use App\Models\Asistencia;
 use App\Models\DiaExcepcional;
 use App\Models\Equipo;
@@ -43,19 +43,19 @@ class ResumenEscritorio
      * «Sin marcar» descuenta a los que tienen licencia aprobada hoy: no se los
      * espera, y contarlos haría parecer ausente a quien tiene permiso.
      *
-     * `con_turno` sale de los turnos asignados. Mientras esa tabla esté vacía
+     * `con_horario` sale de los horarios asignados. Mientras esa tabla esté vacía
      * viaja en `null`, junto con `marcaron` y `sin_marcar`: «0 sin marcar»
      * parecería un dato y es una tabla sin cargar. `personas` cuenta a todos
-     * los que marcaron, tengan turno o no, y es lo que se muestra en ese caso.
+     * los que marcaron, tengan horario o no, y es lo que se muestra en ese caso.
      *
-     * @return array{personas: int, con_turno: ?int, marcaron: ?int, sin_marcar: ?int, licenciados: int}
+     * @return array{personas: int, con_horario: ?int, marcaron: ?int, sin_marcar: ?int, licenciados: int}
      */
     public function hoy(): array
     {
         return Cache::remember('escritorio.numeros-del-dia', now()->addMinutes(self::CACHE_MINUTOS), function (): array {
             $hoy = today();
 
-            $cisConTurno = $this->cisConTurnoEse($hoy);
+            $cisConHorario = $this->cisConHorarioEse($hoy);
             $cisQueMarcaron = $this->enRango($hoy, $hoy)->distinct()->pluck('ci')
                 ->map(fn ($ci): string => trim((string) $ci))
                 ->all();
@@ -70,11 +70,11 @@ class ResumenEscritorio
 
             return [
                 'personas' => count($cisQueMarcaron),
-                'con_turno' => $cisConTurno === null ? null : count($cisConTurno),
-                'marcaron' => $cisConTurno === null ? null : count(array_intersect($cisConTurno, $cisQueMarcaron)),
-                'sin_marcar' => $cisConTurno === null
+                'con_horario' => $cisConHorario === null ? null : count($cisConHorario),
+                'marcaron' => $cisConHorario === null ? null : count(array_intersect($cisConHorario, $cisQueMarcaron)),
+                'sin_marcar' => $cisConHorario === null
                     ? null
-                    : count(array_diff($cisConTurno, $cisQueMarcaron, $cisDeLicencia)),
+                    : count(array_diff($cisConHorario, $cisQueMarcaron, $cisDeLicencia)),
                 'licenciados' => count($cisDeLicencia),
             ];
         });
@@ -152,29 +152,29 @@ class ResumenEscritorio
     }
 
     /**
-     * Carnets con turno asignado ese día. `null` si todavía no se migraron las
-     * asignaciones: no es lo mismo «nadie tiene turno» que «no hay datos».
+     * Carnets con horario asignado ese día. `null` si todavía no se migraron las
+     * asignaciones: no es lo mismo «nadie tiene horario» que «no hay datos».
      *
      * @return list<string>|null
      */
-    private function cisConTurnoEse(Carbon $fecha): ?array
+    private function cisConHorarioEse(Carbon $fecha): ?array
     {
-        if (AsignacionTurno::query()->doesntExist()) {
+        if (AsignacionHorario::query()->doesntExist()) {
             return null;
         }
 
-        // `turnos.dia` guarda 1=Domingo … 7=Sábado, igual que DAYOFWEEK() de
+        // `horarios.dia` guarda 1=Domingo … 7=Sábado, igual que DAYOFWEEK() de
         // MySQL y que ProcesadorAsistencia.
         $diaSemana = $fecha->dayOfWeek + 1;
 
-        return AsignacionTurno::query()
-            ->join('turnos', 'turnos.id', '=', 'asignacion_turnos.turno_id')
-            ->whereNull('turnos.deleted_at')
-            ->where('turnos.dia', $diaSemana)
-            ->where('asignacion_turnos.desde', '<=', $fecha->copy()->endOfDay())
-            ->where('asignacion_turnos.hasta', '>=', $fecha->copy()->startOfDay())
+        return AsignacionHorario::query()
+            ->join('horarios', 'horarios.id', '=', 'asignacion_horarios.horario_id')
+            ->whereNull('horarios.deleted_at')
+            ->where('horarios.dia', $diaSemana)
+            ->where('asignacion_horarios.desde', '<=', $fecha->copy()->endOfDay())
+            ->where('asignacion_horarios.hasta', '>=', $fecha->copy()->startOfDay())
             ->distinct()
-            ->pluck('asignacion_turnos.ci')
+            ->pluck('asignacion_horarios.ci')
             ->map(fn ($ci): string => trim((string) $ci))
             ->all();
     }

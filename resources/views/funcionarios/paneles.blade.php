@@ -1,5 +1,5 @@
 {{--
-    Pie de la ficha del funcionario: marcaciones, licencias y turnos asignados
+    Pie de la ficha del funcionario: marcaciones, licencias y horarios asignados
     en solapas, para no apilar tres tablas una debajo de la otra.
 
     Cada solapa tiene sus filtros y su propia paginación, y carga su tabla por
@@ -15,7 +15,10 @@
 --}}
 @php
     $verLicencias = auth()->user()?->can('viewAny', \App\Models\Licencia::class) ?? false;
-    $verTurnos = auth()->user()?->can('viewAny', \App\Models\AsignacionTurno::class) ?? false;
+    // La solapa muestra los horarios día por día y deja asignar o concluir el
+    // turno: sirve a quien maneja turnos asignados y a quien consulta el
+    // historial, así que alcanza con cualquiera de los dos permisos.
+    $verHorarios = auth()->user()?->canAny(['ViewAny:AsignacionTurno', 'ViewAny:AsignacionHorario']) ?? false;
     // La solapa de asistencia procesada es el reporte de «Reportes → Procesado»
     // servido acá dentro, así que pide el mismo permiso que esa pantalla.
     $verReportes = auth()->user()?->can('ViewAny:Reporte') ?? false;
@@ -31,9 +34,9 @@
                 <x-heroicon-o-clipboard-document-check />Licencias
             </button>
         @endif
-        @if ($verTurnos)
-            <button type="button" class="tabs__boton" role="tab" aria-selected="false" data-tab="turnos">
-                <x-heroicon-o-clock />Turnos
+        @if ($verHorarios)
+            <button type="button" class="tabs__boton" role="tab" aria-selected="false" data-tab="horarios">
+                <x-heroicon-o-clock />Turnos/Horarios
             </button>
         @endif
         @if ($verReportes)
@@ -119,13 +122,13 @@
         </div>
     @endif
 
-    {{-- Solapa: turnos asignados --}}
-    @if ($verTurnos)
-        <div class="tabs__panel" data-panel="turnos" hidden>
+    {{-- Solapa: horarios asignados --}}
+    @if ($verHorarios)
+        <div class="tabs__panel" data-panel="horarios" hidden>
             <div class="tabla-filtros">
                 <label class="tabla-filtros__mostrar">
                     Mostrar
-                    <select id="t-paginate" aria-label="Cantidad de turnos a mostrar">
+                    <select id="t-paginate" aria-label="Cantidad de horarios a mostrar">
                         @foreach ([10, 25, 50, 100] as $n)
                             <option value="{{ $n }}">{{ $n }}</option>
                         @endforeach
@@ -220,9 +223,9 @@
                 controles: ['l-mes', 'l-paginate'],
             },
             @endif
-            @if ($verTurnos)
-            turnos: {
-                url: @json(route('funcionarios.turnos.list')),
+            @if ($verHorarios)
+            horarios: {
+                url: @json(route('funcionarios.horarios.list')),
                 contenedor: document.getElementById('t-results'),
                 filtros: () => ({
                     situacion: document.getElementById('t-situacion').value,

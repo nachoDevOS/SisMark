@@ -2,42 +2,42 @@
 
 namespace App\Http\Resources;
 
-use App\Models\AsignacionTurno;
-use App\Models\Turno;
+use App\Models\AsignacionHorario;
+use App\Models\Horario;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
 
 /**
- * El turno asignado a un funcionario durante un período de vigencia.
+ * El horario asignado a un funcionario durante un período de vigencia.
  *
- * **Por qué esto no es una asignación.** `asignacion_turnos` guarda una fila por
+ * **Por qué esto no es una asignación.** `asignacion_horarios` guarda una fila por
  * día de la semana: el horario de lunes a viernes de una persona son cinco
  * filas con las mismas fechas repetidas cinco veces. Entregarlas sueltas le
- * mostraría al funcionario cinco «turnos» donde tiene uno solo, y lo obligaría
+ * mostraría al funcionario cinco «horarios» donde tiene uno solo, y lo obligaría
  * a reconstruir del otro lado qué filas van juntas. Acá se devuelven agrupadas
  * por vigencia: el período arriba y los días adentro, que es también como lo
- * lee Recursos Humanos en la pantalla de Turnos asignados.
+ * lee Recursos Humanos en la pantalla de Horarios asignados.
  *
- * Un período puede traer más de una fila para el mismo día —el turno partido,
+ * Un período puede traer más de una fila para el mismo día —el horario partido,
  * mañana y tarde—, así que `dias` es una lista de tramos y no un día por
  * elemento.
  *
- * @property-read Collection<int, AsignacionTurno> $resource
+ * @property-read Collection<int, AsignacionHorario> $resource
  */
-class TurnoAsignadoResource extends JsonResource
+class HorarioAsignadoResource extends JsonResource
 {
     /**
      * Agrupa las asignaciones en los períodos de vigencia que forman,
      * respetando el orden en que vienen.
      *
-     * @param  Collection<int, AsignacionTurno>  $asignaciones
+     * @param  Collection<int, AsignacionHorario>  $asignaciones
      * @return Collection<int, self>
      */
     public static function agrupar(Collection $asignaciones): Collection
     {
         return $asignaciones
-            ->groupBy(fn (AsignacionTurno $asignacion): string => $asignacion->clave_periodo)
+            ->groupBy(fn (AsignacionHorario $asignacion): string => $asignacion->clave_periodo)
             ->values()
             ->map(fn (Collection $grupo): self => new self($grupo));
     }
@@ -47,7 +47,7 @@ class TurnoAsignadoResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        /** @var AsignacionTurno $muestra */
+        /** @var AsignacionHorario $muestra */
         $muestra = $this->resource->first();
 
         return [
@@ -57,9 +57,12 @@ class TurnoAsignadoResource extends JsonResource
             // y no del otro lado para que los dos sistemas no discrepen por
             // tener el reloj corrido o por comparar en otra zona horaria.
             'situacion' => $muestra->situacion,
+            // El turno del que salen estos horarios; null en lo heredado del
+            // sistema anterior, que se asignaba horario por horario.
+            'turno' => $muestra->asignacionTurno?->turno?->nombre,
 
             'dias' => $this->resource
-                ->map(fn (AsignacionTurno $asignacion): array => $this->tramo($asignacion))
+                ->map(fn (AsignacionHorario $asignacion): array => $this->tramo($asignacion))
                 ->values()
                 ->all(),
         ];
@@ -75,26 +78,26 @@ class TurnoAsignadoResource extends JsonResource
      *
      * @return array<string, mixed>
      */
-    private function tramo(AsignacionTurno $asignacion): array
+    private function tramo(AsignacionHorario $asignacion): array
     {
-        $turno = $asignacion->turno;
+        $horario = $asignacion->horario;
 
         return [
-            'dia' => (int) $turno->dia,
-            'diaNombre' => Turno::DIAS[(int) $turno->dia] ?? null,
-            'nombreTurno' => trim((string) $turno->nombreTurno),
-            'hEntrada' => $turno->hEntrada?->format('H:i'),
-            'hSalida' => $turno->hSalida?->format('H:i'),
+            'dia' => (int) $horario->dia,
+            'diaNombre' => Horario::DIAS[(int) $horario->dia] ?? null,
+            'nombreHorario' => trim((string) $horario->nombreHorario),
+            'hEntrada' => $horario->hEntrada?->format('H:i'),
+            'hSalida' => $horario->hSalida?->format('H:i'),
             // Hasta qué hora se puede llegar sin que el día cuente como atraso.
-            'hTolerancia' => $turno->hTolerancia?->format('H:i'),
-            'hTrabajadas' => (float) $turno->hTrabajadas,
-            // El turno nocturno sale al día siguiente: sin esto, «22:00 - 06:00»
+            'hTolerancia' => $horario->hTolerancia?->format('H:i'),
+            'hTrabajadas' => (float) $horario->hTrabajadas,
+            // El horario nocturno sale al día siguiente: sin esto, «22:00 - 06:00»
             // se lee como una jornada de dieciséis horas al revés.
-            'siguienteDia' => (bool) $turno->siguienteDia,
-            'eMinima' => $turno->eMinima?->format('H:i'),
-            'eMaxima' => $turno->eMaxima?->format('H:i'),
-            'sMinima' => $turno->sMinima?->format('H:i'),
-            'sMaxima' => $turno->sMaxima?->format('H:i'),
+            'siguienteDia' => (bool) $horario->siguienteDia,
+            'eMinima' => $horario->eMinima?->format('H:i'),
+            'eMaxima' => $horario->eMaxima?->format('H:i'),
+            'sMinima' => $horario->sMinima?->format('H:i'),
+            'sMaxima' => $horario->sMaxima?->format('H:i'),
         ];
     }
 }

@@ -17,8 +17,8 @@ use Illuminate\Database\Seeder;
  *    administrador, con la clave que diga `SEED_ADMIN_PASSWORD` (o
  *    «password» fuera de producción). Sin este paso la base queda con todos
  *    los datos del SIA y sin nadie que pueda entrar a verlos.
- * 3. Los comandos de copia, en orden de dependencia: `asignacion_turnos` y
- *    `licencias` resuelven su FK `turno_id` contra `turnos`, así que los
+ * 3. Los comandos de copia, en orden de dependencia: `asignacion_horarios` y
+ *    `licencias` resuelven su FK `horario_id` contra `horarios`, así que los
  *    horarios se migran antes.
  *
  * OJO: `migrate:fresh` BORRA todas las tablas (equipos, usuarios, roles y las del
@@ -37,10 +37,10 @@ class MigrarSiaSeeder extends Seeder
     private const COMANDOS = [
         'sia:migrar-profesiones',
         'sia:migrar-personas',
-        'sia:migrar-horarios',        // antes de asignacion-turnos (FK turno_id).
+        'sia:migrar-horarios',        // antes de asignacion-horarios (FK horario_id).
         'sia:migrar-marcaciones',
         'sia:migrar-licencias',
-        'sia:migrar-asignacion-turnos',
+        'sia:migrar-asignacion-horarios',
         'sia:migrar-dias-excepcionales',
     ];
 
@@ -67,7 +67,7 @@ class MigrarSiaSeeder extends Seeder
             $this->command->call($comando);
         }
 
-        // Va al final y no junto al DatabaseSeeder porque necesita los turnos ya
+        // Va al final y no junto al DatabaseSeeder porque necesita los horarios ya
         // copiados: marca el horario sugerido, y antes de `sia:migrar-horarios`
         // la tabla está vacía. Fuera de producción deja además el token de
         // desarrollo, para no tener que reemitirlo en cada corrida.

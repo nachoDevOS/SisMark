@@ -16,11 +16,11 @@
     // Todo lo que la columna «Faltas» cuenta como falta.
     //
     // Además del día sin ninguna marca van los que tienen una sola punta —marcó
-    // la entrada y no la salida, o al revés— y los que caen en un turno mal
+    // la entrada y no la salida, o al revés— y los que caen en un horario mal
     // cargado. Tenían columna aparte porque no son lo mismo: en esos días la
     // persona estuvo y hay una marca que lo prueba. Se unificaron a pedido,
     // porque separados no cambiaban ninguna decisión.
-    $comoFalta = [P::FALTA, P::SIN_ENTRADA, P::SIN_SALIDA, P::TURNO_INVALIDO];
+    $comoFalta = [P::FALTA, P::SIN_ENTRADA, P::SIN_SALIDA, P::HORARIO_INVALIDO];
 
     /**
      * El atraso del rango en minutos enteros. El procesador lo cuenta en minutos
@@ -64,7 +64,7 @@
                         <th title="Suma de los minutos de atraso del mes">Minutos acumulados</th>
                         <th>Atrasos</th>
                         <th>Abandonos</th>
-                        <th title="Sin ninguna marca, con una sola punta, o turno mal configurado">Faltas</th>
+                        <th title="Sin ninguna marca, con una sola punta, o horario mal configurado">Faltas</th>
                         <th>Licencia</th>
                         <th></th>
                     </tr>
@@ -206,10 +206,10 @@
 
         <p style="color: var(--muted); font-size: .8rem; margin-bottom: 0;">
             <strong>Minutos acumulados</strong> = la suma de los atrasos, medidos contra la hora
-            de entrada del turno, y <strong>Atrasos</strong> en cuántos días ocurrieron. <strong>Abandono</strong> = se retiró antes de la mínima hora de
+            de entrada del horario, y <strong>Atrasos</strong> en cuántos días ocurrieron. <strong>Abandono</strong> = se retiró antes de la mínima hora de
             salida, o no marcó un tramo que la licencia no cubría.
             <strong>Faltas</strong> junta el día sin ninguna marca con el que tiene una sola
-            punta —marcó la entrada y no la salida, o al revés— y el que cae en un turno mal
+            punta —marcó la entrada y no la salida, o al revés— y el que cae en un horario mal
             cargado. Los días sin jornada —no laborables, o que ningún contrato cubría— no
             cuentan en ninguna columna.
             @if ($cruzaMeses)

@@ -29,7 +29,7 @@ use Illuminate\Support\Carbon;
  * - Solo los **permisos personales** ({@see Licencia::TIPO_PERSONAL}). Las
  *   licencias institucionales no descuentan, y a ellas no se les aplica el tope.
  * - Solo los permisos **por horas** (con entrada y salida de licencia). Los de
- *   turno completo no descuentan.
+ *   horario completo no descuentan.
  * - **Al pedir**, los aprobados y los **pendientes**: si no, se podrían pedir
  *   varios a la vez que juntos pasen el tope. Se muestran aparte —«usado» es
  *   lo aprobado, «pendiente» lo que espera decisión— y los dos restan de lo
@@ -38,7 +38,7 @@ use Illuminate\Support\Carbon;
  *   ({@see LicenciaController::aprobar()}): cubre que se haya bajado el tope
  *   con pedidos ya hechos. Los rechazados y los dados de baja nunca cuentan.
  * - Un permiso cuenta **una vez por día**, aunque ese día ocupe más de una fila
- *   —una por turno—, porque es el mismo tiempo pedido.
+ *   —una por horario—, porque es el mismo tiempo pedido.
  *
  * Por contrato, los contratos salen de Mamoré. Si no está configurado o no
  * contesta, el mes entero es una sola bolsa: se aplica el tope igual, en vez de
@@ -226,7 +226,7 @@ class TopePermisos
 
             if ($pedido > 0) {
                 foreach (array_unique($fechas) as $fecha) {
-                    // El mismo permiso ya anotado ese día en otro turno no se
+                    // El mismo permiso ya anotado ese día en otro horario no se
                     // cobra dos veces.
                     if (isset($contados["{$fecha}|{$lEntra}|{$lSale}"])) {
                         continue;

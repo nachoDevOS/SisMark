@@ -122,7 +122,7 @@
                      Es lo que decide si esta persona sigue siendo funcionario
                      hoy, y también qué días de asistencia se le controlan: un
                      día que ningún contrato cubre no se procesa, aunque tenga
-                     turno asignado y haya marcado. Ver
+                     horario asignado y haya marcado. Ver
                      {@see App\Services\ContratosFuncionario}. --}}
                 <div><dt>Vigencia desde</dt><dd>{{ $fechaContrato($contrato['start'] ?? null) ?? '—' }}</dd></div>
                 <div>

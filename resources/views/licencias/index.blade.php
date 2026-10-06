@@ -13,7 +13,7 @@
         @endcan
     </div>
 
-    <p class="ayuda" style="margin: -.4rem 0 1rem;">Permisos y ausencias justificadas de los funcionarios, por día y turno.</p>
+    <p class="ayuda" style="margin: -.4rem 0 1rem;">Permisos y ausencias justificadas de los funcionarios, por día y horario.</p>
 
     {{-- Filtros del listado (browse): disparan la carga AJAX de la tabla. --}}
     <div class="tabla-filtros">

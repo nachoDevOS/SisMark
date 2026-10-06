@@ -41,9 +41,15 @@
                         <td>
                             @if (in_array($habilidad, $definicion['habilidades'], true))
                                 @php($nombrePermiso = "{$habilidad}:{$modulo}")
+                                @php($aclaracion = $definicion['aclaraciones'][$habilidad] ?? null)
                                 <input type="checkbox" name="permisos[]" value="{{ $nombrePermiso }}"
-                                       aria-label="{{ $etiquetaHabilidad }} en {{ $definicion['etiqueta'] }}"
+                                       aria-label="{{ $aclaracion ?? $etiquetaHabilidad }} en {{ $definicion['etiqueta'] }}"
                                        @checked(in_array($nombrePermiso, $permisosActuales))>
+                                {{-- Cuando la habilidad significa otra cosa en este módulo
+                                     («Editar» un turno es marcar el sugerido). --}}
+                                @if ($aclaracion)
+                                    <div class="ayuda" style="margin: 0; white-space: nowrap;">{{ $aclaracion }}</div>
+                                @endif
                             @else
                                 <span class="ayuda" aria-hidden="true">—</span>
                             @endif

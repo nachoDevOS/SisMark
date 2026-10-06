@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('titulo', 'Turno ' . trim($horario->nombreTurno))
+@section('titulo', 'Horario ' . trim($horario->nombreHorario))
 
 @php
     $hm = fn ($valor) => $valor?->format('H:i') ?? '—';
@@ -10,7 +10,7 @@
     <div class="cabecera">
         <div class="cabecera__titulo">
             <span class="cabecera__icono"><x-heroicon-o-clock /></span>
-            <h1>{{ trim($horario->nombreTurno) ?: 'Turno' }}</h1>
+            <h1>{{ trim($horario->nombreHorario) ?: 'Horario' }}</h1>
         </div>
         <div class="acciones">
             @can('update', $horario)
@@ -22,15 +22,15 @@
 
     <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
         <div class="tarjeta" style="grid-column: 1 / -1;">
-            <h2>Descripción del turno</h2>
+            <h2>Descripción del horario</h2>
             <dl class="datos grid-2">
                 <div>
                     <dt>Día</dt>
                     <dd>{{ $horario->nombre_dia }}</dd>
                 </div>
                 <div>
-                    <dt>Nombre del turno</dt>
-                    <dd>{{ trim($horario->nombreTurno) }}</dd>
+                    <dt>Nombre del horario</dt>
+                    <dd>{{ trim($horario->nombreHorario) }}</dd>
                 </div>
             </dl>
         </div>
@@ -93,19 +93,6 @@
                 <div>
                     <dt>Horas trabajadas</dt>
                     <dd>{{ number_format((float) $horario->hTrabajadas, 2) }}</dd>
-                </div>
-                <div>
-                    <dt>¿Horario sugerido?</dt>
-                    <dd>
-                        <span class="pill {{ $horario->sugerido ? 'pill--info' : 'pill--neutro' }}">
-                            {{ $horario->sugerido ? 'Sí' : 'No' }}
-                        </span>
-                        @if ($horario->sugerido)
-                            <small style="display: block; color: var(--muted); margin-top: .35rem;">
-                                Se ofrece por defecto al dar de alta un contrato en Mamoré.
-                            </small>
-                        @endif
-                    </dd>
                 </div>
             </dl>
         </div>

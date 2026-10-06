@@ -1,18 +1,20 @@
 <?php
 
+use App\Http\Controllers\AsignacionHorarioController;
 use App\Http\Controllers\AsignacionTurnoController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiaExcepcionalController;
-use App\Http\Controllers\DiaTurnoController;
 use App\Http\Controllers\EquipoController;
+use App\Http\Controllers\HorarioController;
 use App\Http\Controllers\LicenciaController;
 use App\Http\Controllers\MarcacionController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\ReporteMarcacionController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SistemaExternoController;
+use App\Http\Controllers\TurnoController;
 use App\Http\Controllers\UserController;
 use App\Models\Configuracion;
 use Illuminate\Support\Facades\Route;
@@ -91,7 +93,7 @@ Route::middleware('auth')->group(function (): void {
     // Tablas de las solapas de la ficha (local y Mamoré) por AJAX, todas por CI.
     Route::get('funcionarios/ajax/marcaciones', [PersonaController::class, 'marcacionesList'])->name('funcionarios.marcaciones.list');
     Route::get('funcionarios/ajax/licencias', [PersonaController::class, 'licenciasList'])->name('funcionarios.licencias.list');
-    Route::get('funcionarios/ajax/turnos', [PersonaController::class, 'turnosList'])->name('funcionarios.turnos.list');
+    Route::get('funcionarios/ajax/horarios', [PersonaController::class, 'horariosList'])->name('funcionarios.horarios.list');
     // Régimen disciplinario del RIP: qué acumuló el funcionario en un mes y qué
     // sanción le correspondería. Va por mes y no por rango porque las escalas
     // del reglamento cuentan «en el mes» y «en la gestión».
@@ -99,13 +101,21 @@ Route::middleware('auth')->group(function (): void {
         ->parameters(['funcionarios' => 'persona'])
         ->only(['index', 'show']);
 
-    // Horarios (turnos) del SIA: «Administrador de horarios» del escritorio.
-    Route::get('horarios/ajax/list', [DiaTurnoController::class, 'list'])->name('horarios.list');
-    Route::resource('horarios', DiaTurnoController::class)
+    // Horarios (del SIA): «Administrador de horarios» del escritorio.
+    Route::get('horarios/ajax/list', [HorarioController::class, 'list'])->name('horarios.list');
+    Route::resource('horarios', HorarioController::class)
         ->parameters(['horarios' => 'horario']);
 
-    // Turnos asignados a cada funcionario (solo lectura): la asignación se cruza
-    // con el funcionario por CI, y con el turno por la FK `turno_id`.
+    // Turnos: la jornada semanal que agrupa horarios. Sin edición: se crea o se
+    // elimina; lo único que cambia después es la marca de sugerido.
+    Route::get('turnos/ajax/list', [TurnoController::class, 'list'])->name('turnos.list');
+    Route::patch('turnos/{turno}/sugerido', [TurnoController::class, 'sugerido'])->name('turnos.sugerido');
+    Route::resource('turnos', TurnoController::class)
+        ->parameters(['turnos' => 'turno'])
+        ->only(['index', 'create', 'store', 'show', 'destroy']);
+
+    // Turnos asignados: un turno por funcionario y período. Es lo único que se
+    // asigna; sus horarios día por día quedan como detalle en Horarios asignados.
     Route::get('turnos-asignados/ajax/list', [AsignacionTurnoController::class, 'list'])->name('turnos-asignados.list');
     // Búsqueda JSON de funcionarios para el combo del formulario de asignación.
     Route::get('turnos-asignados/ajax/funcionarios', [AsignacionTurnoController::class, 'buscarFuncionarios'])->name('turnos-asignados.funcionarios');
@@ -117,8 +127,15 @@ Route::middleware('auth')->group(function (): void {
     Route::delete('turnos-asignados/{asignacion}', [AsignacionTurnoController::class, 'destroy'])->name('turnos-asignados.destroy');
     Route::get('turnos-asignados', [AsignacionTurnoController::class, 'index'])->name('turnos-asignados.index');
 
+    // Horarios asignados: historial día por día. Ya no se asignan horarios
+    // sueltos; lo heredado del sistema anterior se concluye o se elimina acá.
+    Route::get('horarios-asignados/ajax/list', [AsignacionHorarioController::class, 'list'])->name('horarios-asignados.list');
+    Route::patch('horarios-asignados/{asignacion}/concluir', [AsignacionHorarioController::class, 'concluir'])->name('horarios-asignados.concluir');
+    Route::delete('horarios-asignados/{asignacion}', [AsignacionHorarioController::class, 'destroy'])->name('horarios-asignados.destroy');
+    Route::get('horarios-asignados', [AsignacionHorarioController::class, 'index'])->name('horarios-asignados.index');
+
     // Licencias/permisos de personal: listado AJAX + pantalla «Licenciar»
-    // (turnos asignados + rango de fechas). Sin edición: se anota o se elimina.
+    // (horarios asignados + rango de fechas). Sin edición: se anota o se elimina.
     Route::get('licencias/ajax/list', [LicenciaController::class, 'list'])->name('licencias.list');
     // Búsqueda JSON de funcionarios para el combo de la pantalla «Licenciar».
     Route::get('licencias/ajax/funcionarios', [LicenciaController::class, 'buscarFuncionarios'])->name('licencias.funcionarios');
@@ -168,7 +185,7 @@ Route::middleware('auth')->group(function (): void {
     // CSV). «Sin procesar» = todas las marcaciones crudas del rango.
     Route::get('reportes/marcaciones/sin-procesar', [ReporteMarcacionController::class, 'sinProcesar'])->name('reportes.marcaciones.sin-procesar');
     Route::get('reportes/marcaciones/sin-procesar/generar', [ReporteMarcacionController::class, 'sinProcesarList'])->name('reportes.marcaciones.sin-procesar.generar');
-    // «Procesado» = las mismas marcas cruzadas contra el turno asignado, los días
+    // «Procesado» = las mismas marcas cruzadas contra el horario asignado, los días
     // excepcionales y las licencias, con entradas, salidas, atrasos y horas.
     Route::get('reportes/marcaciones/procesado', [ReporteMarcacionController::class, 'procesado'])->name('reportes.marcaciones.procesado');
     Route::get('reportes/marcaciones/procesado/generar', [ReporteMarcacionController::class, 'procesadoList'])->name('reportes.marcaciones.procesado.generar');

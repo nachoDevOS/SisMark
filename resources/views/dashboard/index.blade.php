@@ -5,11 +5,11 @@
 @php
     $numero = fn (?int $n): string => $n === null ? '—' : number_format($n, 0, ',', '.');
 
-    // Sin turnos cargados no hay a quién esperar: se muestra cuántas personas
+    // Sin horarios cargados no hay a quién esperar: se muestra cuántas personas
     // marcaron, a secas, en lugar de un «0 de 0».
-    $hayTurnos = $hoy['con_turno'] !== null;
-    $porcentaje = $hayTurnos && $hoy['con_turno'] > 0
-        ? (int) round($hoy['marcaron'] / $hoy['con_turno'] * 100)
+    $hayHorarios = $hoy['con_horario'] !== null;
+    $porcentaje = $hayHorarios && $hoy['con_horario'] > 0
+        ? (int) round($hoy['marcaron'] / $hoy['con_horario'] * 100)
         : null;
 @endphp
 
@@ -66,17 +66,17 @@
     {{-- Los cuatro números del día. --}}
     <h2 class="escritorio__seccion">Hoy</h2>
     <div class="stats-grid">
-        @if ($hayTurnos)
+        @if ($hayHorarios)
             <div class="stat-card">
-                <div class="stat-card__valor">{{ $numero($hoy['con_turno']) }}</div>
-                <div class="stat-card__label">Con turno hoy</div>
+                <div class="stat-card__valor">{{ $numero($hoy['con_horario']) }}</div>
+                <div class="stat-card__label">Con horario hoy</div>
             </div>
 
             <div class="stat-card stat-card--success">
                 <div class="stat-card__valor">{{ $numero($hoy['marcaron']) }}</div>
                 <div class="stat-card__label">Marcaron</div>
                 @if ($porcentaje !== null)
-                    <div class="stat-card__sub">{{ $porcentaje }} % de los que tienen turno</div>
+                    <div class="stat-card__sub">{{ $porcentaje }} % de los que tienen horario</div>
                 @endif
             </div>
 
@@ -89,7 +89,7 @@
             <div class="stat-card">
                 <div class="stat-card__valor">{{ $numero($hoy['personas']) }}</div>
                 <div class="stat-card__label">Personas que marcaron</div>
-                <div class="stat-card__sub">Sin turnos asignados no se sabe quién falta</div>
+                <div class="stat-card__sub">Sin horarios asignados no se sabe quién falta</div>
             </div>
         @endif
 

@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Licencias y permisos, una fila por día y turno.
+ * Licencias y permisos, una fila por día y horario.
  */
 return new class extends Migration
 {
@@ -15,7 +15,7 @@ return new class extends Migration
         Schema::create('licencias', function (Blueprint $table): void {
             $table->id();
             $table->dateTime('fechaPedido');
-            // Agrupa las filas de un mismo pedido (una por día y turno).
+            // Agrupa las filas de un mismo pedido (una por día y horario).
             $table->char('solicitud', 26)->nullable();
             // Por dónde entró: propio | mamore | sia.
             $table->string('origen', 10)->default('propio');
@@ -24,9 +24,9 @@ return new class extends Migration
             $table->string('usuario', 50);
             $table->date('fecha');
             $table->char('ci', 12);
-            // Código del SIA, solo histórico: el horario va por `turno_id`.
-            $table->char('idTurno', 3)->nullable();
-            $table->foreignId('turno_id')->constrained('turnos');
+            // Código del SIA, solo histórico: el horario va por `horario_id`.
+            $table->char('idHorario', 3)->nullable();
+            $table->foreignId('horario_id')->constrained('horarios');
             $table->time('lEntra')->nullable();
             $table->time('lSale')->nullable();
             $table->boolean('tCompleto');
@@ -49,11 +49,11 @@ return new class extends Migration
             $table->index(['estado', 'fecha']);
         });
 
-        // Un turno se licencia una vez por pedido. Lo del SIA va sin solicitud y
-        // queda único por (ci, fecha, turno_id); dos pedidos del mismo día conviven.
+        // Un horario se licencia una vez por pedido. Lo del SIA va sin solicitud y
+        // queda único por (ci, fecha, horario_id); dos pedidos del mismo día conviven.
         DB::statement(
             'CREATE UNIQUE INDEX licencias_clave_natural_unique'
-            ." ON licencias (ci, fecha, turno_id, (COALESCE(solicitud, '')))"
+            ." ON licencias (ci, fecha, horario_id, (COALESCE(solicitud, '')))"
         );
     }
 

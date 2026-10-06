@@ -26,8 +26,8 @@
     use Illuminate\Support\Carbon;
 
     // Todo lo que la columna «Faltas» cuenta como falta: además del día sin
-    // ninguna marca, el que tiene una sola punta y el de turno mal cargado.
-    $comoFalta = [P::FALTA, P::SIN_ENTRADA, P::SIN_SALIDA, P::TURNO_INVALIDO];
+    // ninguna marca, el que tiene una sola punta y el de horario mal cargado.
+    $comoFalta = [P::FALTA, P::SIN_ENTRADA, P::SIN_SALIDA, P::HORARIO_INVALIDO];
 
     // El procesador cuenta el atraso en minutos completos y lo guarda en
     // segundos, así que la división es exacta.

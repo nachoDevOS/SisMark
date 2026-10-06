@@ -39,9 +39,9 @@ class SolicitudLicenciaController extends Controller
     /**
      * Anota la solicitud del funcionario en estado «Pendiente».
      *
-     * Devuelve 422 cuando no hay nada que anotar, con el motivo: sin turnos
+     * Devuelve 422 cuando no hay nada que anotar, con el motivo: sin horarios
      * asignados en esas fechas no hay licencia posible —una licencia licencia un
-     * turno—, y si ya existe una para ese día no se pisa.
+     * horario—, y si ya existe una para ese día no se pisa.
      */
     public function store(Request $request, string $ci, RegistroLicencia $registro, RespaldoDocumento $respaldos, TopePermisos $tope): JsonResponse
     {
@@ -85,8 +85,8 @@ class SolicitudLicenciaController extends Controller
             'contratos.*.hasta' => ['nullable', 'date'],
         ], [
             'hasta.after_or_equal' => 'La fecha «Hasta» no puede ser anterior a «Desde».',
-            'lEntra.required_if' => 'Indicá la hora de entrada o pedí el turno completo.',
-            'lSale.required_if' => 'Indicá la hora de salida o pedí el turno completo.',
+            'lEntra.required_if' => 'Indicá la hora de entrada o pedí el horario completo.',
+            'lSale.required_if' => 'Indicá la hora de salida o pedí el horario completo.',
             'lSale.after' => 'La hora de salida debe ser posterior a la de entrada.',
         ]);
 
@@ -100,11 +100,11 @@ class SolicitudLicenciaController extends Controller
             ], 422);
         }
 
-        $asignaciones = $registro->turnosDelRango([$ci], $desde, $hasta);
+        $asignaciones = $registro->horariosDelRango([$ci], $desde, $hasta);
 
         if ($asignaciones->isEmpty()) {
             return response()->json([
-                'message' => 'No tenés turnos asignados en esas fechas, así que no hay nada que licenciar. Consultá con Recursos Humanos.',
+                'message' => 'No tenés horarios asignados en esas fechas, así que no hay nada que licenciar. Consultá con Recursos Humanos.',
             ], 422);
         }
 
@@ -126,7 +126,7 @@ class SolicitudLicenciaController extends Controller
             }
         }
 
-        // El respaldo se sube recién acá, con los turnos ya resueltos: subirlo
+        // El respaldo se sube recién acá, con los horarios ya resueltos: subirlo
         // antes dejaría un archivo huérfano en el bucket cada vez que la
         // solicitud no llega a anotar nada.
         [$adjunto, $adjuntoNombre] = $request->hasFile('respaldo')
@@ -149,7 +149,7 @@ class SolicitudLicenciaController extends Controller
             'usuarioId' => null,
             'estado' => Licencia::PENDIENTE,
             'origen' => Licencia::ORIGEN_MAMORE,
-            // Desde Mamoré el tipo lo da el alcance: el turno completo es una
+            // Desde Mamoré el tipo lo da el alcance: el horario completo es una
             // licencia institucional; por horas, un permiso personal, que es
             // el único que cuenta contra el tope.
             'tipo' => $datos['tCompleto'] ? Licencia::TIPO_INSTITUCIONAL : Licencia::TIPO_PERSONAL,

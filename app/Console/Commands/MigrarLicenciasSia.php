@@ -25,7 +25,7 @@ class MigrarLicenciasSia extends Command
         'Usuario' => 'usuario',
         'Fecha' => 'fecha',
         'IdPersona' => 'ci',
-        'IdTurno' => 'idTurno',
+        'IdTurno' => 'idHorario',
         'LEntra' => 'lEntra',
         'LSale' => 'lSale',
         'TCompleto' => 'tCompleto',
@@ -35,7 +35,7 @@ class MigrarLicenciasSia extends Command
 
     /**
      * Copia las licencias del SIA a la tabla local `licencias`. Idempotente:
-     * reejecutarlo no duplica (índice único por ci+fecha+turno_id). Recorta el padding char().
+     * reejecutarlo no duplica (índice único por ci+fecha+horario_id). Recorta el padding char().
      *
      * Se lee con un cursor (stream de una sola consulta) en vez de paginar: el
      * ROW_NUMBER() del grammar 2008 haría que cada página reescanee (O(n²)) y en
@@ -52,12 +52,12 @@ class MigrarLicenciasSia extends Command
             return self::FAILURE;
         }
 
-        // Mapa idTurno → id local de turnos, para resolver la FK turno_id sin
-        // consultar la base por cada fila. Si turnos está vacío, todas quedan null.
-        $turnosPorCodigo = DB::connection($destino)->table('turnos')->pluck('id', 'idTurno');
+        // Mapa idHorario → id local de horarios, para resolver la FK horario_id sin
+        // consultar la base por cada fila. Si horarios está vacío, todas quedan null.
+        $horariosPorCodigo = DB::connection($destino)->table('horarios')->pluck('id', 'idHorario');
 
-        if ($turnosPorCodigo->isEmpty()) {
-            $this->error('La tabla «turnos» está vacía: sin ella no se puede resolver el turno de cada licencia. Corré «sia:migrar-horarios» antes.');
+        if ($horariosPorCodigo->isEmpty()) {
+            $this->error('La tabla «horarios» está vacía: sin ella no se puede resolver el horario de cada licencia. Corré «sia:migrar-horarios» antes.');
 
             return self::FAILURE;
         }
@@ -75,19 +75,19 @@ class MigrarLicenciasSia extends Command
                 $ahora = now();
                 $local = $this->aLocal((array) $fila);
 
-                // FK real: id de MySQL del turno cuyo idTurno coincide. El
-                // `idTurno` se conserva en la fila solo como dato histórico.
-                $turnoId = $turnosPorCodigo[$local['idTurno']] ?? null;
+                // FK real: id de MySQL del horario cuyo idHorario coincide. El
+                // `idHorario` se conserva en la fila solo como dato histórico.
+                $horarioId = $horariosPorCodigo[$local['idHorario']] ?? null;
 
-                // Sin turno la fila no identifica ningún horario y turno_id es
+                // Sin código de horario válido la fila no tiene horario, y horario_id es
                 // NOT NULL: se saltea y se informa al final.
-                if ($turnoId === null) {
+                if ($horarioId === null) {
                     $salteadas++;
 
                     continue;
                 }
 
-                $local['turno_id'] = $turnoId;
+                $local['horario_id'] = $horarioId;
                 $lote[] = $local + ['created_at' => $ahora, 'updated_at' => $ahora];
 
                 if (count($lote) >= $tamanoLote) {
@@ -109,7 +109,7 @@ class MigrarLicenciasSia extends Command
         $this->info("Listo. {$copiadas} licencia(s) migrada(s) del SIA a «{$destino}».");
 
         if ($salteadas > 0) {
-            $this->warn("{$salteadas} licencia(s) salteada(s): su IdTurno no existe en «turnos».");
+            $this->warn("{$salteadas} licencia(s) salteada(s): su IdTurno no existe en «horarios».");
         }
 
         return self::SUCCESS;
@@ -121,7 +121,7 @@ class MigrarLicenciasSia extends Command
      * Va con `insertOrIgnore` y no con `upsert` porque la clave que deduplica
      * es una **expresión** —`COALESCE(solicitud, '')`, ver la migración
      * `create_licencias_table`— y el `upsert` de Laravel solo sabe
-     * nombrar columnas: al pasarle `(ci, fecha, turno_id)` el motor no encuentra
+     * nombrar columnas: al pasarle `(ci, fecha, horario_id)` el motor no encuentra
      * ningún índice con esa forma exacta y falla.
      *
      * Lo que se pierde a cambio es refrescar una fila que haya cambiado en el

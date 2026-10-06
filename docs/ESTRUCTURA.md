@@ -15,7 +15,7 @@ Control de asistencia del **Órgano Ejecutivo del Gobierno Autónomo
 Departamental del Beni**.
 
 Lee las marcaciones de los relojes biométricos ZKTeco, las cruza contra el
-contrato, el turno asignado, las licencias y los feriados, y responde una sola
+contrato, el horario asignado, las licencias y los feriados, y responde una sola
 pregunta por cada día de cada funcionario: **¿cumplió su jornada?**
 
 Lo que **no** hace: no administra personal (eso es Mamoré), no liquida sueldos,
@@ -31,7 +31,7 @@ mayoría de los errores:
 | Identidad, cargo, foto, **contratos** | **Mamoré** (API externa) | consulta, no escribe |
 | Historial anterior a la migración | **SIA** (SQL Server, solo lectura) | copió una vez, no vuelve |
 | Marcaciones del reloj | **el equipo ZKTeco** | copia, nunca borra del reloj |
-| Turnos, licencias, feriados, asistencia procesada | **SisMark** | es el dueño |
+| Horarios, licencias, feriados, asistencia procesada | **SisMark** | es el dueño |
 
 ---
 
@@ -74,9 +74,12 @@ aparte (`sia`) y **solo de lectura**.
 | `asistencias` | Marcaciones crudas: `ci`, `fecha`, `hora`, `tipo`. **4,4 millones de filas.** Sin baja lógica | reloj · CSV · alta manual · SIA |
 | `personas` | Padrón local de funcionarios | SIA |
 | `profesiones` | Catálogo | SIA |
-| `turnos` | Horarios: entrada, salida, tolerancias y ventanas de marca | SIA |
-| `asignacion_turnos` | Qué turno tiene cada funcionario y desde/hasta cuándo | SIA + altas propias |
-| `licencias` | Permisos y licencias, **una fila por día y turno** | SIA · RRHH · solicitudes de Mamoré |
+| `horarios` | Horarios: entrada, salida, tolerancias y ventanas de marca | SIA |
+| `turnos` | Jornada semanal con nombre; `sugerido` marca la que se ofrece a Mamoré. Sin edición | propio |
+| `horario_turno` | Los horarios que forman cada turno | propio |
+| `asignacion_turnos` | Qué turno tiene cada funcionario y desde/hasta cuándo (cabecera) | propio |
+| `asignacion_horarios` | Sus horarios día por día: el detalle de cada turno asignado (`asignacion_turno_id`) y lo heredado del SIA (con esa columna en null) | SIA + detalle de turnos |
+| `licencias` | Permisos y licencias, **una fila por día y horario** | SIA · RRHH · solicitudes de Mamoré |
 | `dias_excepcionales` | Feriados y días sin control | SIA + altas propias |
 | `equipos` | Relojes: IP, puerto, clave y su configuración de sincronización | propio |
 | `equipo_auditorias` | Bitácora de cada acción sobre un reloj | propio |
@@ -105,8 +108,10 @@ aparte (`sia`) y **solo de lectura**.
 | **Escritorio** | `/` | Tarjetas de equipos y asistencia, gráfico de 14 días y panel de calidad de datos (se carga aparte por AJAX, porque cuenta la tabla entera) |
 | **Funcionarios** | `/funcionarios` | Listado con dos fuentes conmutables: **Mamoré** (por defecto) o **SIAT** (base local). Ficha con cuatro solapas |
 | **Marcaciones** | `/marcaciones` | Listado crudo con filtros. Dos formas de cargar: importar el CSV del reloj, o alta manual de a una (tipo `M`) para lo que el reloj no registró |
-| **Horarios** | `/horarios` | CRUD de turnos |
-| **Turnos asignados** | `/turnos-asignados` | Qué turno tiene cada funcionario. **Concluir** ≠ **Eliminar**: concluir pone fecha de fin y conserva la historia; eliminar es para lo cargado por error |
+| **Horarios** | `/horarios` | CRUD de horarios |
+| **Turnos** | `/turnos` | Jornada semanal que agrupa horarios. Solo se crea o se elimina, sin edición: para cambiar la jornada se crea otro turno. **Sugerido** = se ofrece en Mamoré para elegir al dar de alta un contrato |
+| **Turnos asignados** | `/turnos-asignados` | Qué turno tiene cada funcionario, con fecha de inicio y de fin. Es **lo único que se asigna**. **Concluir** ≠ **Eliminar**: concluir pone fecha de fin y conserva la historia; eliminar es para lo cargado por error |
+| **Horarios asignados** | `/horarios-asignados` | Historial día por día. Sin alta: lo de un turno se maneja desde el turno; acá solo se concluye o elimina lo heredado del SIA |
 | **Licencias** | `/licencias` | Listado, alta en lote, ficha de la solicitud y resolución de lo que llega de Mamoré |
 | **Días excepcionales** | `/dias-excepcionales` | Feriados y días sin control, con su decreto adjunto |
 | **Equipos** | `/equipos` | CRUD de relojes + probar conexión, exportar, sincronizar y vaciar |
@@ -124,7 +129,7 @@ que se la abre (entrar a la ficha pide una sola tabla, no cuatro):
 |---|---|---|
 | Marcaciones | lo crudo del reloj | `ViewAny:Persona` |
 | Licencias | los permisos, agrupados **por solicitud** y no día por día | `ViewAny:Licencia` |
-| Turnos | los horarios asignados, agrupados por período de vigencia | `ViewAny:AsignacionTurno` |
+| Horarios | los horarios asignados, agrupados por período de vigencia | `ViewAny:AsignacionHorario` |
 | Asistencia procesada | las marcas ya cruzadas | `ViewAny:Reporte` |
 
 ---
@@ -141,15 +146,15 @@ que hay que saber para orientarse.
 Cada día se resuelve con este orden, y el primero que aplica gana:
 
 ```
-0. ¿Lo cubre un contrato?   NO → «Sin contrato» (con turno) · «No laborable» (sin turno)
+0. ¿Lo cubre un contrato?   NO → «Sin contrato» (con horario) · «No laborable» (sin horario)
 1. ¿Es día excepcional?     SÍ → «Excepcional»
-2. ¿Tiene turno asignado?   NO → «No laborable»
+2. ¿Tiene horario asignado?   NO → «No laborable»
 3. ¿Licencia de día entero? SÍ → «Licencia»
 4. Recién acá se miran las marcaciones
 ```
 
-**El contrato es la primera puerta, antes que el turno.** Un día que ningún
-contrato de Mamoré cubre no se procesa, aunque la persona tenga turno y haya
+**El contrato es la primera puerta, antes que el horario.** Un día que ningún
+contrato de Mamoré cubre no se procesa, aunque la persona tenga horario y haya
 marcado. Sin contrato no hay jornada que cumplir. Sus marcas no se pierden:
 siguen enteras en la solapa Marcaciones, que es lo crudo del reloj.
 
@@ -169,7 +174,7 @@ cargada. Si Mamoré no responde, el reporte no se emite.
 | `falta` | ni entrada ni salida |
 | `licencia` · `excepcional` · `no_laborable` | no había jornada que controlar |
 | `sin_contrato` | la persona no era funcionaria ese día |
-| `turno_invalido` | el turno está mal cargado y no puede fundar nada |
+| `horario_invalido` | el horario está mal cargado y no puede fundar nada |
 
 ### Tres detalles que explican casi todas las dudas
 
@@ -178,10 +183,10 @@ cargada. Si Mamoré no responde, el reporte no se emite.
   minutos de gracia, así que el minuto 08:10 entero está adentro: a las 08:10:59
   no hay atraso; a las 08:11:00 hay 11 min. Los segundos se descartan —el reloj
   los registra, pero la tolerancia se concede en minutos—.
-- **Las horas computadas se acotan al turno.** Llegar dentro de la tolerancia
+- **Las horas computadas se acotan al horario.** Llegar dentro de la tolerancia
   cuenta como llegar en hora; quedarse de más no suma. La permanencia real
   viaja aparte, como dato.
-- **Jornada partida:** si el día tiene dos turnos, cada bloque vale media
+- **Jornada partida:** si el día tiene dos horarios, cada bloque vale media
   jornada. El peso es `1 ÷ cantidad de bloques`.
 
 La regla vive **dentro** del procesador y no en cada pantalla, así que la
@@ -194,7 +199,7 @@ heredan de una el reporte, su imprimible, el Excel y la API.
 | Reporte | Qué muestra | Salidas |
 |---|---|---|
 | **Sin procesar** | todas las marcaciones crudas del rango | pantalla · imprimible · CSV |
-| **Procesado** | las mismas marcas cruzadas contra contrato, turno, licencias y feriados, con entradas, salidas, atrasos y horas | pantalla · imprimible · **Excel nativo** |
+| **Procesado** | las mismas marcas cruzadas contra contrato, horario, licencias y feriados, con entradas, salidas, atrasos y horas | pantalla · imprimible · **Excel nativo** |
 
 El imprimible lleva encabezado institucional, totales, resumen, referencias,
 firmas y un **QR** que permite verificar el documento.
@@ -236,7 +241,7 @@ coordinar el mismo día con cada equipo, ni saber cuál pidió qué.
 | `sistema_externo_auditorias` | quién emitió o revocó cada token, cuándo y desde dónde |
 
 **Alcances:** `asistencia:read`, `licencias:read`, `licencias:write`,
-`turnos:read`, `turnos:write`. Van por área y no por endpoint: partirlos más
+`horarios:read`, `horarios:write`. Van por área y no por endpoint: partirlos más
 fino obligaría a reemitir el token cada vez que se agrega una ruta.
 
 **Un sistema tiene un solo token vivo.** Emitir uno nuevo revoca el anterior, y
@@ -271,7 +276,7 @@ pantalla no sirve —un despliegue nuevo, sin usuarios ni roles todavía—. Ano
 la misma bitácora, sin usuario.
 
 Fuera de producción, `IntegracionMamoreSeeder` —al final de `MigrarSiaSeeder`—
-deja sembrado un token de **texto fijo** y marca el horario sugerido, para que un
+deja sembrado un token de **texto fijo** y crea el turno sugerido, para que un
 `migrate:fresh` no obligue a reemitir la credencial ni a volver a tocar el `.env`
 de Mamoré. En producción se planta y no siembra nada.
 
@@ -288,12 +293,21 @@ otro.
 | `GET` | `/api/v1/funcionarios/{ci}/licencias/{id}/respaldo` | enlace temporal al certificado |
 | `POST` | `/api/v1/funcionarios/{ci}/licencias` | el funcionario solicita una licencia |
 | `DELETE` | `/api/v1/funcionarios/{ci}/licencias/{id}` | baja de su propia solicitud, mientras siga «Pendiente» |
-| `GET` | `/api/v1/turnos/sugeridos` | el horario que se propone al dar de alta un contrato |
-| `POST` | `/api/v1/funcionarios/{ci}/turnos` | le asigna el horario por la vigencia del contrato |
+| `GET` | `/api/v1/funcionarios/{ci}/horarios` | el horario asignado, agrupado por período (con el nombre del turno) |
+| `GET` | `/api/v1/turnos/sugeridos` | los turnos que se ofrecen para elegir al dar de alta un contrato |
+| `POST` | `/api/v1/funcionarios/{ci}/turnos` | le asigna el turno (`turnoId`, o el sugerido) por la vigencia del contrato |
 | `PUT` | `/api/v1/funcionarios/{ci}/turnos` | mueve esa vigencia cuando el contrato cambia de fechas |
-| `DELETE` | `/api/v1/funcionarios/{ci}/turnos` | baja lógica del horario cuando el contrato se anula |
+| `DELETE` | `/api/v1/funcionarios/{ci}/turnos` | baja lógica del turno cuando el contrato se anula |
 
-### El horario y la vigencia del contrato
+### El turno y la vigencia del contrato
+
+Una asignación de turno es una cabecera (`asignacion_turnos`) y su detalle: una
+fila en `asignacion_horarios` por cada horario del turno, con las mismas fechas.
+El procesador, las licencias y los reportes leen el detalle, así que todo pasa
+por `AsignadorTurnos`, que mueve los dos juntos. Al asignar un turno, lo heredado
+del SIA que seguía en pie termina el día anterior; los contratos anteriores a
+los turnos (horarios sueltos con `contrato_id`) se siguen moviendo y anulando
+igual.
 
 `POST` asigna, `PUT` mueve, `DELETE` da de baja. Los tres van atados al contrato
 por `contrato_id`, que es lo que permite saber **cuáles** de las asignaciones de
@@ -302,12 +316,13 @@ Mamoré regenera el código cuando cambia el año de inicio o la dirección
 administrativa. Los tres filtran además por cédula: sola, una cédula equivocada
 del otro lado tocaría el horario de quien no corresponde.
 
-El `POST` es idempotente sobre `(ci, idTurno, desde)`: reintentarlo no duplica.
+El `POST` es idempotente sobre `(ci, turno, desde)`: reintentarlo no duplica.
+Sin `turnoId` asigna el turno sugerido; si hay varios sugeridos, pide cuál.
 El `PUT` mueve las filas de ese contrato y **crea las que falten**, para el
 contrato anterior a esta integración o aquel cuyo alta falló. El `DELETE` marca
 `deleted_at` y contesta `eliminados: 0` —no un error— si no había nada.
 
-**La baja es lógica y la fila se queda.** El turno es el respaldo de por qué a
+**La baja es lógica y la fila se queda.** El horario es el respaldo de por qué a
 esa persona se le exigió marcar en esas fechas: borrarlo dejaría sin explicación
 los atrasos y las faltas ya imputadas mientras el contrato estuvo vigente. El
 reporte igual deja de contarlos —el contrato es la primera puerta del
@@ -315,17 +330,17 @@ procesador—; la baja es para que el horario no siga en pantalla como si esa
 persona tuviera que ir a trabajar.
 
 **Volver a cargar un contrato anulado revive sus filas.** La única de
-`asignacion_turnos` no distingue `deleted_at`, así que sin eso la fila muerta
+`asignacion_horarios` no distingue `deleted_at`, así que sin eso la fila muerta
 bloquearía el alta y el funcionario quedaría sin horario —o sea sin control de
 asistencia— sin que nadie lo note. Solo se revive lo del **mismo** contrato: una
 baja de otro contrato en la misma terna se informa como `omitidos`.
 
 > **Por qué el `PUT` importa más de lo que parece.** Una adenda que renueva deja
-> al contrato cubriendo días que el turno no cubre, y `ProcesadorAsistencia` los
+> al contrato cubriendo días que el horario no cubre, y `ProcesadorAsistencia` los
 > resuelve como «no laborable»: esa persona queda **sin control de asistencia** y
 > nadie se entera hasta el reporte del mes. Concluir un contrato antes de tiempo
 > es inofensivo —el contrato es la primera puerta del procesador, así que un día
-> sin contrato no se procesa aunque sobre el turno— pero deja el horario
+> sin contrato no se procesa aunque sobre el horario— pero deja el horario
 > mintiendo en pantalla.
 
 > **La clave autentica al sistema, no a la persona.** Quién es el funcionario lo
@@ -349,35 +364,35 @@ envío manipulado no puede convertir un rechazo en una aprobación. Cada decisi�
 queda con su autor y su fecha. Lo rechazado y lo dado de baja se conserva como
 constancia y nunca se reescribe.
 
-Si el pedido cae en días sin turno (un sábado, un domingo), no se anota nada y el
-mensaje lo dice: *«No se anotó ninguna solicitud: sin turno asignado el sábado
-26/09.»* (`RegistroLicencia::mensaje()`, conteo `diasSinTurno`).
+Si el pedido cae en días sin horario (un sábado, un domingo), no se anota nada y el
+mensaje lo dice: *«No se anotó ninguna solicitud: sin horario asignado el sábado
+26/09.»* (`RegistroLicencia::mensaje()`, conteo `diasSinHorario`).
 
 ### Tipos de licencia y tope mensual de permisos
 
 Cada licencia tiene un **tipo** (`licencias.tipo`) y un **alcance**
-(`tCompleto`: turno completo o por horas, con `lEntra`/`lSale`). Solo existen
+(`tCompleto`: horario completo o por horas, con `lEntra`/`lSale`). Solo existen
 tres combinaciones:
 
 | Tipo | Alcance | ¿Cuenta en el tope? | Se registra desde SisMark (RRHH) | Se registra desde Mamoré (funcionario) |
 |---|---|---|---|---|
-| Personal | Por horas | **Sí** | Sí | Sí (sin tildar «Todo el turno») |
-| Institucional | Turno completo | No | Sí | Sí (tildando «Todo el turno») |
+| Personal | Por horas | **Sí** | Sí | Sí (sin tildar «Todo el horario») |
+| Institucional | Horario completo | No | Sí | Sí (tildando «Todo el horario») |
 | Institucional | Por horas | No | Sí | No |
-| ~~Personal~~ | ~~Turno completo~~ | — | no existe | no existe |
+| ~~Personal~~ | ~~Horario completo~~ | — | no existe | no existe |
 
 - **Personal**: lo pide el funcionario para su uso (trámite, médico). Es siempre
   por horas.
 - **Institucional**: lo dispone la institución (feriado, actividad, comisión).
-- **SisMark**: `StoreLicenciaRequest` rechaza personal + turno completo, y
+- **SisMark**: `StoreLicenciaRequest` rechaza personal + horario completo, y
   personal para varios funcionarios o una dirección (el permiso personal es de
   **un** funcionario). En los formularios, el campo **Alcance** depende del tipo:
   con personal dice «Por horas» fijo y las horas son obligatorias; con
-  institucional hay un checkbox «Turno completo» (tildado por defecto; sin
+  institucional hay un checkbox «Horario completo» (tildado por defecto; sin
   tildar, pide las horas). Con «Varios» o «Por dirección» el tipo es fijo:
   licencia institucional.
 - **Mamoré**: el funcionario no elige el tipo; `SolicitudLicenciaController` lo
-  deriva del alcance (turno completo → institucional; por horas → personal).
+  deriva del alcance (horario completo → institucional; por horas → personal).
 - **Del SIA**: `sia:migrar-licencias` las copia como **institucionales** (son
   licencias ya otorgadas; no cuentan en el tope).
 
@@ -398,7 +413,7 @@ Qué suma, y cuándo se controla:
 | Rechazar / dar de baja | libera el tiempo | — |
 
 - Cada mes arranca de cero; lo usado se cuenta desde el día 1.
-- Un permiso que ocupa dos turnos el mismo día se cobra una vez.
+- Un permiso que ocupa dos horarios el mismo día se cobra una vez.
 - Por contrato, los contratos los manda Mamoré en el pedido (`contratos`); si no
   vienen, se le piden. Si Mamoré no contesta, el mes es una sola bolsa y el tope
   se aplica igual.
@@ -534,13 +549,13 @@ natural), con `--chunk` y sin tocar el origen:
 php artisan sia:migrar-profesiones
 php artisan sia:migrar-personas
 php artisan sia:migrar-horarios
-php artisan sia:migrar-asignacion-turnos   # resuelve la FK turno_id
+php artisan sia:migrar-asignacion-horarios   # resuelve la FK horario_id
 php artisan sia:migrar-licencias
 php artisan sia:migrar-dias-excepcionales
 php artisan sia:migrar-marcaciones --chunk=1000
 ```
 
-El orden importa: las asignaciones cruzan `idTurno` contra `turnos`, así que los
+El orden importa: las asignaciones cruzan `idHorario` contra `horarios`, así que los
 horarios van antes.
 
 > **SQL Server 2008 R2 no tiene `OFFSET/FETCH`.** Por eso existen
@@ -606,25 +621,27 @@ app/
 ├── Http/
 │   ├── Controllers/
 │   │   ├── Api/
-│   │   │   ├── AsignacionTurnoApiController.php      # asigna el turno del contrato
+│   │   │   ├── AsignacionHorarioApiController.php      # el horario asignado (lectura)
+│   │   │   ├── AsignacionTurnoApiController.php        # asigna el turno del contrato
 │   │   │   ├── AsistenciaFuncionarioController.php   # los GET de la API v1
 │   │   │   ├── SolicitudLicenciaController.php       # POST y DELETE
-│   │   │   └── TurnoSugeridoController.php           # el horario sugerido
-│   │   ├── AsignacionTurnoController.php
+│   │   │   └── TurnoApiController.php                  # los turnos sugeridos
+│   │   ├── AsignacionHorarioController.php  # historial día por día
+│   │   ├── AsignacionTurnoController.php    # «Turnos asignados»
 │   │   ├── Auth/LoginController.php
 │   │   ├── ConfiguracionController.php  # «Configuración», un grupo por tarjeta
 │   │   ├── DashboardController.php
 │   │   ├── DiaExcepcionalController.php
-│   │   ├── DiaTurnoController.php     # «Horarios»
+│   │   ├── HorarioController.php     # «Horarios»
 │   │   ├── EquipoController.php       # CRUD + probar/exportar/sincronizar/vaciar
 │   │   ├── LicenciaController.php     # alta, ficha, aprobar (con control de tope)
 │   │   ├── MarcacionController.php
 │   │   ├── PersonaController.php      # funcionarios + solapas de la ficha
 │   │   ├── ReporteMarcacionController.php
-│   │   └── SistemaExternoController.php  # «Tokens de API»
+│   │   ├── SistemaExternoController.php  # «Tokens de API»
+│   │   └── TurnoController.php        # «Turnos»: crear y eliminar, sin edición
 │   └── Requests/                      # Store*/Update*/Revisar* por recurso
 ├── Models/
-│   ├── Sia/                           # solo lectura, conexión `sia`
 │   ├── Configuracion.php              # parámetros: GRUPOS + PARAMETROS, clave → valor
 │   ├── Licencia.php                   # TIPO_PERSONAL / TIPO_INSTITUCIONAL, estados
 │   ├── SistemaExterno.php             # consumidor de la API v1, dueño del token
@@ -634,6 +651,7 @@ app/
 ├── Providers/AppServiceProvider.php   # conexión sqlsrv 2008, Gate::before
 ├── Services/
 │   ├── ProcesadorAsistencia.php       # ★ el motor: marcas → ficha por día
+│   ├── AsignadorTurnos.php            # asigna/concluye/elimina turnos (cabecera + detalle)
 │   ├── ContratosFuncionario.php       # primera puerta: ¿había contrato?
 │   ├── MamoreClient.php               # cliente HTTP de Mamoré
 │   ├── DirectorioMamore.php           # listado/ficha normalizados
@@ -641,7 +659,7 @@ app/
 │   ├── DeviceService.php              # cliente HTTP del microservicio
 │   ├── SincronizadorEquipos.php       # reloj → tabla `asistencias`
 │   ├── RegistroAsistencia.php         # alta de marcaciones desde cualquier fuente
-│   ├── RegistroLicencia.php           # expande un rango a una fila por día/turno
+│   ├── RegistroLicencia.php           # expande un rango a una fila por día/horario
 │   ├── TopePermisos.php               # tope mensual de permisos: saldo y excesos
 │   ├── RespaldoDocumento.php          # adjuntos al bucket S3, enlaces firmados
 │   ├── ResumenEscritorio.php          # paneles del escritorio

@@ -12,7 +12,7 @@
     ];
 
     // El rango real de la solicitud sale de los días anotados, no de lo que se
-    // pidió: si el funcionario pidió de lunes a domingo pero solo tiene turno de
+    // pidió: si el funcionario pidió de lunes a domingo pero solo tiene horario de
     // lunes a viernes, la licencia abarca cinco días y eso es lo que hay que
     // mostrar.
     $primero = $dias->first()?->fecha;
@@ -70,7 +70,7 @@
                              para que la ficha y el detalle no digan cosas
                              distintas de la misma licencia. --}}
                         @if ($licencia->alcance_del_dia === null)
-                            <span class="pill pill--ok">Turno completo</span>
+                            <span class="pill pill--ok">Horario completo</span>
                         @else
                             <span class="pill pill--info">{{ $licencia->alcance_del_dia }}</span>
                         @endif
@@ -80,7 +80,7 @@
                     <dt>Periodo</dt>
                     <dd>
                         {{ $primero?->format('d/m/Y') ?? '—' }} – {{ $ultimo?->format('d/m/Y') ?? '—' }}
-                        <span class="ayuda">({{ $dias->count() }} día(s) con turno)</span>
+                        <span class="ayuda">({{ $dias->count() }} día(s) con horario)</span>
                     </dd>
                 </div>
                 <div>
@@ -156,7 +156,7 @@
         <div class="tarjeta">
             <h2>Días alcanzados</h2>
             <p class="ayuda" style="margin: -.5rem 0 .75rem;">
-                Una licencia se anota por día y turno. Estos son los turnos que el funcionario
+                Una licencia se anota por día y horario. Estos son los horarios que el funcionario
                 tenía asignados dentro del rango que pidió.
             </p>
 
@@ -164,7 +164,7 @@
                 <thead>
                     <tr>
                         <th>Fecha</th>
-                        <th>Turno</th>
+                        <th>Horario</th>
                         <th>Alcance</th>
                         <th>Estado</th>
                     </tr>
@@ -173,13 +173,13 @@
                     @forelse ($dias as $dia)
                         <tr>
                             <td><strong>{{ $dia->fecha?->format('d/m/Y') }}</strong></td>
-                            <td>{{ $dia->resumen_turno }}</td>
+                            <td>{{ $dia->resumen_horario }}</td>
                             {{-- El alcance se lee de cada día y no de la solicitud:
                                  el alta expande el rango, pero nada obliga a que
                                  todos los días se hayan pedido iguales. --}}
                             <td>
                                 @if ($dia->alcance_del_dia === null)
-                                    <span class="pill pill--ok">Turno completo</span>
+                                    <span class="pill pill--ok">Horario completo</span>
                                 @else
                                     <span class="pill pill--info">{{ $dia->alcance_del_dia }}</span>
                                 @endif

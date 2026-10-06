@@ -59,7 +59,7 @@
 
         <div class="card card--padded">
             <p style="margin-top: 0; color: var(--muted);">
-                Cruza las marcaciones del funcionario contra su turno asignado, los días
+                Cruza las marcaciones del funcionario contra su horario asignado, los días
                 excepcionales y sus licencias: entradas, salidas, atrasos y horas trabajadas.
             </p>
 

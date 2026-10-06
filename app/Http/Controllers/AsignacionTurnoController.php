@@ -7,6 +7,7 @@ use App\Http\Requests\ConcluirAsignacionTurnoRequest;
 use App\Http\Requests\StoreAsignacionTurnoRequest;
 use App\Models\AsignacionTurno;
 use App\Models\Turno;
+use App\Services\AsignadorTurnos;
 use App\Services\DirectorioMamore;
 use App\Services\ResolutorNombres;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,12 +18,11 @@ use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 /**
- * Listado (solo lectura) de los turnos asignados a cada funcionario: la tabla
- * local `asignacion_turnos`, migrada de «AsignacionTurnos» del SIA.
+ * Turnos asignados a cada funcionario: un turno por persona y período, con
+ * fecha de inicio y de fin.
  *
- * El funcionario se cruza por **CI** (la asignación solo guarda la cédula) y el
- * turno por la FK **`turno_id`**; `idTurno` queda como dato histórico del SIA y
- * no se usa para relacionar.
+ * Toda escritura pasa por {@see AsignadorTurnos}, que mueve la cabecera junto
+ * con su detalle en `asignacion_horarios`.
  */
 class AsignacionTurnoController extends Controller
 {
@@ -37,20 +37,21 @@ class AsignacionTurnoController extends Controller
         'vencidas' => 'Vencidas',
     ];
 
+    public function __construct(private AsignadorTurnos $asignador) {}
+
     /**
-     * Pantalla del listado (browse): el «shell» con los filtros. La tabla la
-     * carga por AJAX contra `list()`.
+     * Pantalla del listado: el «shell» con los filtros. La tabla la carga por
+     * AJAX contra `list()`.
      */
     public function index(Request $request): View
     {
         $this->authorize('viewAny', AsignacionTurno::class);
 
         $buscar = trim((string) $request->query('buscar', ''));
-        $dia = (string) $request->query('dia', '');
         $situacion = $this->situacion($request);
         $porPagina = $this->porPagina($request);
 
-        return view('turnos-asignados.index', compact('buscar', 'dia', 'situacion', 'porPagina'));
+        return view('turnos-asignados.index', compact('buscar', 'situacion', 'porPagina'));
     }
 
     /**
@@ -61,18 +62,12 @@ class AsignacionTurnoController extends Controller
         $this->authorize('viewAny', AsignacionTurno::class);
 
         $buscar = trim((string) $request->query('q', ''));
-        $dia = (string) $request->query('dia', '');
         $situacion = $this->situacion($request);
         $porPagina = $this->porPagina($request);
 
         $asignaciones = AsignacionTurno::query()
-            ->with('turno')
+            ->with('turno.horarios')
             ->when($buscar !== '', fn (Builder $query) => $query->buscar($buscar))
-            ->when($dia !== '', fn (Builder $query) => $query->whereHas('turno', fn (Builder $turno) => $turno->where('dia', $dia)))
-            // Los tres van por rango y no con `whereDate()`: `DATE(columna)`
-            // anula el índice `(hasta, desde)` y manda a recorrer las 420.721
-            // filas. `desde` y `hasta` son `datetime`, así que «después de hoy»
-            // es «desde mañana a las cero».
             ->when($situacion === 'vigentes', fn (Builder $query) => $query->vigenteEn(today()))
             ->when($situacion === 'futuras', fn (Builder $query) => $query->where('desde', '>=', today()->addDay()))
             ->when($situacion === 'vencidas', fn (Builder $query) => $query->where('hasta', '<', today()))
@@ -81,8 +76,6 @@ class AsignacionTurnoController extends Controller
             ->paginate($porPagina)
             ->withQueryString();
 
-        // La columna «Funcionario» (nombre y cargo) sale de Mamoré y, si el CI
-        // no está ahí, de la base local.
         $fichas = $resolutor->fichasPorCi($asignaciones->pluck('ci'));
 
         return view('turnos-asignados.list', compact('asignaciones', 'fichas', 'buscar'));
@@ -98,106 +91,74 @@ class AsignacionTurnoController extends Controller
 
         $ci = trim((string) $request->query('ci', old('ci', '')));
         $ficha = $ci === '' ? null : $resolutor->fichaPorCi($ci);
-        // De qué ficha se entró, para volver ahí al guardar (ver `destino()`).
         $origen = $this->origen($request);
 
-        $turnos = Turno::query()->ordenado()->get();
+        $turnos = Turno::query()
+            ->with('horarios')
+            ->orderByDesc('sugerido')
+            ->orderBy('nombre')
+            ->get();
 
         return view('turnos-asignados.create', compact('ci', 'ficha', 'turnos', 'origen'));
     }
 
     /**
-     * Guarda la asignación. El turno se vincula por `turno_id`; `idTurno` se
-     * copia del turno elegido solo para conservar el código histórico del SIA,
-     * que es además parte de la clave única de la tabla.
+     * Guarda la asignación: la cabecera y un horario asignado por cada horario
+     * del turno.
      */
     public function store(StoreAsignacionTurnoRequest $request): RedirectResponse
     {
         $this->authorize('create', AsignacionTurno::class);
 
         $datos = $request->validated();
-        $turno = Turno::query()->findOrFail($datos['turno_id']);
         $ci = trim((string) $datos['ci']);
 
-        AsignacionTurno::create([
-            'ci' => $ci,
-            'turno_id' => $turno->id,
-            'idTurno' => $turno->idTurno,
-            'desde' => Carbon::parse($datos['desde'])->startOfDay(),
-            'hasta' => Carbon::parse($datos['hasta'])->startOfDay(),
-            'observacion' => $datos['observacion'] ?? null,
-        ]);
+        $this->asignador->asignar(
+            $ci,
+            Turno::query()->with('horarios')->findOrFail($datos['turno_id']),
+            Carbon::parse($datos['desde']),
+            Carbon::parse($datos['hasta']),
+            observacion: $datos['observacion'] ?? null,
+        );
 
         return redirect($this->destino($request, $ci))->with('estado', 'Turno asignado correctamente.');
     }
 
     /**
-     * Concluye una asignación: le pone fecha de fin y deja de estar vigente.
-     *
-     * Es lo que corresponde cuando el funcionario **dejó** ese turno: la
-     * asignación queda como historia y sigue explicando sus marcaciones y
-     * licencias de ese período. Borrarla es otra cosa, y es para cuando se
-     * cargó mal ({@see self::destroy()}).
+     * Concluye el turno asignado: le pone fecha de fin a él y a su detalle.
+     * Es lo que corresponde cuando el funcionario dejó ese turno; eliminar es
+     * para lo cargado por error.
      */
     public function concluir(ConcluirAsignacionTurnoRequest $request, AsignacionTurno $asignacion): RedirectResponse
     {
         $this->authorize('update', $asignacion);
 
-        $asignacion->hasta = Carbon::parse($request->validated('hasta'))->startOfDay();
-        $asignacion->save();
+        $hasta = Carbon::parse($request->validated('hasta'));
+        $this->asignador->concluir($asignacion, $hasta);
 
         return redirect($this->destino($request, trim((string) $asignacion->ci)))
-            ->with('estado', 'Turno concluido el '.$asignacion->hasta->format('d/m/Y').'.');
+            ->with('estado', 'Turno concluido el '.$hasta->format('d/m/Y').'.');
     }
 
     /**
-     * Elimina (lógicamente) una asignación cargada por error. El motivo y el
-     * usuario los graba el trait RegistersUserEvents.
+     * Elimina (lógicamente) un turno asignado por error, con su detalle. El
+     * motivo y el usuario los graba RegistersUserEvents.
      */
     public function destroy(Request $request, AsignacionTurno $asignacion): RedirectResponse
     {
         $this->authorize('delete', $asignacion);
 
-        $asignacion->delete();
+        $this->asignador->eliminar($asignacion);
 
-        // El modal global de baja manda el ancla de la solapa desde la que se
-        // borró, para volver ahí y no a la primera.
         $ancla = (string) $request->input('ancla', '');
 
-        return redirect(url()->previous().($ancla === 'turnos' ? '#turnos' : ''))
-            ->with('estado', 'Asignación de turno eliminada.');
-    }
-
-    /**
-     * A dónde volver después de guardar: a la ficha desde la que se entró
-     * («mamore» o «local») o, si se entró por el listado, al listado filtrado
-     * por ese funcionario. Solo se aceptan estos dos orígenes conocidos, así
-     * un valor manipulado nunca redirige fuera del sitio.
-     */
-    private function destino(Request $request, string $ci): string
-    {
-        // El ancla deja abierta la solapa de turnos al volver a la ficha.
-        return match ($this->origen($request)) {
-            'mamore' => route('funcionarios.mamore', ['ci' => $ci]).'#turnos',
-            'local' => route('funcionarios.show', ['persona' => $ci]).'#turnos',
-            default => route('turnos-asignados.index', ['buscar' => $ci]),
-        };
-    }
-
-    /**
-     * Ficha de la que se entró al formulario: `mamore`, `local` o cadena vacía.
-     */
-    private function origen(Request $request): string
-    {
-        $origen = (string) $request->input('origen', '');
-
-        return in_array($origen, ['mamore', 'local'], true) ? $origen : '';
+        return redirect(url()->previous().($ancla === 'horarios' ? '#horarios' : ''))
+            ->with('estado', 'Turno asignado eliminado.');
     }
 
     /**
      * Búsqueda de funcionarios por CI o nombre para el combo del formulario,
-     * contra la API de Mamoré. Devuelve hasta 20 coincidencias como JSON, o un
-     * 502 con el motivo si la API no responde.
+     * contra la API de Mamoré.
      */
     public function buscarFuncionarios(Request $request, DirectorioMamore $directorio): JsonResponse
     {
@@ -222,8 +183,31 @@ class AsignacionTurnoController extends Controller
     }
 
     /**
+     * A dónde volver después de guardar: a la ficha desde la que se entró o, si
+     * se entró por el listado, al listado filtrado por ese funcionario.
+     */
+    private function destino(Request $request, string $ci): string
+    {
+        return match ($this->origen($request)) {
+            'mamore' => route('funcionarios.mamore', ['ci' => $ci]).'#horarios',
+            'local' => route('funcionarios.show', ['persona' => $ci]).'#horarios',
+            default => route('turnos-asignados.index', ['buscar' => $ci]),
+        };
+    }
+
+    /**
+     * Ficha de la que se entró al formulario: `mamore`, `local` o cadena vacía.
+     */
+    private function origen(Request $request): string
+    {
+        $origen = (string) $request->input('origen', '');
+
+        return in_array($origen, ['mamore', 'local'], true) ? $origen : '';
+    }
+
+    /**
      * Filtro de situación del listado: «todas» (por defecto) o una de
-     * {@see self::SITUACIONES}. Un valor desconocido cae en «todas».
+     * {@see self::SITUACIONES}.
      */
     private function situacion(Request $request): string
     {

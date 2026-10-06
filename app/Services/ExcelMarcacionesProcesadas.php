@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\Turno;
+use App\Models\Horario;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -52,7 +52,7 @@ class ExcelMarcacionesProcesadas
      * @var list<string>
      */
     private const CABECERAS = [
-        'Fecha', 'Día', 'Turno', 'Entró', 'Salió', 'Atraso', 'Abandono', 'Falta',
+        'Fecha', 'Día', 'Horario', 'Entró', 'Salió', 'Atraso', 'Abandono', 'Falta',
         'Entrada lic.', 'Salida lic.', 'T.C.', 'C.G.H.', 'Motivo licencia',
     ];
 
@@ -243,7 +243,7 @@ class ExcelMarcacionesProcesadas
         $fila++;
         $primeraFilaDatos = $fila;
 
-        // Solo los días con turno asignado, igual que la pantalla y el
+        // Solo los días con horario asignado, igual que la pantalla y el
         // imprimible: los «no laborable» no se controlan.
         foreach ($dias->reject(fn (array $dia): bool => $dia['estado'] === ProcesadorAsistencia::NO_LABORABLE) as $dia) {
             $fila = $this->escribirDia($hoja, $dia, $fila);
@@ -271,15 +271,15 @@ class ExcelMarcacionesProcesadas
     }
 
     /**
-     * Escribe un día: una fila por turno, o una sola fila cuando el día se
-     * resolvió sin mirar turnos (no laborable o día excepcional).
+     * Escribe un día: una fila por horario, o una sola fila cuando el día se
+     * resolvió sin mirar horarios (no laborable o día excepcional).
      *
      * @param  array<string, mixed>  $dia
      */
     private function escribirDia(Worksheet $hoja, array $dia, int $fila): int
     {
         $fecha = $dia['fecha']->format('j/n/Y');
-        $nombreDia = Turno::DIAS[$dia['fecha']->dayOfWeek + 1] ?? '—';
+        $nombreDia = Horario::DIAS[$dia['fecha']->dayOfWeek + 1] ?? '—';
 
         if ($dia['bloques'] === []) {
             $this->escribirFilaTexto($hoja, $fila, [
@@ -290,7 +290,7 @@ class ExcelMarcacionesProcesadas
                 (string) ($dia['motivo'] ?? ''),
             ]);
 
-            // El estado ocupa el lugar del turno y sus columnas de horas, igual
+            // El estado ocupa el lugar del horario y sus columnas de horas, igual
             // que el colspan del imprimible.
             $hoja->mergeCells("C{$fila}:L{$fila}");
             $hoja->getStyle("A{$fila}:B{$fila}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
@@ -306,7 +306,7 @@ class ExcelMarcacionesProcesadas
             $this->escribirFilaTexto($hoja, $fila, [
                 $indice === 0 ? $fecha : '',
                 $indice === 0 ? $nombreDia : '',
-                trim((string) $bloque['turno']->nombreTurno),
+                trim((string) $bloque['horario']->nombreHorario),
                 ! $bloque['entradaExigida'] ? 'licencia' : ($bloque['entrada'] === null ? '' : ProcesadorAsistencia::hora($bloque['entrada'])),
                 ! $bloque['salidaExigida'] ? 'licencia' : ($bloque['salida'] === null ? '' : ProcesadorAsistencia::hora($bloque['salida'])),
                 $bloque['atraso'] > 0 ? ProcesadorAsistencia::desvio($bloque['atraso']) : '',
@@ -327,7 +327,7 @@ class ExcelMarcacionesProcesadas
             $fila++;
         }
 
-        // Fecha y día combinados en vertical cuando el día tiene varios turnos.
+        // Fecha y día combinados en vertical cuando el día tiene varios horarios.
         if ($fila - $primera > 1) {
             $hoja->mergeCells("A{$primera}:A".($fila - 1));
             $hoja->mergeCells("B{$primera}:B".($fila - 1));

@@ -90,7 +90,7 @@ class Equipo extends Model
 
     /**
      * Días de la semana en los que el equipo se sincroniza solo, con los
-     * números de {@see Turno::DIAS} (1 = Domingo … 7 = Sábado), ordenados.
+     * números de {@see Horario::DIAS} (1 = Domingo … 7 = Sábado), ordenados.
      *
      * Vacío significa **todos los días**, y es lo que devuelve un equipo que
      * nunca eligió días: la sincronización automática existía antes que esta
@@ -103,7 +103,7 @@ class Equipo extends Model
     {
         $dias = array_values(array_unique(array_filter(
             array_map(fn ($dia): int => (int) $dia, $this->sync_dias ?? []),
-            fn (int $dia): bool => isset(Turno::DIAS[$dia]),
+            fn (int $dia): bool => isset(Horario::DIAS[$dia]),
         )));
 
         sort($dias);
@@ -118,7 +118,7 @@ class Equipo extends Model
      */
     public function nombresDiasSync(): array
     {
-        return array_map(fn (int $dia): string => Turno::DIAS[$dia], $this->diasSync());
+        return array_map(fn (int $dia): string => Horario::DIAS[$dia], $this->diasSync());
     }
 
     /**

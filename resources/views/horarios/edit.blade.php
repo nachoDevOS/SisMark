@@ -1,10 +1,10 @@
 @extends('layouts.app')
 
-@section('titulo', 'Editar turno')
+@section('titulo', 'Editar horario')
 
 @section('contenido')
     <div class="cabecera">
-        <h1>Editar turno · {{ trim($horario->nombreTurno) }}</h1>
+        <h1>Editar horario · {{ trim($horario->nombreHorario) }}</h1>
         <a href="{{ route('horarios.index') }}" class="btn btn--gris"><x-heroicon-o-arrow-left />Volver</a>
     </div>
 
