@@ -134,7 +134,7 @@ class TurnoController extends Controller
         // asignaciones colgando de un turno que ya no se ofrece.
         $enUso = AsignacionTurno::query()
             ->where('turno_id', $turno->id)
-            ->where('hasta', '>=', today())
+            ->where('hasta', '>=', today()->toDateString())
             ->count();
 
         if ($enUso > 0) {

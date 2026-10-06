@@ -74,8 +74,8 @@ class AsignacionHorarioController extends Controller
             // filas. `desde` y `hasta` son fechas, así que «después de hoy»
             // es «desde mañana a las cero».
             ->when($situacion === 'vigentes', fn (Builder $query) => $query->vigenteEn(today()))
-            ->when($situacion === 'futuras', fn (Builder $query) => $query->where('desde', '>=', today()->addDay()))
-            ->when($situacion === 'vencidas', fn (Builder $query) => $query->where('hasta', '<', today()))
+            ->when($situacion === 'futuras', fn (Builder $query) => $query->where('desde', '>=', today()->addDay()->toDateString()))
+            ->when($situacion === 'vencidas', fn (Builder $query) => $query->where('hasta', '<', today()->toDateString()))
             ->orderByDesc('desde')
             ->orderBy('ci')
             ->paginate($porPagina)

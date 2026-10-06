@@ -223,8 +223,8 @@ class PersonaController extends Controller
                 ->where(function (Builder $query) use ($periodos): void {
                     foreach ($periodos as $periodo) {
                         $query->orWhere(fn (Builder $par) => $par
-                            ->where('asignacion_horarios.desde', $periodo->desde)
-                            ->where('asignacion_horarios.hasta', $periodo->hasta));
+                            ->where('asignacion_horarios.desde', $periodo->desde?->toDateString())
+                            ->where('asignacion_horarios.hasta', $periodo->hasta?->toDateString()));
                     }
                 })
                 ->get()

@@ -81,7 +81,7 @@ class AsignacionTurnoApiController extends Controller
         $existente = AsignacionTurno::withTrashed()
             ->where('ci', $ci)
             ->where('turno_id', $turno->id)
-            ->where('desde', $desde)
+            ->where('desde', $desde->toDateString())
             ->first();
 
         if ($existente !== null && ! $existente->trashed()) {
@@ -269,7 +269,7 @@ class AsignacionTurnoApiController extends Controller
         $choque = AsignacionHorario::withTrashed()
             ->where('ci', $ci)
             ->whereIn('idHorario', $heredados->pluck('idHorario')->map(fn (string $id): string => trim($id))->all())
-            ->where('desde', $desde)
+            ->where('desde', $desde->toDateString())
             ->whereNotIn('id', $heredados->pluck('id')->all())
             ->exists();
 

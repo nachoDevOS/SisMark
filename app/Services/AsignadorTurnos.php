@@ -65,8 +65,8 @@ class AsignadorTurnos
         $heredado = AsignacionHorario::query()
             ->whereNull('asignacion_turno_id')
             ->where('ci', $ci)
-            ->where('desde', '>=', $desde)
-            ->where('desde', '<=', $hasta)
+            ->where('desde', '>=', $desde->toDateString())
+            ->where('desde', '<=', $hasta->toDateString())
             ->orderBy('desde')
             ->first();
 
@@ -81,7 +81,7 @@ class AsignadorTurnos
         $repetido = AsignacionHorario::withTrashed()
             ->where('ci', $ci)
             ->whereIn('idHorario', $horarios->pluck('idHorario')->all())
-            ->where('desde', $desde)
+            ->where('desde', $desde->toDateString())
             ->when($ignorar !== null, fn ($query) => $query->where(fn ($sub) => $sub
                 ->whereNull('asignacion_turno_id')
                 ->orWhere('asignacion_turno_id', '!=', $ignorar->getKey())))
@@ -209,8 +209,8 @@ class AsignadorTurnos
         AsignacionHorario::query()
             ->whereNull('asignacion_turno_id')
             ->where('ci', $ci)
-            ->where('desde', '<', $desde)
-            ->where('hasta', '>=', $desde)
+            ->where('desde', '<', $desde->toDateString())
+            ->where('hasta', '>=', $desde->toDateString())
             ->update(['hasta' => $desde->copy()->subDay()->toDateString()]);
     }
 }

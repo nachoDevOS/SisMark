@@ -66,8 +66,8 @@ class RegistroLicencia
             // que termine el pedido y termina después de que empiece. Con
             // selección manual no se aplica, para permitir altas retroactivas.
             ->when($elegidas === [], fn (Builder $query) => $query
-                ->where('desde', '<=', $hasta->copy()->endOfDay())
-                ->where('hasta', '>=', $desde))
+                ->where('desde', '<=', $hasta->toDateString())
+                ->where('hasta', '>=', $desde->toDateString()))
             ->get()
             ->groupBy(fn (AsignacionHorario $asignacion): string => trim((string) $asignacion->ci));
     }

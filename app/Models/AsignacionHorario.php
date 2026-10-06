@@ -144,16 +144,15 @@ class AsignacionHorario extends Model
      *
      * Sin `whereDate()`: envolver la columna en `DATE()` anula el índice
      * `(hasta, desde)` y obliga a recorrer la tabla —medido, 109 ms contra 14—.
-     * El día se acota por rango, igual sobre columnas `date`: desde
-     * el arranque del día pedido hasta el arranque del siguiente.
+     * Las dos columnas son `date`, así que se comparan contra la fecha sola.
      */
     public function scopeVigenteEn(Builder $query, CarbonInterface $fecha): Builder
     {
         $dia = $fecha->copy()->startOfDay();
 
         return $query
-            ->where('desde', '<', $dia->copy()->addDay())
-            ->where('hasta', '>=', $dia);
+            ->where('desde', '<=', $dia->toDateString())
+            ->where('hasta', '>=', $dia->toDateString());
     }
 
     /**
@@ -187,7 +186,7 @@ class AsignacionHorario extends Model
      */
     public function scopePeriodosDelFuncionario(Builder $query, string $ci, bool $incluirVencidas = false): Builder
     {
-        $hoy = today();
+        $hoy = today()->toDateString();
 
         return $query
             ->select('asignacion_horarios.desde', 'asignacion_horarios.hasta')
@@ -215,7 +214,7 @@ class AsignacionHorario extends Model
      */
     public function scopeDelFuncionario(Builder $query, string $ci, bool $incluirVencidas = false): Builder
     {
-        $hoy = today();
+        $hoy = today()->toDateString();
 
         return $query
             ->select('asignacion_horarios.*')

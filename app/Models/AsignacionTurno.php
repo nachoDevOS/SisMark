@@ -117,16 +117,17 @@ class AsignacionTurno extends Model
     }
 
     /**
-     * Asignaciones que cubren la fecha dada (`desde` ≤ fecha ≤ `hasta`), por
-     * rango y sin `DATE()` para no anular el índice `(hasta, desde)`.
+     * Asignaciones que cubren la fecha dada (`desde` ≤ fecha ≤ `hasta`), sin
+     * `DATE()` para no anular el índice `(hasta, desde)`: las columnas son
+     * `date` y se comparan contra la fecha sola.
      */
     public function scopeVigenteEn(Builder $query, CarbonInterface $fecha): Builder
     {
         $dia = $fecha->copy()->startOfDay();
 
         return $query
-            ->where('desde', '<', $dia->copy()->addDay())
-            ->where('hasta', '>=', $dia);
+            ->where('desde', '<=', $dia->toDateString())
+            ->where('hasta', '>=', $dia->toDateString());
     }
 
     /**
@@ -135,8 +136,8 @@ class AsignacionTurno extends Model
     public function scopeSolapadas(Builder $query, CarbonInterface $desde, CarbonInterface $hasta): Builder
     {
         return $query
-            ->where('desde', '<=', $hasta->copy()->startOfDay())
-            ->where('hasta', '>=', $desde->copy()->startOfDay());
+            ->where('desde', '<=', $hasta->toDateString())
+            ->where('hasta', '>=', $desde->toDateString());
     }
 
     /**

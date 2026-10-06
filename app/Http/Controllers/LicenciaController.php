@@ -806,7 +806,7 @@ class LicenciaController extends Controller
             ->join('horarios', 'horarios.id', '=', 'asignacion_horarios.horario_id')
             ->whereNull('horarios.deleted_at')
             ->where('asignacion_horarios.ci', $ci)
-            ->where('asignacion_horarios.hasta', '<', now()->startOfDay())
+            ->where('asignacion_horarios.hasta', '<', today()->toDateString())
             ->count();
     }
 
