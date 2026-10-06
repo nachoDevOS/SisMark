@@ -34,17 +34,17 @@
                     @php
                         // Puede pasar si el tope se bajó después de pedir: lo
                         // anotado no se anula, pero no entra nada más.
-                        $pasado = $bolsa['usado'] + $bolsa['pendiente'] > $saldo['tope'];
+                        $pasado = $bolsa['usado'] + $bolsa['pendiente'] > $bolsa['tope'];
                     @endphp
                     <tr @if ($pasado) style="color: var(--danger); font-weight: 600;" @endif>
                         <td>{{ $bolsa['titulo'] }}</td>
-                        <td>{{ $duracion($saldo['tope']) }}</td>
+                        <td>{{ $duracion($bolsa['tope']) }}</td>
                         <td>{{ $duracion($bolsa['usado']) }}</td>
                         <td>{{ $duracion($bolsa['pendiente']) }}</td>
                         <td>
                             <strong>{{ $duracion($bolsa['queda']) }}</strong>
                             @if ($pasado)
-                                <span class="ayuda">(pasado por {{ $duracion($bolsa['usado'] + $bolsa['pendiente'] - $saldo['tope']) }})</span>
+                                <span class="ayuda">(pasado por {{ $duracion($bolsa['usado'] + $bolsa['pendiente'] - $bolsa['tope']) }})</span>
                             @endif
                         </td>
                     </tr>

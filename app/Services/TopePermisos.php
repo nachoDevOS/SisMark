@@ -44,28 +44,73 @@ use Illuminate\Support\Carbon;
  * contesta, el mes entero es una sola bolsa: se aplica el tope igual, en vez de
  * dejar pasar cualquier cosa porque la API se cayó.
  *
+ * **Cada mes con su propia configuración.** El tope y la forma de contarlo
+ * tienen vigencia por mes ({@see Configuracion::valor()}): septiembre se cuenta
+ * con lo que regía en septiembre aunque después se haya cambiado. Así un tope
+ * que se baja en noviembre no deja «pasado» a nadie en un mes anterior. Un mes
+ * sin tope no arma bolsa ni bloquea nada.
+ *
  * @phpstan-import-type Tramo from ContratosFuncionario
  */
 class TopePermisos
 {
+    /**
+     * Lo ya leído de la configuración, por mes (`Y-m`): una cuenta toca muchas
+     * bolsas del mismo mes y no hace falta preguntarle a la base cada vez.
+     *
+     * @var array<string, array{tope: ?int, porContrato: bool}>
+     */
+    private array $porMes = [];
+
     public function __construct(private ContratosFuncionario $contratos) {}
 
     /**
-     * El tope configurado en minutos, o `null` si no hay tope.
+     * El tope que regía en el mes de la fecha dada (hoy si no se da), en
+     * minutos, o `null` si ese mes no había tope.
      */
-    public function minutos(): ?int
+    public function minutos(?Carbon $mes = null): ?int
     {
-        $minutos = (int) Configuracion::valor(Configuracion::TOPE_PERMISO_MENSUAL);
-
-        return $minutos > 0 ? $minutos : null;
+        return $this->delMes($mes ?? today())['tope'];
     }
 
     /**
-     * ¿Cada contrato del mes tiene su propio tope, o hay uno solo para el mes?
+     * ¿En el mes de la fecha dada, cada contrato tenía su propio tope, o había
+     * uno solo para el mes?
      */
-    public function porContrato(): bool
+    public function porContrato(?Carbon $mes = null): bool
     {
-        return Configuracion::vigente(Configuracion::TOPE_PERMISO_ALCANCE) !== Configuracion::TOPE_POR_MES;
+        return $this->delMes($mes ?? today())['porContrato'];
+    }
+
+    /**
+     * @return array{tope: ?int, porContrato: bool}
+     */
+    private function delMes(Carbon $fecha): array
+    {
+        $mes = $fecha->copy()->startOfMonth();
+
+        return $this->porMes[$mes->format('Y-m')] ??= (function () use ($mes): array {
+            $minutos = (int) Configuracion::valor(Configuracion::TOPE_PERMISO_MENSUAL, $mes);
+
+            return [
+                'tope' => $minutos > 0 ? $minutos : null,
+                'porContrato' => Configuracion::vigente(Configuracion::TOPE_PERMISO_ALCANCE, $mes) !== Configuracion::TOPE_POR_MES,
+            ];
+        })();
+    }
+
+    /**
+     * ¿Algún mes del rango tenía tope?
+     */
+    private function hayTope(Carbon $desde, Carbon $hasta): bool
+    {
+        for ($mes = $desde->copy()->startOfMonth(); $mes->lessThanOrEqualTo($hasta); $mes->addMonthNoOverflow()) {
+            if ($this->minutos($mes) !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -84,10 +129,16 @@ class TopePermisos
      */
     public function excesos(array $fechasPorCi, string $lEntra, string $lSale, ?array $tramos = null, bool $conPendientes = true): array
     {
-        $tope = $this->minutos();
         $fechasPorCi = array_filter($fechasPorCi);
 
-        if ($tope === null || $fechasPorCi === []) {
+        if ($fechasPorCi === []) {
+            return [];
+        }
+
+        $todas = array_merge(...array_values($fechasPorCi));
+        sort($todas);
+
+        if (! $this->hayTope(Carbon::parse($todas[0]), Carbon::parse(end($todas)))) {
             return [];
         }
 
@@ -95,8 +146,10 @@ class TopePermisos
 
         foreach ($this->bolsas($fechasPorCi, $lEntra, $lSale, tramosDados: $tramos, conPendientes: $conPendientes) as $ci => $bolsas) {
             foreach ($bolsas as $bolsa) {
-                if ($bolsa['pedido'] > 0 && $tope < $bolsa['usado'] + $bolsa['pendiente'] + $bolsa['pedido']) {
-                    $excesos[$ci][] = $this->mensaje($bolsa, $tope);
+                // Cada bolsa contra el tope de su mes; un mes sin tope no frena.
+                if ($bolsa['tope'] !== null && $bolsa['pedido'] > 0
+                    && $bolsa['tope'] < $bolsa['usado'] + $bolsa['pendiente'] + $bolsa['pedido']) {
+                    $excesos[$ci][] = $this->mensaje($bolsa);
                 }
             }
         }
@@ -118,17 +171,18 @@ class TopePermisos
      * pregunta —Mamoré, que es su dueño—: con ellos no se sale a pedirlos. Sin
      * ellos, se le preguntan a Mamoré. Solo importan si se cuenta por contrato.
      *
-     * `null` si no hay tope configurado.
+     * Cada bolsa trae el tope y la forma de contar de su mes; `tope` y
+     * `porContrato` de arriba son los del último mes del rango, para el
+     * encabezado. Los meses sin tope no se listan, y si ninguno del rango tenía
+     * tope el resultado es `null`.
      *
      * @param  list<string>  $fechas  los días que crearía el permiso
      * @param  list<array{desde: Carbon, hasta: ?Carbon}>|null  $tramos
-     * @return array{tope: int, porContrato: bool, excede: bool, bolsas: list<array{titulo: string, usado: int, pendiente: int, pedido: int, queda: int, excede: bool}>}|null
+     * @return array{tope: int, porContrato: bool, excede: bool, bolsas: list<array{titulo: string, tope: int, porContrato: bool, usado: int, pendiente: int, pedido: int, queda: int, excede: bool}>}|null
      */
     public function saldo(string $ci, Carbon $desde, Carbon $hasta, array $fechas, ?string $lEntra, ?string $lSale, ?array $tramos = null): ?array
     {
-        $tope = $this->minutos();
-
-        if ($tope === null) {
+        if (! $this->hayTope($desde, $hasta)) {
             return null;
         }
 
@@ -142,18 +196,26 @@ class TopePermisos
             $tramos === null ? null : [$ci => $tramos],
         )[$ci] ?? [];
 
-        $filas = array_map(fn (array $bolsa): array => [
+        $filas = array_values(array_map(fn (array $bolsa): array => [
             'titulo' => ucfirst($this->descripcion($bolsa)),
+            'tope' => $bolsa['tope'],
+            'porContrato' => $bolsa['porContrato'],
             'usado' => $bolsa['usado'],
             'pendiente' => $bolsa['pendiente'],
             'pedido' => $bolsa['pedido'],
-            'queda' => max(0, $tope - $bolsa['usado'] - $bolsa['pendiente'] - $bolsa['pedido']),
-            'excede' => $bolsa['pedido'] > 0 && $tope < $bolsa['usado'] + $bolsa['pendiente'] + $bolsa['pedido'],
-        ], array_values($bolsas));
+            'queda' => max(0, $bolsa['tope'] - $bolsa['usado'] - $bolsa['pendiente'] - $bolsa['pedido']),
+            'excede' => $bolsa['pedido'] > 0 && $bolsa['tope'] < $bolsa['usado'] + $bolsa['pendiente'] + $bolsa['pedido'],
+        ], array_filter($bolsas, fn (array $bolsa): bool => $bolsa['tope'] !== null)));
+
+        if ($filas === []) {
+            return null;
+        }
+
+        $ultima = end($filas);
 
         return [
-            'tope' => $tope,
-            'porContrato' => $this->porContrato(),
+            'tope' => $ultima['tope'],
+            'porContrato' => $ultima['porContrato'],
             'excede' => in_array(true, array_column($filas, 'excede'), true),
             'bolsas' => $filas,
         ];
@@ -171,7 +233,7 @@ class TopePermisos
      *
      * @param  array<string, list<string>>  $fechasPorCi
      * @param  array<string, list<array{desde: Carbon, hasta: ?Carbon}>>|null  $tramosDados
-     * @return array<string, array<string, array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array}>>
+     * @return array<string, array<string, array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array, tope: ?int, porContrato: bool}>>
      */
     private function bolsas(array $fechasPorCi, string $lEntra, string $lSale, ?Carbon $desde = null, ?Carbon $hasta = null, ?array $tramosDados = null, bool $conPendientes = true): array
     {
@@ -193,9 +255,15 @@ class TopePermisos
         $hasta = $hasta->copy()->endOfMonth()->startOfDay();
 
         $cis = array_map('strval', array_keys($fechasPorCi));
-        // Por mes no hay contratos que mirar: sin tramos, cada mes es una sola
-        // bolsa.
-        $tramos = $this->porContrato() ? ($tramosDados ?? $this->tramos($cis, $desde, $hasta)) : null;
+        // Los contratos solo hacen falta si algún mes del rango se cuenta por
+        // contrato; los meses que se cuentan por mes son una sola bolsa.
+        $algunoPorContrato = false;
+
+        for ($mes = $desde->copy(); $mes->lessThanOrEqualTo($hasta); $mes->addMonthNoOverflow()) {
+            $algunoPorContrato = $algunoPorContrato || $this->porContrato($mes);
+        }
+
+        $tramos = $algunoPorContrato ? ($tramosDados ?? $this->tramos($cis, $desde, $hasta)) : null;
         $usados = $this->usados($cis, $desde, $hasta, $conPendientes);
 
         $resultado = [];
@@ -204,7 +272,7 @@ class TopePermisos
             $ci = (string) $ci;
             $tramosCi = $tramos === null ? null : ($tramos[$ci] ?? []);
 
-            /** @var array<string, array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array}> $bolsas */
+            /** @var array<string, array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array, tope: ?int, porContrato: bool}> $bolsas */
             $bolsas = [];
             $contados = [];
 
@@ -246,10 +314,10 @@ class TopePermisos
 
     /**
      * Abre vacías las bolsas de cada mes del rango: una por contrato que toque
-     * el mes, o una sola si no hay contratos que mirar.
+     * el mes si ese mes se cuenta por contrato, o una sola si no.
      *
      * @param  list<Tramo>|null  $tramos
-     * @param  array<string, array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array}>  $bolsas
+     * @param  array<string, array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array, tope: ?int, porContrato: bool}>  $bolsas
      */
     private function abrirBolsas(Carbon $desde, Carbon $hasta, ?array $tramos, array &$bolsas): void
     {
@@ -257,7 +325,7 @@ class TopePermisos
             $finDeMes = $mes->copy()->endOfMonth()->startOfDay();
             $abiertas = 0;
 
-            foreach ($tramos ?? [] as $tramo) {
+            foreach ($this->porContrato($mes) ? ($tramos ?? []) : [] as $tramo) {
                 if ($tramo['desde']->greaterThan($finDeMes)
                     || ($tramo['hasta'] !== null && $tramo['hasta']->lessThan($mes))) {
                     continue;
@@ -290,9 +358,7 @@ class TopePermisos
             }
         }
 
-        return 'Supera el tope mensual de permisos ('.self::duracion((int) $this->minutos())
-            .($this->porContrato() ? ' por contrato' : ' por mes').'). '
-            .implode(' ', $partes);
+        return 'Supera el tope mensual de permisos. '.implode(' ', $partes);
     }
 
     /**
@@ -343,15 +409,18 @@ class TopePermisos
     }
 
     /**
-     * La bolsa a la que va un día: su mes y el contrato que lo cubre. La crea
-     * vacía la primera vez.
+     * La bolsa a la que va un día: su mes y —si ese mes se cuenta por
+     * contrato— el contrato que lo cubre. La crea vacía la primera vez, con el
+     * tope de su mes.
      *
      * @param  list<Tramo>|null  $tramos
-     * @param  array<string, array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array}>  $bolsas
+     * @param  array<string, array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array, tope: ?int, porContrato: bool}>  $bolsas
      */
     private function bolsa(string $fecha, ?array $tramos, array &$bolsas): string
     {
         $dia = Carbon::parse($fecha)->startOfDay();
+        $porContrato = $this->porContrato($dia);
+        $tramos = $porContrato ? $tramos : null;
         $indice = null;
 
         foreach ($tramos ?? [] as $i => $tramo) {
@@ -373,28 +442,32 @@ class TopePermisos
             'pedido' => 0,
             'mes' => $dia->copy()->startOfMonth(),
             'tramo' => $indice === null ? null : $tramos[$indice],
+            'tope' => $this->minutos($dia),
+            'porContrato' => $porContrato,
         ];
 
         return $clave;
     }
 
     /**
-     * @param  array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array}  $bolsa
+     * @param  array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array, tope: ?int, porContrato: bool}  $bolsa
      */
-    private function mensaje(array $bolsa, int $tope): string
+    private function mensaje(array $bolsa): string
     {
+        $tope = (int) $bolsa['tope'];
         $queda = max(0, $tope - $bolsa['usado'] - $bolsa['pendiente']);
         $lleva = self::duracion($bolsa['usado']).' aprobado'
             .($bolsa['pendiente'] > 0 ? ' y '.self::duracion($bolsa['pendiente']).' pendiente' : '');
 
-        return "En {$this->descripcion($bolsa)} ya lleva {$lleva}, y este permiso suma "
+        return "En {$this->descripcion($bolsa)} —tope ".self::duracion($tope)
+            .($bolsa['porContrato'] ? ' por contrato' : ' por mes')."— ya lleva {$lleva}, y este permiso suma "
             .self::duracion($bolsa['pedido']).': le queda '.self::duracion($queda).'.';
     }
 
     /**
      * «septiembre de 2026», y el contrato si la bolsa es de uno.
      *
-     * @param  array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array}  $bolsa
+     * @param  array{usado: int, pendiente: int, pedido: int, mes: Carbon, tramo: ?array, tope: ?int, porContrato: bool}  $bolsa
      */
     private function descripcion(array $bolsa): string
     {

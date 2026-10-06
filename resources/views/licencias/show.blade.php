@@ -221,11 +221,11 @@
                 <tbody>
                     @foreach ($saldo['bolsas'] as $bolsa)
                         @php
-                            $pasado = $bolsa['usado'] + $bolsa['pendiente'] > $saldo['tope'];
+                            $pasado = $bolsa['usado'] + $bolsa['pendiente'] > $bolsa['tope'];
                         @endphp
                         <tr @if ($pasado) style="color: var(--danger); font-weight: 600;" @endif>
                             <td>{{ $bolsa['titulo'] }}</td>
-                            <td>{{ \App\Services\ProcesadorAsistencia::duracion($saldo['tope'] * 60) }}</td>
+                            <td>{{ \App\Services\ProcesadorAsistencia::duracion($bolsa['tope'] * 60) }}</td>
                             <td>{{ \App\Services\ProcesadorAsistencia::duracion($bolsa['usado'] * 60) }}</td>
                             <td>{{ \App\Services\ProcesadorAsistencia::duracion($bolsa['pendiente'] * 60) }}</td>
                             <td>
@@ -233,7 +233,7 @@
                                      anotado no se anula, pero no entra nada más. --}}
                                 {{ \App\Services\ProcesadorAsistencia::duracion($bolsa['queda'] * 60) }}
                                 @if ($pasado)
-                                    (pasado por {{ \App\Services\ProcesadorAsistencia::duracion(($bolsa['usado'] + $bolsa['pendiente'] - $saldo['tope']) * 60) }})
+                                    (pasado por {{ \App\Services\ProcesadorAsistencia::duracion(($bolsa['usado'] + $bolsa['pendiente'] - $bolsa['tope']) * 60) }})
                                 @endif
                             </td>
                         </tr>

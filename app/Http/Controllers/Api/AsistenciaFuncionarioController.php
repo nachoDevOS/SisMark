@@ -214,7 +214,7 @@ class AsistenciaFuncionarioController extends Controller
      * preguntarle a Mamoré; ver la nota de {@see self::asistencia()}. `null` si
      * no hay tope configurado.
      *
-     * @return array{tope: string, topeMinutos: int, alcance: string, bolsas: list<array{titulo: string, usado: string, usadoMinutos: int, pendiente: string, pendienteMinutos: int, queda: string, quedaMinutos: int, pasado: bool, excedido: string, excedidoMinutos: int}>}|null
+     * @return array{tope: string, topeMinutos: int, alcance: string, bolsas: list<array{titulo: string, tope: string, topeMinutos: int, usado: string, usadoMinutos: int, pendiente: string, pendienteMinutos: int, queda: string, quedaMinutos: int, pasado: bool, excedido: string, excedidoMinutos: int}>}|null
      */
     private function saldoDePermisos(Request $request, string $ci, Carbon $desde, Carbon $hasta): ?array
     {
@@ -240,6 +240,10 @@ class AsistenciaFuncionarioController extends Controller
             'alcance' => $saldo['porContrato'] ? 'por contrato' : 'por mes',
             'bolsas' => array_map(fn (array $bolsa): array => [
                 'titulo' => $bolsa['titulo'],
+                // El tope de ese mes: la configuración tiene vigencia por mes, así
+                // que en un rango de varios meses puede no ser el mismo.
+                'tope' => $duracion($bolsa['tope']),
+                'topeMinutos' => $bolsa['tope'],
                 'usado' => $duracion($bolsa['usado']),
                 'usadoMinutos' => $bolsa['usado'],
                 // Lo pedido que espera decisión: todavía no está concedido, pero
@@ -250,10 +254,10 @@ class AsistenciaFuncionarioController extends Controller
                 'quedaMinutos' => $bolsa['queda'],
                 // Puede pasar si el tope se bajó después de pedir: lo anotado no
                 // se anula, pero no entra nada más.
-                'pasado' => $saldo['tope'] < $bolsa['usado'] + $bolsa['pendiente'],
+                'pasado' => $bolsa['tope'] < $bolsa['usado'] + $bolsa['pendiente'],
                 // Cuánto se pasó, para mostrarlo junto al «queda» en cero.
-                'excedido' => $duracion(max(0, $bolsa['usado'] + $bolsa['pendiente'] - $saldo['tope'])),
-                'excedidoMinutos' => max(0, $bolsa['usado'] + $bolsa['pendiente'] - $saldo['tope']),
+                'excedido' => $duracion(max(0, $bolsa['usado'] + $bolsa['pendiente'] - $bolsa['tope'])),
+                'excedidoMinutos' => max(0, $bolsa['usado'] + $bolsa['pendiente'] - $bolsa['tope']),
             ], $saldo['bolsas']),
         ];
     }

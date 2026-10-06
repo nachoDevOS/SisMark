@@ -279,17 +279,6 @@ class Licencia extends Model
         return [$solicitudes, $ids];
     }
 
-    public function scopeIniciosDeSolicitud(Builder $query): Builder
-    {
-        $tabla = $this->getTable();
-
-        return $query->whereRaw(
-            "{$tabla}.id = (SELECT s.id FROM {$tabla} AS s"
-            ." WHERE s.solicitud = {$tabla}.solicitud AND s.deleted_at IS NULL"
-            .' ORDER BY s.fecha, s.id LIMIT 1)'
-        );
-    }
-
     /**
      * Pagina una consulta **por solicitud** y no por fila: una licencia de cinco
      * días cuenta como una, y lo que sale en pantalla es la fila que la abre.
@@ -317,10 +306,10 @@ class Licencia extends Model
      * 4. Recién entonces se busca la fila que abre cada clave de la página, con
      *    un `whereIn` acotado.
      *
-     * El último paso **tiene que ir acotado**: la subconsulta de
-     * `iniciosDeSolicitud()` suelta sobre la tabla entera se evalúa fila por fila
-     * y con una búsqueda poco frecuente no vuelve. Ver la migración
-     * `create_licencias_table`.
+     * El último paso **tiene que ir acotado**: una subconsulta correlacionada
+     * que busque la primera fila de cada solicitud, suelta sobre la tabla
+     * entera, se evalúa fila por fila y con una búsqueda poco frecuente no
+     * vuelve. Ver la migración `create_licencias_table`.
      * ---
      *
      * @param  Builder  $filtrada  la consulta ya filtrada, sin ordenar ni paginar
@@ -392,9 +381,9 @@ class Licencia extends Model
      * La fila que abre cada una de las solicitudes dadas: su día más temprano,
      * con el horario ya cargado.
      *
-     * No usa `iniciosDeSolicitud()`, y la razón está medida. Ese scope compara
-     * el `id` de la fila contra un subquery correlacionado que termina en
-     * `ORDER BY s.fecha, s.id LIMIT 1`, y MySQL lo resuelve **recorriendo el
+     * No usa un subquery correlacionado, y la razón está medida. Comparar el
+     * `id` de la fila contra uno que termina en `ORDER BY s.fecha, s.id LIMIT 1`
+     * hace que MySQL lo resuelva **recorriendo el
      * índice de `fecha` entero** —1.112.274 entradas, 1,7 s— en vez de ir por
      * `(solicitud, fecha)`: cree que caminando por fecha va a toparse con la
      * fila enseguida y así se ahorra el orden, pero las solicitudes son lo

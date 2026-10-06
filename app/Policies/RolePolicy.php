@@ -70,7 +70,8 @@ class RolePolicy
     public const MODULOS = [
         'Escritorio' => [
             'etiqueta' => 'Escritorio',
-            'habilidades' => ['ViewAny', 'View'],
+            // Una sola pantalla, sin ficha: `ViewAny` es verla.
+            'habilidades' => ['ViewAny'],
         ],
         'Persona' => [
             'etiqueta' => 'Funcionarios',

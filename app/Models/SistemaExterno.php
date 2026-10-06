@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Providers\AppServiceProvider;
 use App\Traits\RegistersUserEvents;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -83,11 +82,6 @@ class SistemaExterno extends Model
         'horarios:read' => 'Leer los turnos sugeridos y el horario de un funcionario',
         'horarios:write' => 'Asignar el turno al dar de alta un contrato',
     ];
-
-    public function scopeActivo(Builder $query): Builder
-    {
-        return $query->where('activo', true);
-    }
 
     /**
      * Quién emitió o revocó tokens de este sistema.

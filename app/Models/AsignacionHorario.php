@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use App\Services\AsignadorTurnos;
+use App\Traits\ManejaHorasDelDia;
 use App\Traits\RegistersUserEvents;
 use Carbon\CarbonInterface;
 use Database\Factories\AsignacionHorarioFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -27,7 +29,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class AsignacionHorario extends Model
 {
     /** @use HasFactory<AsignacionHorarioFactory> */
-    use HasFactory, RegistersUserEvents, SoftDeletes;
+    use HasFactory, ManejaHorasDelDia, RegistersUserEvents, SoftDeletes;
 
     protected $table = 'asignacion_horarios';
 
@@ -52,11 +54,25 @@ class AsignacionHorario extends Model
     protected function casts(): array
     {
         return [
-            'desde' => 'date',
-            'hasta' => 'date',
             'contrato_id' => 'integer',
             'asignacion_turno_id' => 'integer',
         ];
+    }
+
+    /**
+     * Inicio de la vigencia: columna `date`, sin hora ({@see ManejaHorasDelDia}).
+     */
+    protected function desde(): Attribute
+    {
+        return self::soloFecha();
+    }
+
+    /**
+     * Fin de la vigencia: columna `date`, sin hora.
+     */
+    protected function hasta(): Attribute
+    {
+        return self::soloFecha();
     }
 
     /**

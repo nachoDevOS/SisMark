@@ -81,9 +81,6 @@ class Asistencia extends Model
     }
 
     /**
-     * Hora de la marcación: columna `time`, se lee como Carbon y se escribe H:i:s.
-     */
-    /**
      * Día de la marcación: columna `date`, sin hora.
      */
     protected function fecha(): Attribute
@@ -91,6 +88,9 @@ class Asistencia extends Model
         return self::soloFecha();
     }
 
+    /**
+     * Hora de la marcación: columna `time`, se lee como Carbon y se escribe H:i:s.
+     */
     protected function hora(): Attribute
     {
         return self::horaDelDia();

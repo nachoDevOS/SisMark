@@ -159,7 +159,9 @@ class AsignadorTurnos
             $this->cortarHeredados(trim((string) $asignacion->ci), $desde);
 
             $asignacion->update(['desde' => $desde, 'hasta' => $hasta]);
-            $asignacion->horariosAsignados()->update(['desde' => $desde, 'hasta' => $hasta]);
+            // En bloque no pasa por el accessor del modelo: va la fecha sola,
+            // como la guarda `soloFecha()`.
+            $asignacion->horariosAsignados()->update(['desde' => $desde->toDateString(), 'hasta' => $hasta->toDateString()]);
         });
     }
 
@@ -194,7 +196,7 @@ class AsignadorTurnos
             $asignacion->update(['hasta' => $hasta->copy()->startOfDay(), 'observacion' => $observacion]);
 
             $asignacion->horariosAsignados()->onlyTrashed()->get()->each->restore();
-            $asignacion->horariosAsignados()->update(['hasta' => $hasta->copy()->startOfDay(), 'observacion' => $observacion]);
+            $asignacion->horariosAsignados()->update(['hasta' => $hasta->toDateString(), 'observacion' => $observacion]);
         });
     }
 
@@ -209,6 +211,6 @@ class AsignadorTurnos
             ->where('ci', $ci)
             ->where('desde', '<', $desde)
             ->where('hasta', '>=', $desde)
-            ->update(['hasta' => $desde->copy()->subDay()]);
+            ->update(['hasta' => $desde->copy()->subDay()->toDateString()]);
     }
 }

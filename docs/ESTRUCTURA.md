@@ -83,6 +83,7 @@ aparte (`sia`) y **solo de lectura**.
 | `dias_excepcionales` | Feriados y días sin control | SIA + altas propias |
 | `equipos` | Relojes: IP, puerto, clave y su configuración de sincronización | propio |
 | `equipo_auditorias` | Bitácora de cada acción sobre un reloj | propio |
+| `configuraciones` | Parámetros con **vigencia por mes**: cada cambio agrega una fila que rige desde `vigente_desde` (día 1) hasta que otra la reemplaza, con `motivo` y quién la cargó. No se pisa nada | propio |
 | `users`, `roles`, `permissions` | Acceso al sistema | propio |
 
 ### Tres convenciones de columnas que hay que conocer
@@ -95,7 +96,7 @@ aparte (`sia`) y **solo de lectura**.
    dedo. Si el padrón está desactualizado, la marca igual se guarda y se cuenta
    aparte como huérfana.
 3. **Casi todas las tablas tienen baja lógica** (`deleted_at`) y auditoría de
-   autor (`registerUser_id`, `updateUser_id`, `deleteUser_id`), vía el trait
+   autor (`registerUser_id`, `deleteUser_id`), vía el trait
    `RegistersUserEvents`. La excepción es `asistencias`: el
    `deleted_at IS NULL` costaba demasiado sobre 4,4 millones de filas.
 
@@ -118,7 +119,7 @@ aparte (`sia`) y **solo de lectura**.
 | **Bitácora** | `/equipos/auditoria` | Qué se le hizo a cada reloj, cuándo y con qué resultado |
 | **Reportes** | `/reportes/marcaciones/*` | Sin procesar y procesado |
 | **Usuarios / Roles** | `/usuarios`, `/roles` | Acceso y matriz de permisos |
-| **Configuración** | `/configuracion` | Parámetros del sistema (hoy: tope mensual de permisos y cómo se cuenta). Un solo permiso, `Update:Configuracion` |
+| **Configuración** | `/configuracion` | Parámetros del sistema (hoy: tope mensual de permisos y cómo se cuenta). Cada cambio rige **desde un mes** (el en curso o uno futuro) y lleva **motivo obligatorio**; debajo, el historial de vigencias. Un solo permiso, `Update:Configuracion` |
 
 ### La ficha del funcionario
 
