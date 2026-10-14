@@ -30,12 +30,15 @@
 
             {{-- Solo Mamoré conoce los contratos: con SIAT el select se oculta.
                  Dentro de «Con contrato» van los tipos (permanente, eventual…),
-                 que llegan con cada carga junto con su total. --}}
+                 que llegan con cada carga junto con su total. «Sin horario
+                 vigente» es quien tiene contrato y hoy no tiene horario: la
+                 lista de a quién falta asignarle un turno. --}}
             <select id="f-contrato" aria-label="Situación de contrato">
                 <option value="todos">Todos</option>
                 <optgroup label="Con contrato">
                     <option value="con">Todos con contrato</option>
                 </optgroup>
+                <option value="sin_horario">Con contrato sin horario vigente</option>
                 <option value="sin">Sin contrato</option>
             </select>
         </div>
@@ -78,7 +81,12 @@
 
             // La API devuelve cuántos hay en cada situación (ya con la búsqueda
             // aplicada): se muestran en la etiqueta de cada opción.
-            const etiquetas = { todos: 'Todos', con: 'Todos con contrato', sin: 'Sin contrato' };
+            const etiquetas = {
+                todos: 'Todos',
+                con: 'Todos con contrato',
+                sin_horario: 'Con contrato sin horario vigente',
+                sin: 'Sin contrato',
+            };
             const conTotal = (texto, total) => total === '' || total === undefined
                 ? texto
                 : `${texto} (${Number(total).toLocaleString('es-BO')})`;
@@ -87,7 +95,9 @@
                 const datos = resultados.querySelector('#totales-contrato');
                 for (const valor of Object.keys(etiquetas)) {
                     const opcion = selContrato.querySelector(`option[value="${valor}"]`);
-                    opcion.textContent = conTotal(etiquetas[valor], datos ? datos.dataset[valor] : '');
+                    // data-sin-horario llega al dataset como sinHorario.
+                    const clave = valor.replace(/_(\w)/g, (_, letra) => letra.toUpperCase());
+                    opcion.textContent = conTotal(etiquetas[valor], datos ? datos.dataset[clave] : '');
                 }
                 actualizarTipos(datos ? JSON.parse(datos.dataset.tipos || '[]') : []);
             }

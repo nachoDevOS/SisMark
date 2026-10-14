@@ -53,7 +53,7 @@ class PersonaController extends Controller
         $contrato = $this->contrato($request);
         $tipo = $this->tipoContrato($request, $contrato);
         $errorFuente = null;
-        $totales = ['con' => null, 'sin' => null, 'tipos' => []];
+        $totales = ['con' => null, 'sin' => null, 'sinHorario' => null, 'tipos' => []];
 
         if ($fuente === 'siat') {
             // SIAT no conoce los contratos: el filtro es solo de Mamoré.
@@ -319,14 +319,56 @@ class PersonaController extends Controller
     }
 
     /**
-     * Filtro de contrato del listado: «todos» (por defecto), «con» o «sin».
+     * Filtro de contrato del listado: «todos» (por defecto), «con», «sin» o
+     * «sin_horario» (con contrato firmado y sin horario vigente hoy).
      * Cualquier otro valor cae en «todos» para no dejar la tabla vacía.
      */
     private function contrato(Request $request): string
     {
         $contrato = (string) $request->query('contrato', 'todos');
 
-        return in_array($contrato, ['con', 'sin'], true) ? $contrato : 'todos';
+        return in_array($contrato, ['con', 'sin', 'sin_horario'], true) ? $contrato : 'todos';
+    }
+
+    /**
+     * Cédulas con horario vigente hoy: lo heredado del SIA y lo que generan
+     * los turnos asignados, que también deja sus días en `asignacion_horarios`.
+     * Es lo que se le pide a Mamoré que excluya para el filtro «sin_horario».
+     *
+     * @return list<string>
+     */
+    private function cedulasConHorarioVigente(): array
+    {
+        return AsignacionHorario::query()
+            ->vigenteEn(today())
+            ->distinct()
+            ->pluck('ci')
+            ->map(fn (string $ci): string => trim($ci))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Hasta cuándo tuvo horario cada cédula, para quien hoy no tiene ninguno.
+     * La que nunca tuvo no aparece en el resultado.
+     *
+     * @param  list<string>  $cis
+     * @return array<string, Carbon>
+     */
+    private function ultimosHorarios(array $cis): array
+    {
+        if ($cis === []) {
+            return [];
+        }
+
+        return AsignacionHorario::query()
+            ->whereIn('ci', $cis)
+            ->groupBy('ci')
+            ->selectRaw('ci, max(hasta) as ultimo')
+            ->pluck('ultimo', 'ci')
+            ->mapWithKeys(fn (string $ultimo, string $ci): array => [trim($ci) => Carbon::parse($ultimo)])
+            ->all();
     }
 
     /**
@@ -391,35 +433,55 @@ class PersonaController extends Controller
      * La API pasó a cruzar todas las palabras contra todos los campos, que es
      * donde corresponde hacerlo: en la base que tiene los datos.
      *
-     * @return array{0: LengthAwarePaginator, 1: ?string, 2: array{con: ?int, sin: ?int, tipos: array<int, array{id: int, nombre: string, total: int}>}}
+     * @return array{0: LengthAwarePaginator, 1: ?string, 2: array{con: ?int, sin: ?int, sinHorario: ?int, tipos: array<int, array{id: int, nombre: string, total: int}>}}
      */
     private function funcionariosMamore(Request $request, MamoreClient $mamore, string $busqueda, int $porPagina, string $contrato, ?int $tipo): array
     {
         $pagina = max(1, (int) $request->query('page', 1));
+        $sinHorario = $contrato === 'sin_horario';
 
         try {
-            $respuesta = $mamore->people($pagina, $porPagina, $busqueda, $contrato, tipo: $tipo);
+            // «Sin horario» es «con contrato» menos quienes ya tienen horario.
+            $respuesta = $sinHorario
+                ? $mamore->people($pagina, $porPagina, $busqueda, 'con', excluirCi: $this->cedulasConHorarioVigente())
+                : $mamore->people($pagina, $porPagina, $busqueda, $contrato, tipo: $tipo);
             $meta = $respuesta['meta'] ?? [];
+            $filas = $this->normalizarMamore($respuesta['data'] ?? []);
+
+            if ($sinHorario) {
+                $ultimos = $this->ultimosHorarios(array_column($filas, 'ci'));
+
+                $filas = array_map(fn (array $fila): array => $fila + [
+                    'ultimoHorario' => $ultimos[$fila['ci']] ?? null,
+                ], $filas);
+            }
 
             $paginador = new Paginador(
-                $this->normalizarMamore($respuesta['data'] ?? []),
+                $filas,
                 (int) ($meta['total'] ?? count($respuesta['data'] ?? [])),
                 (int) ($meta['per_page'] ?? $porPagina),
                 (int) ($meta['current_page'] ?? $pagina),
                 ['path' => $request->url(), 'query' => $request->query()],
             );
 
-            return [$paginador, null, $this->totalesPorContrato($meta)];
+            return [$paginador, null, $this->totalesPorContrato($meta, $sinHorario)];
         } catch (MamoreException $e) {
-            return [$this->paginadorVacio($request, $porPagina), $e->getMessage(), ['con' => null, 'sin' => null, 'tipos' => []]];
+            return [$this->paginadorVacio($request, $porPagina), $e->getMessage(), ['con' => null, 'sin' => null, 'sinHorario' => null, 'tipos' => []]];
         }
     }
 
-    private function totalesPorContrato(array $meta): array
+    private function totalesPorContrato(array $meta, bool $sinHorario): array
     {
         return [
             'con' => isset($meta['total_con_contrato']) ? (int) $meta['total_con_contrato'] : null,
             'sin' => isset($meta['total_sin_contrato']) ? (int) $meta['total_sin_contrato'] : null,
+            // Solo viene cuando se pidió «sin horario». Si nadie tenía horario
+            // no hubo nada que excluir, y entonces son todos los con contrato.
+            'sinHorario' => match (true) {
+                isset($meta['total_con_contrato_sin_excluidos']) => (int) $meta['total_con_contrato_sin_excluidos'],
+                $sinHorario => isset($meta['total_con_contrato']) ? (int) $meta['total_con_contrato'] : null,
+                default => null,
+            },
             // Mamoré los nombra a su manera («eventual»): se capitaliza para el combo.
             'tipos' => collect($meta['tipos_contrato'] ?? [])
                 ->map(fn (array $tipo): array => [

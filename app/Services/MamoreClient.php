@@ -57,6 +57,10 @@ class MamoreClient
      * dirección de un mes pasado incluya a quien se fue a mitad de período o lo
      * pierda en silencio.
      *
+     * `$excluirCi` saca esas cédulas de la lista (el filtro «Sin horario
+     * vigente» manda las de quienes ya tienen horario).
+     *
+     * @param  list<string>  $excluirCi
      * @return array{data?: array<int, array<string, mixed>>, meta?: array<string, mixed>, links?: array<string, mixed>}
      */
     public function people(
@@ -69,6 +73,7 @@ class MamoreClient
         ?string $hasta = null,
         ?int $unidad = null,
         ?int $tipo = null,
+        array $excluirCi = [],
     ): array {
         $parametros = ['page' => $page, 'limit' => $limit];
 
@@ -98,6 +103,14 @@ class MamoreClient
 
         if ($hasta !== null) {
             $parametros['hasta'] = $hasta;
+        }
+
+        // Las cédulas a excluir pueden ser cientos: no entran en una URL, así
+        // que con ellas la consulta viaja por POST, con todo en el cuerpo.
+        if ($excluirCi !== []) {
+            $parametros['excluir_ci'] = array_values($excluirCi);
+
+            return $this->pedir('/people', $parametros, porPost: true);
         }
 
         return $this->pedir('/people', $parametros);
@@ -341,15 +354,18 @@ class MamoreClient
     }
 
     /**
-     * GET a la API traduciendo fallos de red y estados de error a MamoreException.
+     * GET (o POST, con los parámetros en el cuerpo) a la API traduciendo fallos
+     * de red y estados de error a MamoreException.
      *
      * @param  array<string, mixed>  $parametros
      * @return array<string, mixed>
      */
-    private function pedir(string $ruta, array $parametros): array
+    private function pedir(string $ruta, array $parametros, bool $porPost = false): array
     {
         try {
-            $respuesta = $this->http()->get($ruta, $parametros);
+            $respuesta = $porPost
+                ? $this->http()->post($ruta, $parametros)
+                : $this->http()->get($ruta, $parametros);
         } catch (ConnectionException) {
             throw new MamoreException('No se pudo conectar con la API de Mamoré.');
         }

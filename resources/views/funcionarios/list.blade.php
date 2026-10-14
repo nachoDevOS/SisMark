@@ -7,7 +7,10 @@
     // y la dirección se muestran siempre (vacíos en quien no tiene contrato).
     // SIAT no conoce los contratos: ahí esas columnas no tienen sentido.
     $muestraContrato = $fuente === 'mamore';
-    $columnas = $muestraContrato ? 7 : 5;
+    // Con «sin horario vigente» se agrega hasta cuándo tuvo horario, para
+    // distinguir a quien se le venció del que nunca tuvo.
+    $muestraUltimoHorario = $contrato === 'sin_horario';
+    $columnas = ($muestraContrato ? 7 : 5) + ($muestraUltimoHorario ? 1 : 0);
     // La etiqueta (tipo de contrato o «Sin contrato») sobra cuando la lista ya
     // está filtrada por eso mismo.
     $muestraEtiqueta = $muestraContrato && $contrato !== 'sin' && $tipo === null;
@@ -22,6 +25,7 @@
      data-todos="{{ $totalTodos }}"
      data-con="{{ $totales['con'] }}"
      data-sin="{{ $totales['sin'] }}"
+     data-sin-horario="{{ $totales['sinHorario'] }}"
      data-tipos="{{ json_encode($totales['tipos']) }}"></div>
 
 <div class="card">
@@ -33,6 +37,9 @@
                 @if ($muestraContrato)
                     <th>Cargo</th>
                     <th>Dirección</th>
+                @endif
+                @if ($muestraUltimoHorario)
+                    <th>Último horario</th>
                 @endif
                 <th>Fecha nac.</th>
                 <th>PIN reloj</th>
@@ -71,6 +78,15 @@
                         <td>{{ $persona['cargo'] ?: '—' }}</td>
                         <td>{{ $persona['direccion'] ?: '—' }}</td>
                     @endif
+                    @if ($muestraUltimoHorario)
+                        <td>
+                            @if ($persona['ultimoHorario'])
+                                Venció el {{ $persona['ultimoHorario']->format('d/m/Y') }}
+                            @else
+                                <span class="persona-meta">Nunca tuvo</span>
+                            @endif
+                        </td>
+                    @endif
                     <td>
                         {{ $persona['nacimiento'] ?: '—' }}
                         @if (!is_null($persona['edad']))
@@ -79,6 +95,9 @@
                     </td>
                     <td>{{ $persona['pinReloj'] ?: 'Sin PIN' }}</td>
                     <td class="acciones">
+                        @if ($muestraUltimoHorario && $persona['ci'] !== '' && auth()->user()->can('create', \App\Models\AsignacionTurno::class))
+                            <a href="{{ route('turnos-asignados.create', ['ci' => $persona['ci']]) }}" class="btn-icon" title="Asignar turno" aria-label="Asignar turno"><x-heroicon-o-calendar-days /></a>
+                        @endif
                         @if ($persona['ver'] && auth()->user()->can('View:Persona'))
                             <a href="{{ $persona['ver'] }}" class="btn-icon btn-icon--gris" title="Ver" aria-label="Ver"><x-heroicon-o-eye /></a>
                         @endif
