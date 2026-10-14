@@ -157,11 +157,12 @@ class EquipoController extends Controller
 
     /**
      * Formulario de la sincronización automática: si corre, qué días y a qué
-     * horas. Aparte de la edición porque lo pide `Sync:Equipo`, no `Update`.
+     * horas. Pide el mismo permiso que editar el equipo (`Update:Equipo`): es
+     * configuración del equipo, no una lectura del reloj.
      */
     public function editarSincronizacion(Equipo $equipo): View
     {
-        $this->authorize('sync', $equipo);
+        $this->authorize('update', $equipo);
 
         return view('equipos.sincronizacion', compact('equipo'));
     }
@@ -172,7 +173,7 @@ class EquipoController extends Controller
      */
     public function actualizarSincronizacion(ActualizarSincronizacionEquipoRequest $request, Equipo $equipo): RedirectResponse
     {
-        $this->authorize('sync', $equipo);
+        $this->authorize('update', $equipo);
 
         $equipo->update($request->validated());
 

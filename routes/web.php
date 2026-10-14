@@ -49,8 +49,8 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     Route::resource('equipos', EquipoController::class);
     // Habla en vivo con el microservicio Python (probar conexión, exportar y
     // sincronizar marcaciones del equipo).
-    // Sincronización automática (días y horas): pantalla aparte de la edición
-    // porque la pide `Sync:Equipo`, no `Update:Equipo`.
+    // Sincronización automática (días y horas): pantalla aparte de la edición,
+    // con el mismo permiso `Update:Equipo`.
     Route::get('equipos/{equipo}/sincronizacion', [EquipoController::class, 'editarSincronizacion'])->name('equipos.sincronizacion.edit');
     Route::put('equipos/{equipo}/sincronizacion', [EquipoController::class, 'actualizarSincronizacion'])->name('equipos.sincronizacion.update');
     Route::post('equipos/{equipo}/probar-conexion', [EquipoController::class, 'probarConexion'])->name('equipos.probar-conexion');

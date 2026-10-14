@@ -10,8 +10,8 @@
 
     {{-- Sincronización automática: qué días y a qué horas el sistema baja solo las
          marcaciones de este equipo. Sin horas cargadas no corre nada, por eso el
-         checkbox y la lista van juntos. Va aparte de «Editar» porque la pide
-         `Sync:Equipo`, no `Update:Equipo`.
+         checkbox y la lista van juntos. Pantalla aparte de «Editar», con el mismo
+         permiso (`Update:Equipo`).
 
          La lectura NO borra nada del reloj: el equipo conserva su historial
          completo. Vaciarlo es otra acción, con su propio botón y su propio permiso. --}}

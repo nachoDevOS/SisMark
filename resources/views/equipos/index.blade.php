@@ -77,10 +77,8 @@
                                         <button type="submit" class="btn-icon" title="Probar conexión" aria-label="Probar conexión"><x-heroicon-o-signal /></button>
                                     </form>
                                     <a href="{{ route('equipos.edit', $equipo) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
-                                @endcan
-                                @if ($puedeSincronizar)
                                     <a href="{{ route('equipos.sincronizacion.edit', $equipo) }}" class="btn-icon" title="Sincronización automática" aria-label="Sincronización automática"><x-heroicon-o-clock /></a>
-                                @endif
+                                @endcan
                                 @if ($puedeExportar || $puedeSincronizar || $puedeVaciar || $puedeEliminar)
                                 <div class="dropdown"
                                      x-data="{
