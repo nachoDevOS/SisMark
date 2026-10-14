@@ -129,7 +129,7 @@
             font-family: inherit; font-size: .8125rem; color: var(--fg); }
         .cuenta__boton:hover { background: var(--bg); border-color: var(--border); }
         .cuenta__avatar { display: inline-flex; align-items: center; justify-content: center; overflow: hidden;
-            width: 2rem; height: 2rem; border-radius: 50%; background: var(--thead); color: #fff;
+            width: 2rem; height: 2rem; border-radius: 50%; background: var(--bg); color: #fff;
             font-size: .75rem; font-weight: 700; flex-shrink: 0; }
         .cuenta__avatar img { width: 100%; height: 100%; object-fit: cover; }
         .cuenta__nombre { font-weight: 600; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -141,6 +141,10 @@
         .cuenta__ficha { padding: .75rem .9rem; border-bottom: 1px solid var(--border); }
         .cuenta__ficha-nombre { font-weight: 700; font-size: .8125rem; }
         .cuenta__ficha-dato { font-size: .75rem; color: var(--muted); word-break: break-all; }
+        .cuenta__opcion { display: flex; align-items: center; gap: .55rem; padding: .7rem .9rem;
+            font-size: .8125rem; font-weight: 600; color: var(--fg); border-bottom: 1px solid var(--border); }
+        .cuenta__opcion:hover { background: var(--bg); }
+        .cuenta__opcion svg { width: 1.05rem; height: 1.05rem; }
         .cuenta__salir { display: flex; align-items: center; gap: .55rem; width: 100%; cursor: pointer;
             background: none; border: 0; padding: .7rem .9rem; font-family: inherit; font-size: .8125rem;
             font-weight: 600; color: var(--danger); text-align: left; }
@@ -523,6 +527,35 @@
         .datos dd { margin: .2rem 0 .9rem; font-size: .9rem; font-weight: 500; }
 
         .vacio { padding: 2.5rem; text-align: center; color: var(--muted); }
+
+        /* ===== Historial de un usuario: línea de tiempo con antes/después ===== */
+        .hist-usuario { display: flex; align-items: center; gap: .9rem; }
+        .hist-usuario__avatar { width: 3rem; height: 3rem; font-size: 1rem; }
+        .hist-usuario__estado { margin-left: auto; }
+        .hist { list-style: none; margin: 0; padding: 0 0 0 2.6rem; position: relative; }
+        .hist::before { content: ""; position: absolute; left: .95rem; top: .5rem; bottom: .5rem;
+            width: 2px; background: var(--border); }
+        .hist__evento { position: relative; margin-bottom: 1.25rem; }
+        .hist__evento:last-child { margin-bottom: 0; }
+        .hist-punto { position: absolute; left: -2.6rem; top: 0; width: 2rem; height: 2rem; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center; color: #fff;
+            background: var(--muted); box-shadow: 0 0 0 .25rem var(--card); }
+        .hist-punto svg { width: 1rem; height: 1rem; }
+        .hist-punto--creado { background: var(--verde); }
+        .hist-punto--actualizado { background: #3b82f6; }
+        .hist-punto--password { background: #8b5cf6; }
+        .hist-punto--inhabilitado { background: #f59e0b; }
+        .hist-punto--eliminado { background: var(--danger); }
+        .hist__tarjeta { border: 1px solid var(--border); border-radius: .55rem; padding: .8rem 1rem; }
+        .hist__titulo { font-weight: 700; }
+        .hist__resumen { margin-top: .5rem; font-size: .8rem; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+        .hist__tabla { margin-top: .7rem; border: 1px solid var(--border); }
+        .hist__tabla thead th { border-radius: 0 !important; }
+        .hist__tabla tbody td { border-radius: 0 !important; }
+        .hist__tabla td:first-child { width: 28%; }
+        tbody tr.hist__fila--cambio td { background: #fefce8; }
+        .hist__antes { color: #b91c1c; text-decoration: line-through; }
+        .hist__despues { color: #15803d; font-weight: 600; }
         .paginacion { margin-top: 1rem; }
 
         /* ===== Paginación: misma pinta en todas las tablas (vendor/pagination/custom) ===== */
@@ -796,16 +829,10 @@
 
             {{-- Menú de la cuenta: quién está usando el sistema y cómo salir. --}}
             @auth
-                @php
-                    $usuarioActual = auth()->user();
-                    $inicialesUsuario = collect(preg_split('/\s+/', trim((string) $usuarioActual->name), -1, PREG_SPLIT_NO_EMPTY))
-                        ->take(2)
-                        ->map(fn (string $parte): string => mb_strtoupper(mb_substr($parte, 0, 1)))
-                        ->implode('') ?: '?';
-                @endphp
+                @php($usuarioActual = auth()->user())
                 <div class="cuenta" x-data="{ abierto: false }" x-on:keydown.escape.window="abierto = false">
                     <button type="button" class="cuenta__boton" x-on:click="abierto = !abierto" :aria-expanded="abierto">
-                        <span class="cuenta__avatar">@if ($usuarioActual->avatar_path)<img src="{{ asset('storage/'.$usuarioActual->avatar_path) }}" alt="">@else{{ $inicialesUsuario }}@endif</span>
+                        <span class="cuenta__avatar"><img src="{{ $usuarioActual->avatar_url }}" alt=""></span>
                         <span class="cuenta__nombre">{{ $usuarioActual->name }}</span>
                         <span class="cuenta__chevron" :style="abierto ? 'transform: rotate(180deg)' : ''"><x-heroicon-o-chevron-down /></span>
                     </button>
@@ -818,6 +845,9 @@
                                 <div class="cuenta__ficha-dato">{{ $usuarioActual->roles->pluck('name')->implode(', ') }}</div>
                             @endif
                         </div>
+                        <a href="{{ route('password.cambiar') }}" class="cuenta__opcion">
+                            <x-heroicon-o-key />Cambiar contraseña
+                        </a>
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
                             <button type="submit" class="cuenta__salir">

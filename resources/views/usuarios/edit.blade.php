@@ -9,7 +9,7 @@
     </div>
 
     <div class="card card--padded">
-        <form action="{{ route('usuarios.update', $usuario) }}" method="POST" enctype="multipart/form-data">
+        <form action="{{ route('usuarios.update', $usuario) }}" method="POST">
             @csrf
             @method('PUT')
             @include('usuarios._form')

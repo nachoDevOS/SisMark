@@ -2,20 +2,23 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\InhabilitarUserRequest;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\UserHistorial;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /**
  * CRUD clásico (MVC) de los usuarios del sistema.
  *
- * La contraseña se hashea sola por el cast 'hashed' del modelo User; los
- * roles se asignan con spatie/permission.
+ * La contraseña se hashea sola por el cast 'hashed' del modelo User; el
+ * rol se asigna con spatie/permission (uno por usuario).
  */
 class UserController extends Controller
 {
@@ -51,20 +54,22 @@ class UserController extends Controller
     }
 
     /**
-     * Guarda un usuario nuevo y sincroniza sus roles.
+     * Guarda un usuario nuevo con su rol.
      */
     public function store(StoreUserRequest $request): RedirectResponse
     {
         $this->authorize('create', User::class);
 
-        $datos = $request->safe()->except(['roles', 'avatar']);
+        $datos = $request->safe()->except('rol');
 
-        if ($request->hasFile('avatar')) {
-            $datos['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
-        }
+        DB::transaction(function () use ($datos, $request): void {
+            // La contraseña la eligió quien lo dio de alta: la cambia al entrar.
+            $usuario = User::create($datos);
+            $usuario->forceFill(['cambiar_password' => true])->save();
+            $usuario->syncRoles(Role::findOrFail($request->integer('rol')));
 
-        $usuario = User::create($datos);
-        $usuario->syncRoles($this->rolesPorId($request->input('roles', [])));
+            UserHistorial::registrar($usuario, UserHistorial::ACCION_CREADO, null, UserHistorial::foto($usuario));
+        });
 
         return redirect()
             ->route('usuarios.index')
@@ -91,19 +96,32 @@ class UserController extends Controller
     {
         $this->authorize('update', $usuario);
 
-        $datos = $request->safe()->except(['roles', 'avatar', 'password']);
+        // La foto de «antes» se saca primero, antes de tocar ningún atributo.
+        $antes = UserHistorial::foto($usuario);
+        $datos = $request->safe()->except(['rol', 'password']);
 
-        // Solo cambia la contraseña si el formulario trajo una.
+        // Solo cambia la contraseña si el formulario trajo una. Si la puso otro
+        // (un reseteo), el dueño de la cuenta la cambia al entrar.
         if ($request->filled('password')) {
             $datos['password'] = $request->input('password');
+            $usuario->cambiar_password = $usuario->isNot($request->user());
         }
 
-        if ($request->hasFile('avatar')) {
-            $datos['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
-        }
+        DB::transaction(function () use ($usuario, $datos, $request, $antes): void {
+            $usuario->fill($datos)->save();
+            $usuario->syncRoles(Role::findOrFail($request->integer('rol')));
 
-        $usuario->update($datos);
-        $usuario->syncRoles($this->rolesPorId($request->input('roles', [])));
+            // La contraseña no se compara por su valor: se anota que cambió,
+            // sin guardar la clave.
+            $despues = UserHistorial::foto($usuario);
+
+            if ($request->filled('password')) {
+                $antes['Contraseña'] = UserHistorial::PASSWORD_ANTES;
+                $despues['Contraseña'] = UserHistorial::PASSWORD_DESPUES;
+            }
+
+            UserHistorial::registrar($usuario, UserHistorial::ACCION_ACTUALIZADO, $antes, $despues);
+        });
 
         return redirect()
             ->route('usuarios.index')
@@ -118,7 +136,15 @@ class UserController extends Controller
     {
         $this->authorize('delete', $usuario);
 
-        $usuario->delete();
+        DB::transaction(function () use ($usuario): void {
+            $antes = UserHistorial::foto($usuario);
+
+            $usuario->delete();
+
+            UserHistorial::registrar($usuario, UserHistorial::ACCION_ELIMINADO, $antes, [
+                'Motivo de la baja' => $usuario->deleteObservacion ?: 'Sin motivo',
+            ]);
+        });
 
         return redirect()
             ->route('usuarios.index')
@@ -126,14 +152,75 @@ class UserController extends Controller
     }
 
     /**
-     * Traduce los IDs de rol recibidos del formulario a nombres de rol,
-     * que es lo que espera spatie/permission.
-     *
-     * @param  array<int|string>  $ids
-     * @return array<string>
+     * Le quita el acceso al sistema sin borrarlo: sigue en el listado como
+     * «Inactivo» y se revierte con habilitar. El motivo queda en el historial.
+     * Nadie se inhabilita a sí mismo, para no quedar afuera por un clic.
      */
-    private function rolesPorId(array $ids): array
+    public function inhabilitar(InhabilitarUserRequest $request, User $usuario): RedirectResponse
     {
-        return Role::whereIn('id', $ids)->pluck('name')->all();
+        $this->authorize('update', $usuario);
+
+        if ($usuario->is($request->user())) {
+            return back()->with('error', 'No podés inhabilitar tu propio usuario.');
+        }
+
+        $this->cambiarEstado($usuario, false, $request->validated('motivo'));
+
+        return back()->with('estado', "Usuario «{$usuario->name}» inhabilitado: ya no puede entrar al sistema.");
+    }
+
+    /**
+     * Le devuelve el acceso a un usuario inhabilitado.
+     */
+    public function habilitar(User $usuario): RedirectResponse
+    {
+        $this->authorize('update', $usuario);
+
+        $this->cambiarEstado($usuario, true);
+
+        return back()->with('estado', "Usuario «{$usuario->name}» habilitado.");
+    }
+
+    /**
+     * Guarda el estado y su evento en el historial. Si ya estaba así, no hace
+     * nada (un doble clic no deja dos eventos).
+     */
+    private function cambiarEstado(User $usuario, bool $activo, ?string $motivo = null): void
+    {
+        if ($usuario->activo === $activo) {
+            return;
+        }
+
+        DB::transaction(function () use ($usuario, $activo, $motivo): void {
+            $antes = UserHistorial::foto($usuario);
+
+            $usuario->forceFill(['activo' => $activo])->save();
+
+            $despues = UserHistorial::foto($usuario);
+
+            if ($motivo !== null) {
+                $despues['Motivo'] = $motivo;
+            }
+
+            UserHistorial::registrar(
+                $usuario,
+                $activo ? UserHistorial::ACCION_HABILITADO : UserHistorial::ACCION_INHABILITADO,
+                $antes,
+                $despues,
+            );
+        });
+    }
+
+    /**
+     * Línea de tiempo de los cambios del usuario. Abre también la de un
+     * usuario dado de baja: es justo cuando más se la necesita.
+     */
+    public function historial(User $usuario): View
+    {
+        $this->authorize('viewAny', User::class);
+
+        $historial = $usuario->historial()->with('autor')->paginate(8)->withQueryString();
+
+        return view('usuarios.historial', compact('usuario', 'historial'));
     }
 }

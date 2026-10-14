@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\ExpulsarUsuarioInhabilitado;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -29,6 +30,16 @@ class LoginController extends Controller
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             return back()
                 ->withErrors(['email' => 'Las credenciales no coinciden con ningún registro.'])
+                ->onlyInput('email');
+        }
+
+        // La contraseña era correcta, pero la cuenta está inhabilitada: se
+        // cierra la sesión recién abierta y se dice por qué no entra.
+        if (! Auth::user()->activo) {
+            Auth::logout();
+
+            return back()
+                ->withErrors(['email' => ExpulsarUsuarioInhabilitado::AVISO])
                 ->onlyInput('email');
         }
 

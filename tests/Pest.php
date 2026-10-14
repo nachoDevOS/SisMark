@@ -99,3 +99,11 @@ function turnoLunesAViernes(string $entrada = '08:00', string $salida = '16:00',
 
     return $turno->load('horarios');
 }
+
+/**
+ * Un rol por nombre, creado si no existe.
+ */
+function rol(string $nombre = 'operador'): Role
+{
+    return Role::firstOrCreate(['name' => $nombre, 'guard_name' => 'web']);
+}

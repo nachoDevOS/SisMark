@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AsignacionHorarioController;
 use App\Http\Controllers\AsignacionTurnoController;
+use App\Http\Controllers\Auth\CambioPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
@@ -16,6 +17,8 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SistemaExternoController;
 use App\Http\Controllers\TurnoController;
 use App\Http\Controllers\UserController;
+use App\Http\Middleware\ExigirCambioPassword;
+use App\Http\Middleware\ExpulsarUsuarioInhabilitado;
 use App\Models\Configuracion;
 use Illuminate\Support\Facades\Route;
 
@@ -25,9 +28,14 @@ Route::middleware('guest')->group(function (): void {
     Route::post('login', [LoginController::class, 'store']);
 });
 
-// CRUD clásico (MVC) protegido con la sesión del sitio.
-Route::middleware('auth')->group(function (): void {
+// CRUD clásico (MVC) protegido con la sesión del sitio. Un usuario
+// inhabilitado queda afuera, y quien tiene una contraseña puesta por otro
+// queda atado a la pantalla de cambio.
+Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassword::class])->group(function (): void {
     Route::post('logout', [LoginController::class, 'destroy'])->name('logout');
+
+    Route::get('cambiar-password', [CambioPasswordController::class, 'edit'])->name('password.cambiar');
+    Route::put('cambiar-password', [CambioPasswordController::class, 'update'])->name('password.cambiar.update');
 
     // Escritorio: avisos, los números del día y accesos rápidos.
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
@@ -50,6 +58,11 @@ Route::middleware('auth')->group(function (): void {
     Route::post('equipos/{equipo}/marcaciones/sincronizar', [EquipoController::class, 'sincronizarMarcaciones'])->name('equipos.marcaciones.sincronizar');
     // Vacía el buffer de marcaciones del reloj (irreversible, todo o nada).
     Route::post('equipos/{equipo}/marcaciones/limpiar', [EquipoController::class, 'limpiarMarcaciones'])->name('equipos.marcaciones.limpiar');
+    Route::post('usuarios/{usuario}/inhabilitar', [UserController::class, 'inhabilitar'])->name('usuarios.inhabilitar');
+    Route::post('usuarios/{usuario}/habilitar', [UserController::class, 'habilitar'])->name('usuarios.habilitar');
+    Route::get('usuarios/{usuario}/historial', [UserController::class, 'historial'])
+        ->name('usuarios.historial')
+        ->withTrashed();
     Route::resource('usuarios', UserController::class)
         ->parameters(['usuarios' => 'usuario'])
         ->except('show');

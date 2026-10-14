@@ -9,7 +9,7 @@
     </div>
 
     <div class="card card--padded">
-        <form action="{{ route('usuarios.store') }}" method="POST" enctype="multipart/form-data">
+        <form action="{{ route('usuarios.store') }}" method="POST">
             @csrf
             @include('usuarios._form')
 

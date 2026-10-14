@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * Reglas de validación para crear un usuario del sistema: contraseña
- * obligatoria al crear, correo único y roles opcionales.
+ * obligatoria al crear, correo único y un rol.
  */
 class StoreUserRequest extends FormRequest
 {
@@ -24,9 +24,7 @@ class StoreUserRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'max:255'],
-            'roles' => ['nullable', 'array'],
-            'roles.*' => ['integer', 'exists:roles,id'],
-            'avatar' => ['nullable', 'image', 'max:2048'],
+            'rol' => ['required', 'integer', 'exists:roles,id'],
         ];
     }
 }
