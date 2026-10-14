@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Traits\ManejaHorasDelDia;
 use App\Traits\RegistersUserEvents;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -12,11 +14,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * local (MySQL), migrado desde «Calendario» del SIA.
  *
  * Conexión por defecto, con id propio, timestamps y eliminación lógica. Una
- * fila por fecha.
+ * fila por fecha, y `fecha` guarda solo el día.
  */
 class DiaExcepcional extends Model
 {
-    use HasFactory, RegistersUserEvents, SoftDeletes;
+    use HasFactory, ManejaHorasDelDia, RegistersUserEvents, SoftDeletes;
 
     protected $table = 'dias_excepcionales';
 
@@ -36,12 +38,10 @@ class DiaExcepcional extends Model
     ];
 
     /**
-     * @return array<string, string>
+     * Día excepcional: columna `date`, sin hora ({@see ManejaHorasDelDia}).
      */
-    protected function casts(): array
+    protected function fecha(): Attribute
     {
-        return [
-            'fecha' => 'datetime',
-        ];
+        return self::soloFecha();
     }
 }

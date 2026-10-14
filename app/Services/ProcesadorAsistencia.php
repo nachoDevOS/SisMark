@@ -881,8 +881,7 @@ class ProcesadorAsistencia
     {
         return DiaExcepcional::query()
             ->whereNotNull('motivoInasistencia')
-            ->whereDate('fecha', '>=', $desde)
-            ->whereDate('fecha', '<=', $hasta)
+            ->whereBetween('fecha', [$desde->toDateString(), $hasta->toDateString()])
             ->get()
             ->keyBy(fn (DiaExcepcional $dia): string => $dia->fecha->toDateString());
     }

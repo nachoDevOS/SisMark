@@ -34,14 +34,14 @@ class StoreDiaExcepcionalRequest extends FormRequest
     }
 
     /**
-     * La fecha se guarda al inicio del día para que el índice único trabaje por
-     * día (no por instante) y coincida entre validación y almacenamiento.
+     * La fecha se normaliza a `Y-m-d` (la columna es date) para que la unicidad
+     * compare por día y coincida entre validación y almacenamiento.
      */
     protected function prepareForValidation(): void
     {
         if ($this->filled('fecha')) {
             $this->merge([
-                'fecha' => Carbon::parse($this->input('fecha'))->startOfDay()->format('Y-m-d H:i:s'),
+                'fecha' => Carbon::parse($this->input('fecha'))->toDateString(),
             ]);
         }
     }

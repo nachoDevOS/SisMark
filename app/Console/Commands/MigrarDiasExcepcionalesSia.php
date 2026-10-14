@@ -6,6 +6,7 @@ use App\Models\DiaExcepcional;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -73,8 +74,8 @@ class MigrarDiasExcepcionalesSia extends Command
     }
 
     /**
-     * Traduce una fila del SIA a la fila local (renombra columnas y recorta el
-     * padding de los char()).
+     * Traduce una fila del SIA a la fila local (renombra columnas, recorta el
+     * padding de los char() y deja la fecha sin hora: en el SIA es datetime).
      *
      * @param  array<string, mixed>  $fila
      * @return array<string, mixed>
@@ -87,6 +88,8 @@ class MigrarDiasExcepcionalesSia extends Command
             $valor = $fila[$origen] ?? null;
             $local[$destino] = is_string($valor) ? trim($valor) : $valor;
         }
+
+        $local['fecha'] = Carbon::parse($local['fecha'])->toDateString();
 
         return $local;
     }

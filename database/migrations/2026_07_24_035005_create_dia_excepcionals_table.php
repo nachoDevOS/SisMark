@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('dias_excepcionales', function (Blueprint $table): void {
             $table->id();
-            $table->dateTime('fecha');
+            $table->date('fecha');
             $table->string('motivoInasistencia', 255)->nullable();
             $table->string('adjunto', 255)->nullable();
             $table->string('adjuntoNombre', 255)->nullable();
