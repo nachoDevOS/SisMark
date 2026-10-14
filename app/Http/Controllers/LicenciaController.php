@@ -704,7 +704,7 @@ class LicenciaController extends Controller
 
         // Qué no se da de baja y por qué lo decide el modelo, así el botón y el
         // servidor usan el mismo criterio. No va en la policy: el `Gate::before`
-        // de `AppServiceProvider` le concede todo al rol super_admin sin llegar
+        // de `AppServiceProvider` le concede todo al rol Administrador sin llegar
         // a ejecutarla.
         if ($motivo = $licencia->motivoParaNoEliminar()) {
             return back()->with('error', $motivo);

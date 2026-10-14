@@ -18,8 +18,8 @@ class RevisarLicenciaRequest extends FormRequest
      * Además del permiso, se exige que la licencia siga «Pendiente».
      *
      * Esa condición no puede vivir en la policy: el `Gate::before` de
-     * `AppServiceProvider` le concede todo al rol super_admin sin llegar a
-     * ejecutarla, y super_admin es justamente quien resuelve las solicitudes.
+     * `AppServiceProvider` le concede todo al rol Administrador sin llegar a
+     * ejecutarla, y el Administrador es justamente quien resuelve las solicitudes.
      *
      * Lo ya resuelto no se revierte desde la ficha: una licencia aprobada
      * descuenta la ausencia en el cálculo de asistencia, y darla vuelta después

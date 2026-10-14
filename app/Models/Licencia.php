@@ -720,7 +720,7 @@ class Licencia extends Model
      * Por qué esta licencia no se elimina, o `null` si sí se puede.
      *
      * Vive en el modelo y no en la policy porque el `Gate::before` de
-     * `AppServiceProvider` le concede todo al rol super_admin sin llegar a
+     * `AppServiceProvider` le concede todo al rol Administrador sin llegar a
      * ejecutarla: una regla de estado escrita ahí se saltearía justamente para
      * quien más usa la pantalla. Así el controlador y las vistas comparten el
      * mismo criterio y el mismo texto.

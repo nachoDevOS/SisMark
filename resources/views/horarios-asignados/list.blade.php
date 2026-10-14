@@ -78,7 +78,7 @@
                             {{-- Lo de un turno se concluye o se elimina desde «Turnos
                                  asignados», nunca día por día: quedaría desparejo con su
                                  turno. Va con @if y no solo con la policy porque el
-                                 super_admin pasa por encima de todas las policies. --}}
+                                 Administrador pasa por encima de todas las policies. --}}
                             @if ($asignacion->es_de_turno)
                                 @can('viewAny', \App\Models\AsignacionTurno::class)
                                     <a href="{{ route('turnos-asignados.index', ['buscar' => trim((string) $asignacion->ci)]) }}"

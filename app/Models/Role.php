@@ -19,4 +19,16 @@ use Spatie\Permission\Models\Role as SpatieRole;
 class Role extends SpatieRole
 {
     use RegistersUserEvents, SoftDeletes;
+
+    /**
+     * El rol que puede todo, sin permisos individuales (`Gate::before` en
+     * AppServiceProvider). No se puede eliminar. Hasta el 2026-10-14 se llamó
+     * `super_admin`: RolesAndPermissionsSeeder renombra la fila vieja.
+     *
+     * Para cambiarle el nombre no alcanza con esta constante: la base guarda el
+     * nombre viejo. Hay que poner el nombre viejo en
+     * `RolesAndPermissionsSeeder::NOMBRE_ANTERIOR`, o el seeder del arranque
+     * crearía un rol nuevo vacío y el actual perdería el acceso total.
+     */
+    public const ADMINISTRADOR = 'Administrador del sistema';
 }

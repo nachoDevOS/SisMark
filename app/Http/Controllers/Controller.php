@@ -16,7 +16,7 @@ abstract class Controller
      * `$this->authorize()` necesita un modelo o una clase con policy; acá lo
      * que se autoriza es la pantalla en sí. El `can()` es el de
      * spatie/laravel-permission, así que respeta el `Gate::before` que le da
-     * todo a super_admin (ver AppServiceProvider).
+     * todo al Administrador (ver AppServiceProvider).
      */
     protected function autorizarPermiso(string $permiso): void
     {

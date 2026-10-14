@@ -18,7 +18,7 @@ use Illuminate\Foundation\Auth\User as AuthUser;
  *
  * Ya no hay alta: se asigna un turno. Y las filas que son detalle de un turno
  * no se concluyen ni se eliminan sueltas —quedarían desparejas con su
- * cabecera—: eso se hace desde el turno asignado. Como el super_admin pasa por
+ * cabecera—: eso se hace desde el turno asignado. Como el Administrador pasa por
  * encima de las policies (`Gate::before`), el controlador y las vistas lo
  * vuelven a comprobar.
  */

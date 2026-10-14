@@ -93,7 +93,7 @@ chmod -R 775 storage bootstrap/cache
 #
 # Así un redeploy nunca toca la base por su cuenta.
 
-# --- 4. Permisos y rol super_admin -------------------------------------------
+# --- 4. Permisos y rol Administrador ----------------------------------------
 # Corre en cada arranque: los permisos se declaran en RolePolicy::MODULOS, y un
 # permiso nuevo que llega con el despliegue tiene que existir en la tabla
 # `permissions` antes de marcarlo en /roles —si no, guardar el rol falla con

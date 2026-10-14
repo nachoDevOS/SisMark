@@ -89,15 +89,15 @@ class RoleController extends Controller
     }
 
     /**
-     * Elimina un rol. Nunca se puede borrar super_admin: perdería el acceso
+     * Elimina un rol. Nunca se puede borrar el Administrador: perdería el acceso
      * al sistema quien lo intente.
      */
     public function destroy(Role $role): RedirectResponse
     {
         $this->authorize('delete', $role);
 
-        if ($role->name === 'super_admin') {
-            return back()->with('error', 'El rol super_admin no se puede eliminar.');
+        if ($role->name === Role::ADMINISTRADOR) {
+            return back()->with('error', 'El rol Administrador no se puede eliminar.');
         }
 
         $role->delete();

@@ -281,7 +281,7 @@ docker run -d --name sismark-devices --restart unless-stopped \
 1. Verifica que `APP_KEY`, `DB_HOST` y `DB_DATABASE` estén cargadas; si falta
    alguna, se detiene diciendo cuál.
 2. Espera a que MySQL acepte conexiones (hasta 2 minutos).
-3. Siembra los permisos que falten y el rol `super_admin` (se saltea con `SISMARK_SEED=false`).
+3. Siembra los permisos que falten y el rol `Administrador del sistema` (se saltea con `SISMARK_SEED=false`).
 4. Cachea configuración, rutas y vistas.
 5. Le cede el control a NGINX Unit.
 
@@ -296,7 +296,7 @@ En Coolify, la ruta de salud es `/up` y el puerto a exponer es el 8000.
 
 ### Primer usuario
 
-El primer arranque deja creados los permisos y el rol `super_admin`. El usuario
+El primer arranque deja creados los permisos y el rol `Administrador del sistema`. El usuario
 se crea a mano:
 
 ```bash
@@ -309,7 +309,7 @@ $u = App\Models\User::create([
     'email' => 'admin@beni.gob.bo',
     'password' => bcrypt('una_contraseña_larga'),
 ]);
-$u->assignRole('super_admin');
+$u->assignRole('Administrador del sistema');
 ```
 
 ### Checklist de seguridad

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -42,7 +43,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Admin', 'password' => Hash::make($clave)],
         );
 
-        $usuario->assignRole('super_admin');
+        $usuario->assignRole(Role::ADMINISTRADOR);
 
         // Con clave fija se reescribe en cada corrida: `firstOrCreate` no toca
         // al usuario que ya existe, y sin esto la segunda corrida dejaba

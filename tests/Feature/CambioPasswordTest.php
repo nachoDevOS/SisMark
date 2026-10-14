@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
@@ -24,7 +25,7 @@ test('resetear la contraseña de otro lo obliga a cambiarla; la propia no', func
         ->put(route('usuarios.update', $otro), ['name' => $otro->name, 'email' => $otro->email, 'rol' => rol()->id, 'password' => 'reseteada1'])
         ->assertRedirect(route('usuarios.index'));
 
-    $this->put(route('usuarios.update', $admin), ['name' => $admin->name, 'email' => $admin->email, 'rol' => rol('super_admin')->id, 'password' => 'mipropia123'])
+    $this->put(route('usuarios.update', $admin), ['name' => $admin->name, 'email' => $admin->email, 'rol' => rol(Role::ADMINISTRADOR)->id, 'password' => 'mipropia123'])
         ->assertRedirect(route('usuarios.index'));
 
     expect($otro->fresh()->cambiar_password)->toBeTrue()

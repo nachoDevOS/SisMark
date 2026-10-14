@@ -132,8 +132,8 @@ class AsignacionHorarioController extends Controller
      * desde «Turnos asignados», con el turno entero.
      *
      * Va acá además de en la policy porque el `Gate::before` de
-     * AppServiceProvider le da todo al super_admin sin consultar las policies:
-     * sin esto, el super_admin podía dejar un turno desparejo con su detalle.
+     * AppServiceProvider le da todo al Administrador sin consultar las policies:
+     * sin esto, el Administrador podía dejar un turno desparejo con su detalle.
      */
     private function rechazarSiEsDeTurno(AsignacionHorario $asignacion): void
     {

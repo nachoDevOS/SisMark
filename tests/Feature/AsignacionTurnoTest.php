@@ -127,7 +127,7 @@ test('eliminar da de baja el turno y sus días, con el motivo', function (): voi
         ->and(AsignacionHorario::onlyTrashed()->where('asignacion_turno_id', $asignacion->id)->count())->toBe(5);
 });
 
-test('los días de un turno no se concluyen ni eliminan sueltos, ni siendo super_admin', function (): void {
+test('los días de un turno no se concluyen ni eliminan sueltos, ni siendo Administrador', function (): void {
     $asignacion = app(AsignadorTurnos::class)->asignar('111', $this->turno, Carbon::parse('2026-10-20'), Carbon::parse('2026-12-31'));
     $dia = $asignacion->horariosAsignados()->first();
 

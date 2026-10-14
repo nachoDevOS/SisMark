@@ -120,7 +120,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | Credenciales con las que `DatabaseSeeder` crea (y vuelve a dejar en pie)
-    | el usuario `super_admin`. La clave se lee del entorno para poder fijarla
+    | el usuario con el rol `Administrador del sistema`. La clave se lee del entorno para poder fijarla
     | en desarrollo y entrar sin depender de lo que se imprimió una vez en la
     | consola.
     |

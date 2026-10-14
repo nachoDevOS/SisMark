@@ -576,7 +576,7 @@ Convención del nombre: **`Habilidad:Modulo`** (`ViewAny:Persona`,
 ```
 Usuario inicia sesión
   → Gate::before en AppServiceProvider
-      ├─ super_admin → acceso total, sin mirar permisos individuales
+      ├─ Administrador → acceso total, sin mirar permisos individuales
       └─ cualquier otro → el controlador llama $this->authorize(...)
             → Laravel resuelve la Policy por convención (Modelo → ModeloPolicy)
             → la Policy pregunta $user->can('Habilidad:Modulo')
@@ -589,7 +589,7 @@ declara **solo las habilidades que le aplican**, para que la matriz no ofrezca
 casillas que no significan nada.
 
 > ⚠️ **Las reglas de negocio no van en la Policy.** El `Gate::before` de
-> super_admin devuelve `true` sin llegar a ejecutarla, así que una condición
+> Administrador devuelve `true` sin llegar a ejecutarla, así que una condición
 > escrita ahí —«solo lo Pendiente»— se saltearía justamente para el usuario que
 > más usa la pantalla. Esas condiciones van en el **FormRequest**, que corre
 > siempre. Ver `RevisarLicenciaRequest`.

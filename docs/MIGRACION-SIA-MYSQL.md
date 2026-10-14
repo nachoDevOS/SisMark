@@ -115,7 +115,7 @@ php artisan db:seed --class=DatabaseSeeder
 
 Sin este paso la base queda con todos los datos del SIA y **sin nadie que pueda
 entrar a verlos**. Crea el usuario de `auth.seed_admin.email` (`admin@admin.com`
-por defecto) y le asigna `super_admin`.
+por defecto) y le asigna `Administrador del sistema`.
 
 La clave sale de `SEED_ADMIN_PASSWORD` del `.env`. Si esa variable no está:
 fuera de producción queda `password`; **en producción se genera una aleatoria y

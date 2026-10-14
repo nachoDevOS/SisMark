@@ -35,7 +35,7 @@
                                 @can('update', $rol)
                                     <a href="{{ route('roles.edit', $rol) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
                                 @endcan
-                                @if ($rol->name !== 'super_admin' && auth()->user()->can('delete', $rol))
+                                @if ($rol->name !== \App\Models\Role::ADMINISTRADOR && auth()->user()->can('delete', $rol))
                                     <x-boton-eliminar :accion="route('roles.destroy', $rol)"
                                                       :mensaje="'Se elimina el rol «'.$rol->name.'». Los usuarios que lo tengan pierden sus permisos.'" />
                                 @endif

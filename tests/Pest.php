@@ -39,11 +39,11 @@ pest()->extend(TestCase::class)
 */
 
 /**
- * Un usuario super_admin: pasa todas las policies (`Gate::before`).
+ * Un usuario Administrador: pasa todas las policies (`Gate::before`).
  */
 function superAdmin(): User
 {
-    $rol = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $rol = Role::firstOrCreate(['name' => App\Models\Role::ADMINISTRADOR, 'guard_name' => 'web']);
     $usuario = User::factory()->create();
     $usuario->assignRole($rol);
 

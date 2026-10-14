@@ -44,7 +44,7 @@ class LicenciaPolicy
      * **Acá va solo el permiso, no el estado de la licencia.**
      *
      * `AppServiceProvider` registra un `Gate::before` que le concede todo al rol
-     * super_admin, y ese atajo devuelve `true` sin llegar a ejecutar este
+     * Administrador, y ese atajo devuelve `true` sin llegar a ejecutar este
      * método. Cualquier regla de negocio escrita acá —«solo lo Pendiente»— se
      * saltearía justamente para el usuario que más usa la pantalla.
      *

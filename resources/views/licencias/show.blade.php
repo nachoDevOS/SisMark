@@ -245,7 +245,7 @@
 
     {{-- El panel solo aparece sobre lo que sigue «Pendiente», la misma condición
          que exige `RevisarLicenciaRequest`. Va en un `@if` aparte del `@can` y no
-         dentro de la policy porque el `Gate::before` de super_admin se saltea la
+         dentro de la policy porque el `Gate::before` del Administrador se saltea la
          policy entera. --}}
     @if ($licencia->esPendiente)
         @can('approve', $licencia)

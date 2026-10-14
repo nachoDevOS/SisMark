@@ -43,8 +43,8 @@ class AppServiceProvider extends ServiceProvider
         // autodescubrimiento.
         Gate::policy(Role::class, RolePolicy::class);
 
-        // super_admin puede todo, sin permisos individuales asignados.
-        Gate::before(fn ($user): ?bool => $user->hasRole('super_admin') ? true : null);
+        // El Administrador puede todo, sin permisos individuales asignados.
+        Gate::before(fn ($user): ?bool => $user->hasRole(Role::ADMINISTRADOR) ? true : null);
 
         // Cuántas solicitudes de licencia esperan decisión, para el aviso de la
         // barra superior. Va por composer y no dentro del Blade para que la

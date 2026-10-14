@@ -25,11 +25,11 @@ test('todo permiso que exige el código está en la matriz de roles, y no sobra 
         ->and($definidos->diff($exigidos)->values()->all())->toBe([]);
 });
 
-test('el seeder crea todos los permisos y se los da al super_admin', function (): void {
+test('el seeder crea todos los permisos y se los da al Administrador', function (): void {
     $this->seed(RolesAndPermissionsSeeder::class);
 
     expect(Permission::query()->count())->toBe(count(RolePolicy::nombresDePermiso()))
-        ->and(Role::findByName('super_admin')->permissions)->toHaveCount(count(RolePolicy::nombresDePermiso()))
+        ->and(Role::findByName(App\Models\Role::ADMINISTRADOR)->permissions)->toHaveCount(count(RolePolicy::nombresDePermiso()))
         ->and(Permission::query()->where('name', 'Create:AsignacionHorario')->exists())->toBeFalse();
 });
 

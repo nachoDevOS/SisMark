@@ -13,7 +13,7 @@ use Illuminate\Database\Seeder;
  * Hace tres cosas, en este orden:
  *
  * 1. `migrate:fresh`: recrea el esquema desde cero.
- * 2. {@see DatabaseSeeder}: permisos, rol `super_admin` y usuario
+ * 2. {@see DatabaseSeeder}: permisos, rol `Administrador del sistema` y usuario
  *    administrador, con la clave que diga `SEED_ADMIN_PASSWORD` (o
  *    «password» fuera de producción). Sin este paso la base queda con todos
  *    los datos del SIA y sin nadie que pueda entrar a verlos.
@@ -54,7 +54,7 @@ class MigrarSiaSeeder extends Seeder
             $this->command->call('migrate:fresh', ['--force' => true]);
         }
 
-        // Permisos, rol super_admin y usuario administrador. Va explícito y no
+        // Permisos, rol Administrador y usuario administrador. Va explícito y no
         // como `--seed` del migrate:fresh: así corre en todos los entornos —el
         // de pruebas incluido, donde no hay migrate:fresh que lo arrastre— y
         // queda a la vista que esta migración también deja el sistema con
