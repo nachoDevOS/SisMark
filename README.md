@@ -281,12 +281,14 @@ docker run -d --name sismark-devices --restart unless-stopped \
 1. Verifica que `APP_KEY`, `DB_HOST` y `DB_DATABASE` estén cargadas; si falta
    alguna, se detiene diciendo cuál.
 2. Espera a que MySQL acepte conexiones (hasta 2 minutos).
-3. Corre `migrate --force`.
-4. Siembra los permisos que falten y el rol `super_admin` (se saltea con `SISMARK_SEED=false`).
-5. Cachea configuración, rutas y vistas.
-6. Le cede el control a NGINX Unit.
+3. Siembra los permisos que falten y el rol `super_admin` (se saltea con `SISMARK_SEED=false`).
+4. Cachea configuración, rutas y vistas.
+5. Le cede el control a NGINX Unit.
 
-> El paso 5 no es opcional: **Unit no le pasa el entorno del contenedor a los
+**No corre migraciones.** El sistema está en producción: un cambio de esquema
+se aplica a mano, cuando se decide (ver «Actualizar»).
+
+> El paso 4 no es opcional: **Unit no le pasa el entorno del contenedor a los
 > procesos de PHP**, así que la aplicación funciona con lo que quedó en
 > `bootstrap/cache/config.php`. Por eso el arranque siempre lo regenera.
 
@@ -328,8 +330,13 @@ docker rm -f sismark-app
 docker run -d --name sismark-app ...   # los mismos parámetros de antes
 ```
 
-Las migraciones las corre el propio arranque. En Coolify alcanza con volver a
-desplegar el recurso.
+El arranque **no** migra. Si el despliegue trae migraciones nuevas, se aplican a
+mano desde la terminal del contenedor (en Coolify: el recurso → «Terminal»):
+
+```bash
+php artisan migrate --status   # qué migraciones faltan
+php artisan migrate --force    # aplicarlas (nunca migrate:fresh)
+```
 
 ### Nota sobre las colas
 

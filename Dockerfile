@@ -217,15 +217,10 @@ EXPOSE 8000
 
 # `/up` es la ruta de salud que registra bootstrap/app.php.
 #
-# El período de gracia es largo a propósito: el arranque corre las migraciones
-# ANTES de levantar el servidor, y una migración pesada sobre la tabla de
-# marcaciones —4,4 millones de filas— puede tardar minutos. Con los 40 s por
-# defecto, el orquestador daba el despliegue por fallido y lo revertía en mitad
-# de la migración (medido en Coolify: el índice de `asistencias` tardó 1 m 23 s).
-#
-# Para una migración que vaya a tardar más que esto, el camino es desplegar con
-# SISMARK_SKIP_MIGRATIONS=true y correrla aparte.
-HEALTHCHECK --interval=15s --timeout=5s --start-period=600s --retries=3 \
+# El arranque NO corre migraciones (se aplican a mano, ver docker/entrypoint.sh).
+# Antes de levantar el servidor espera a MySQL (hasta 90 s) y al microservicio
+# (hasta 30 s) y arma las cachés: el período de gracia cubre ese peor caso.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=180s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/up || exit 1
 
 # El entrypoint propio prepara la base y las cachés, y después le cede el

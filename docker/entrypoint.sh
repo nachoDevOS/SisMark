@@ -84,15 +84,16 @@ echo "[sismark] MySQL responde."
 chown -R unit:unit storage bootstrap/cache
 chmod -R 775 storage bootstrap/cache
 
-# --- 4. Migraciones ----------------------------------------------------------
-if [ "${SISMARK_SKIP_MIGRATIONS}" = "true" ]; then
-    echo "[sismark] Migraciones salteadas (SISMARK_SKIP_MIGRATIONS=true)."
-else
-    echo "[sismark] Corriendo migraciones…"
-    php artisan migrate --force
-fi
+# --- Migraciones: NO se corren en el arranque --------------------------------
+# El sistema está en producción y un cambio de esquema se aplica a mano, cuando
+# se decide, desde la terminal del contenedor:
+#
+#   php artisan migrate --status   (qué falta)
+#   php artisan migrate --force
+#
+# Así un redeploy nunca toca la base por su cuenta.
 
-# --- 5. Permisos y rol super_admin -------------------------------------------
+# --- 4. Permisos y rol super_admin -------------------------------------------
 # Corre en cada arranque: los permisos se declaran en RolePolicy::MODULOS, y un
 # permiso nuevo que llega con el despliegue tiene que existir en la tabla
 # `permissions` antes de marcarlo en /roles —si no, guardar el rol falla con
@@ -105,7 +106,7 @@ if [ "${SISMARK_SEED:-true}" = "true" ]; then
     php artisan db:seed --class=RolesAndPermissionsSeeder --force
 fi
 
-# --- 6. Cachés de producción -------------------------------------------------
+# --- 5. Cachés de producción -------------------------------------------------
 # Primero se borra lo que pueda haber quedado del despliegue anterior:
 #
 #   view:clear              `storage` suele venir de un volumen, así que las
@@ -128,7 +129,7 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
-# --- 7. Microservicio de biométricos ----------------------------------------
+# --- 6. Microservicio de biométricos ----------------------------------------
 # El microservicio Python corre DENTRO de este contenedor y se levanta acá. La
 # imagen lo trae encendido (ENV SISMARK_DEVICE_SERVICE=true en el Dockerfile):
 # no hay que configurar nada para que las acciones de equipos funcionen.
@@ -197,7 +198,7 @@ if [ "${devices}" = "true" ]; then
     fi
 fi
 
-# --- 8. Planificador de tareas ----------------------------------------------
+# --- 7. Planificador de tareas ----------------------------------------------
 # `schedule:work` es el cron del sistema dentro del contenedor: despierta cada
 # minuto y corre lo que declara routes/console.php. Hoy eso es
 # `sismark:sincronizar-equipos`, que baja las marcaciones de cada reloj en los
