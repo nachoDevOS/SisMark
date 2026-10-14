@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="icon" type="image/png" href="{{ asset('image/huella.png') }}">
-    <title>@yield('titulo', 'Biométricos') · {{ config('app.name') }}</title>
+    <title>{{ app()->environment('local') ? '[LOCAL] ' : '' }}@yield('titulo', 'Biométricos') · {{ config('app.name') }}</title>
     {{-- Alpine.js autohospedado (sin CDN externo, sin build): para el dropdown
          "Mas" de las acciones de fila y el toggle del sidebar en móvil. --}}
     <script defer src="{{ asset('vendor/alpine/alpine.min.js') }}"></script>
@@ -585,6 +585,7 @@
             .zona { margin-left: 0; }
         }
     </style>
+    <x-entorno-local />
 </head>
 {{--
     El botón de la topbar hace dos cosas según el ancho: en móvil abre el menú

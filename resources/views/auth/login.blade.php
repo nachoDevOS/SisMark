@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Acceso · {{ config('app.name') }}</title>
+    <title>{{ app()->environment('local') ? '[LOCAL] ' : '' }}Acceso · {{ config('app.name') }}</title>
     <meta name="description" content="Sistema de sincronización de biométricos del Gobierno Autónomo Departamental del Beni.">
     <link rel="icon" type="image/png" href="{{ asset('image/huella.png') }}">
     <style>
