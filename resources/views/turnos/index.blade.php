@@ -30,6 +30,8 @@
                 <option value="1" @selected($sugerido === '1')>Solo los sugeridos</option>
                 <option value="0" @selected($sugerido === '0')>Solo los no sugeridos</option>
             </select>
+            {{-- El filtro de sugerido recién se aplica con este botón. --}}
+            <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
         </div>
 
         <div class="buscador">
@@ -50,10 +52,12 @@
             const inputBuscar = document.getElementById('f-buscar');
             const selPaginate = document.getElementById('f-paginate');
             const selSugerido = document.getElementById('f-sugerido');
+            // El que se ve en la tabla: el combo solo cuenta al apretar Buscar.
+            let sugeridoAplicado = selSugerido.value;
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
-                    sugerido: selSugerido.value,
+                    sugerido: sugeridoAplicado,
                     q: inputBuscar.value,
                     por_pagina: selPaginate.value,
                     page: page,
@@ -78,7 +82,10 @@
             });
 
             selPaginate.addEventListener('change', () => cargar(1));
-            selSugerido.addEventListener('change', () => cargar(1));
+            document.getElementById('btn-buscar').addEventListener('click', () => {
+                sugeridoAplicado = selSugerido.value;
+                cargar(1);
+            });
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }
             });

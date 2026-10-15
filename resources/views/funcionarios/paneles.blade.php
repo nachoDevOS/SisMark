@@ -65,7 +65,7 @@
                 <select id="m-tipo" aria-label="Tipo de marcación">
                     <option value="">Todos</option>
                     <option value="{{ \App\Models\Asistencia::TIPO_RELOJ }}" @selected($tipo === \App\Models\Asistencia::TIPO_RELOJ)>R</option>
-                    <option value="{{ \App\Models\Asistencia::TIPO_A }}" @selected($tipo === \App\Models\Asistencia::TIPO_A)>A</option>
+                    <option value="{{ \App\Models\Asistencia::TIPO_USB }}" @selected($tipo === \App\Models\Asistencia::TIPO_USB)>A</option>
                     <option value="{{ \App\Models\Asistencia::TIPO_MANUAL }}" @selected($tipo === \App\Models\Asistencia::TIPO_MANUAL)>M</option>
                 </select>
                 {{-- Alta manual para este funcionario. Solo si está en la base

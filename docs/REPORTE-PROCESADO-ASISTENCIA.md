@@ -55,7 +55,7 @@ Puede devolver **más de un horario** para el mismo día (horario partido, ver �
 
 Tipos: `R` = 2.504.863 · `A` = 1.807.305 · `M` = 89.355.
 `A` y `R` conviven en todos los años → **no es histórico, son dos fuentes
-distintas**. Falta identificar qué es `A`.
+distintas**. `A` es la **importación USB**.
 
 ### 1.4 `dias_excepcionales` (7.517 filas) — calendario, no solo feriados
 
@@ -431,7 +431,7 @@ El procesador debe **validar el horario antes de evaluar** y marcar la fila como
 
 | # | Tema | Opciones |
 |---|---|---|
-| 1 | Significado de `tipo = 'A'` (1.8M filas) | segundo equipo / marcación automática / investigar en el SIA |
+| 1 | Significado de `tipo = 'A'` (1.8M filas) | **resuelto:** importación USB |
 | 2 | Alcance del reporte | un funcionario × rango · todos × rango · ambos |
 | 3 | Persistencia | al vuelo (sin tabla) · tabla `asistencias_procesadas` |
 | 4 | ¿El ABANDONO anula todo el día (0h) o se mantienen las horas con la marca encima? | — |

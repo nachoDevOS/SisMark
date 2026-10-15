@@ -64,6 +64,8 @@
                     @endforeach
                 </select>
             </label>
+            {{-- Fechas y origen recién se aplican con este botón. --}}
+            <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
         </div>
 
         <div class="buscador">
@@ -76,7 +78,7 @@
     <p class="ayuda" style="margin: -.5rem 0 .9rem;">
         <strong>R</strong> = marcó en el reloj biométrico ·
         <strong>M</strong> = cargada a mano en el sistema ·
-        <strong>A</strong> = viene del SIA y su origen no está documentado.
+        <strong>A</strong> = importación USB.
     </p>
 
     {{-- Aquí se inyecta el parcial marcaciones.list (tabla + paginación). --}}
@@ -93,14 +95,16 @@
             const dateDesde = document.getElementById('f-desde');
             const dateHasta = document.getElementById('f-hasta');
             const selTipo = document.getElementById('f-tipo');
+            // Los que se ven en la tabla: fechas y origen solo cuentan al apretar Buscar.
+            const aplicados = { desde: dateDesde.value, hasta: dateHasta.value, tipo: selTipo.value };
             const carga = @json($carga?->id);
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
                     ...(carga ? { carga } : {}),
-                    desde: dateDesde.value,
-                    hasta: dateHasta.value,
-                    tipo: selTipo.value,
+                    desde: aplicados.desde,
+                    hasta: aplicados.hasta,
+                    tipo: aplicados.tipo,
                     q: inputBuscar.value,
                     por_pagina: selPaginate.value,
                     page: page,
@@ -127,9 +131,12 @@
             });
 
             selPaginate.addEventListener('change', () => cargar(1));
-            dateDesde.addEventListener('change', () => cargar(1));
-            dateHasta.addEventListener('change', () => cargar(1));
-            selTipo.addEventListener('change', () => cargar(1));
+            document.getElementById('btn-buscar').addEventListener('click', () => {
+                aplicados.desde = dateDesde.value;
+                aplicados.hasta = dateHasta.value;
+                aplicados.tipo = selTipo.value;
+                cargar(1);
+            });
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }

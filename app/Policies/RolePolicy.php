@@ -91,10 +91,6 @@ class RolePolicy
             // sistema y por eso se puede dar por separado de verlos en pantalla.
             'habilidades' => ['ViewAny', 'Export'],
         ],
-        'Horario' => [
-            'etiqueta' => 'Horarios',
-            'habilidades' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
-        ],
         'Turno' => [
             'etiqueta' => 'Turnos',
             // Sin edición: un turno se crea o se elimina. `Update` es solo

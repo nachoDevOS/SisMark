@@ -52,6 +52,9 @@
             </select>
         </label>
 
+        {{-- Estado y tipo recién se aplican con este botón. --}}
+        <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
+
         <div class="buscador">
             <x-heroicon-o-magnifying-glass />
             <input type="text" id="f-buscar" value="{{ $busqueda }}" placeholder="Buscar por CI, funcionario o motivo…">
@@ -71,12 +74,14 @@
             const selPaginate = document.getElementById('f-paginate');
             const selEstado = document.getElementById('f-estado');
             const selTipo = document.getElementById('f-tipo');
+            // Los que se ven en la tabla: los combos solo cuentan al apretar Buscar.
+            const aplicados = { estado: selEstado.value, tipo: selTipo.value };
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
                     q: inputBuscar.value,
-                    estado: selEstado.value,
-                    tipo: selTipo.value,
+                    estado: aplicados.estado,
+                    tipo: aplicados.tipo,
                     por_pagina: selPaginate.value,
                     page: page,
                 });
@@ -102,8 +107,11 @@
             });
 
             selPaginate.addEventListener('change', () => cargar(1));
-            selEstado.addEventListener('change', () => cargar(1));
-            selTipo.addEventListener('change', () => cargar(1));
+            document.getElementById('btn-buscar').addEventListener('click', () => {
+                aplicados.estado = selEstado.value;
+                aplicados.tipo = selTipo.value;
+                cargar(1);
+            });
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }

@@ -30,21 +30,20 @@ class Asistencia extends Model
 
     public const TIPO_MANUAL = 'M';
 
-    public const TIPO_A = 'A';
+    /**
+     * Importación USB: marcaciones bajadas del reloj por USB.
+     */
+    public const TIPO_USB = 'A';
 
     /**
      * Etiqueta legible de cada tipo, para los filtros y las tablas. La letra es
      * lo que guarda la columna `tipo`; sola no le dice nada a nadie.
      *
-     * El origen de `A` (1,8 millones de filas migradas del SIA) no está
-     * documentado en el sistema viejo, así que se rotula por lo que se sabe y no
-     * por una suposición. Ver docs/REPORTE-PROCESADO-ASISTENCIA.md.
-     *
      * @var array<string, string>
      */
     public const TIPOS = [
         self::TIPO_RELOJ => 'Reloj',
-        self::TIPO_A => 'Sin identificar',
+        self::TIPO_USB => 'Importación USB',
         self::TIPO_MANUAL => 'Manual',
     ];
 

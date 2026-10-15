@@ -8,7 +8,6 @@ use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiaExcepcionalController;
 use App\Http\Controllers\EquipoController;
-use App\Http\Controllers\HorarioController;
 use App\Http\Controllers\LicenciaController;
 use App\Http\Controllers\MarcacionController;
 use App\Http\Controllers\PersonaController;
@@ -112,13 +111,6 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     // del reglamento cuentan «en el mes» y «en la gestión».
     Route::resource('funcionarios', PersonaController::class)
         ->parameters(['funcionarios' => 'persona'])
-        ->only(['index', 'show']);
-
-    // Horarios: solo consulta. Se cargan al crear el turno, que es su dueño;
-    // los que no tienen turno son los heredados del SIA.
-    Route::get('horarios/ajax/list', [HorarioController::class, 'list'])->name('horarios.list');
-    Route::resource('horarios', HorarioController::class)
-        ->parameters(['horarios' => 'horario'])
         ->only(['index', 'show']);
 
     // Turnos: la jornada semanal que agrupa horarios. Sin edición: se crea o se
