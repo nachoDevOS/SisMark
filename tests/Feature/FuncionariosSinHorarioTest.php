@@ -114,11 +114,10 @@ test('ya no existe la opción suelta «con contrato sin horario vigente»', func
         ->get(route('funcionarios.index'))
         ->assertOk()
         ->assertDontSee('sin_horario')
-        ->assertSee('Sin turnos/horarios')
-        // El segundo combo repite lo elegido: «Eventual: todos», «Eventual con turnos/horarios»…
-        ->assertSee('${tipo}: todos', false)
-        ->assertSee('${tipo} sin turnos/horarios', false)
-        ->assertSee('Con contrato y sin turnos/horarios', false);
+        // Textos cortos: el combo de contrato, al lado, ya dice de quiénes se trata.
+        ->assertSee('Con turnos')
+        ->assertSee('Sin turnos')
+        ->assertDontSee('turnos/horarios');
 
     // El valor viejo cae en «Todos»: no filtra ni manda cédulas.
     $this->get(route('funcionarios.list', ['contrato' => 'sin_horario', 'por_pagina' => 10]))->assertOk();

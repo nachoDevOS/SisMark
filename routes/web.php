@@ -8,7 +8,6 @@ use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiaExcepcionalController;
 use App\Http\Controllers\EquipoController;
-use App\Http\Controllers\HorarioController;
 use App\Http\Controllers\LicenciaController;
 use App\Http\Controllers\MarcacionController;
 use App\Http\Controllers\PersonaController;
@@ -114,13 +113,6 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
         ->parameters(['funcionarios' => 'persona'])
         ->only(['index', 'show']);
 
-    // Horarios: solo consulta. Se cargan al crear el turno, que es su dueño;
-    // los que no tienen turno son los heredados del SIA.
-    Route::get('horarios/ajax/list', [HorarioController::class, 'list'])->name('horarios.list');
-    Route::resource('horarios', HorarioController::class)
-        ->parameters(['horarios' => 'horario'])
-        ->only(['index', 'show']);
-
     // Turnos: la jornada semanal que agrupa horarios. Sin edición: se crea o se
     // elimina; lo único que cambia después es la marca de sugerido.
     Route::get('turnos/ajax/list', [TurnoController::class, 'list'])->name('turnos.list');
@@ -181,6 +173,9 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     // Respaldo del día (decreto, resolución). Igual que en licencias: va contra
     // el bucket con un enlace firmado de vida corta, el archivo nunca es público.
     Route::get('dias-excepcionales/{diaExcepcional}/respaldo', [DiaExcepcionalController::class, 'respaldo'])->name('dias-excepcionales.respaldo');
+    // Dar de baja / activar: dado de baja no cuenta en los reportes, pero no se
+    // elimina. Mismo permiso que editar.
+    Route::patch('dias-excepcionales/{diaExcepcional}/estado', [DiaExcepcionalController::class, 'cambiarEstado'])->name('dias-excepcionales.estado');
     Route::resource('dias-excepcionales', DiaExcepcionalController::class)
         ->parameters(['dias-excepcionales' => 'diaExcepcional'])
         ->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);

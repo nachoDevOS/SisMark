@@ -39,14 +39,17 @@
                 <option value="sin">Sin contrato</option>
             </select>
 
-            {{-- Aparece solo con contrato (cualquier tipo): «Sin turnos/horarios»
+            {{-- Aparece solo con contrato (cualquier tipo): «Sin turnos»
                  es la lista de a quién falta asignarle un turno. Horario vigente
                  hoy, de un turno asignado o heredado del SIA. --}}
             <select id="f-horario" aria-label="Turnos y horarios" hidden>
                 <option value="todos">Todos</option>
-                <option value="con">Con turnos/horarios</option>
-                <option value="sin">Sin turnos/horarios</option>
+                <option value="con">Con turnos</option>
+                <option value="sin">Sin turnos</option>
             </select>
+
+            {{-- Fuente, contrato y turnos recién se aplican con este botón. --}}
+            <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
         </div>
 
         <div class="buscador">
@@ -102,22 +105,13 @@
                 con: 'Todos con contrato',
                 sin: 'Sin contrato',
             };
-            // El segundo combo repite lo elegido en el primero: «Eventual: todos»,
-            // «Eventual con turnos/horarios»… Con «Todos con contrato», «Con contrato».
-            function etiquetasHorario() {
-                const opcion = selContrato.selectedOptions[0];
-                const tipo = selContrato.value.startsWith('tipo:') ? opcion?.dataset.nombre : null;
-
-                return tipo
-                    ? { todos: `${tipo}: todos`, con: `${tipo} con turnos/horarios`, sin: `${tipo} sin turnos/horarios` }
-                    : { todos: 'Con contrato: todos', con: 'Con contrato y con turnos/horarios', sin: 'Con contrato y sin turnos/horarios' };
-            }
+            // Textos cortos: el combo de contrato, al lado, ya dice de quiénes se trata.
+            const etiquetasHorario = { todos: 'Todos', con: 'Con turnos', sin: 'Sin turnos' };
             const conTotal = (texto, total) => total === '' || total === undefined
                 ? texto
                 : `${texto} (${Number(total).toLocaleString('es-BO')})`;
 
-            function actualizarTotales() {
-                const datos = resultados.querySelector('#totales-contrato');
+            function actualizarTotales(datos) {
                 for (const valor of Object.keys(etiquetas)) {
                     const opcion = selContrato.querySelector(`option[value="${valor}"]`);
                     opcion.textContent = conTotal(etiquetas[valor], datos ? datos.dataset[valor] : '');
@@ -134,7 +128,7 @@
                     con: conHorario,
                     sin: sinHorario,
                 };
-                const textos = etiquetasHorario();
+                const textos = etiquetasHorario;
                 for (const valor of Object.keys(textos)) {
                     selHorario.querySelector(`option[value="${valor}"]`).textContent = conTotal(textos[valor], totalesHorario[valor]);
                 }
@@ -160,13 +154,18 @@
                 selContrato.value = elegido;
             }
 
+            // Los que se ven en la tabla: los combos solo cuentan al apretar Buscar.
+            function leerFiltros() {
+                return { fuente: selFuente.value, ...filtroElegido(), horario: selHorario.value };
+            }
+            let aplicados;
+
             async function cargar(page = 1) {
-                const { contrato, tipo } = filtroElegido();
                 const params = new URLSearchParams({
-                    fuente: selFuente.value,
-                    contrato: contrato,
-                    tipo: tipo,
-                    horario: selHorario.value,
+                    fuente: aplicados.fuente,
+                    contrato: aplicados.contrato,
+                    tipo: aplicados.tipo,
+                    horario: aplicados.horario,
                     q: inputBuscar.value,
                     por_pagina: selPaginate.value,
                     page: page,
@@ -177,7 +176,7 @@
                         headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     });
                     resultados.innerHTML = await resp.text();
-                    actualizarTotales();
+                    actualizarTotales(resultados.querySelector('#totales-contrato'));
                 } catch (e) {
                     resultados.innerHTML = '<div class="aviso aviso--error">No se pudo cargar el listado. Reintentá.</div>';
                 }
@@ -194,15 +193,50 @@
             });
 
             selPaginate.addEventListener('change', () => cargar(1));
-            selContrato.addEventListener('change', () => { sincronizarHorario(); cargar(1); });
-            selHorario.addEventListener('change', () => cargar(1));
-            selFuente.addEventListener('change', () => { sincronizarContrato(); cargar(1); });
+            // Al elegir en un combo, el que depende de él aparece con sus
+            // cantidades al día: se piden solo los totales, sin tocar la tabla,
+            // que recién cambia con «Buscar». Si se eligió otra cosa mientras
+            // tanto, la respuesta vieja se descarta.
+            let pedidoDeConteo = 0;
+            async function actualizarConteos() {
+                if (selFuente.value !== 'mamore') { return; }
+                const pedido = ++pedidoDeConteo;
+                const filtros = leerFiltros();
+                const params = new URLSearchParams({
+                    fuente: filtros.fuente,
+                    contrato: filtros.contrato,
+                    tipo: filtros.tipo,
+                    q: inputBuscar.value,
+                    por_pagina: 10,
+                    page: 1,
+                });
+                try {
+                    const resp = await fetch(`${url}?${params.toString()}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    });
+                    const html = await resp.text();
+                    if (pedido !== pedidoDeConteo) { return; }
+                    const plantilla = document.createElement('template');
+                    plantilla.innerHTML = html;
+                    actualizarTotales(plantilla.content.querySelector('#totales-contrato'));
+                } catch (e) {
+                    // Sin conteo se quedan las cantidades anteriores; «Buscar» las vuelve a pedir.
+                }
+            }
+
+            selContrato.addEventListener('change', () => { sincronizarHorario(); actualizarConteos(); });
+            selFuente.addEventListener('change', () => { sincronizarContrato(); actualizarConteos(); });
+            document.getElementById('btn-buscar').addEventListener('click', () => {
+                aplicados = leerFiltros();
+                cargar(1);
+            });
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }
             });
 
             sincronizarContrato();
+            aplicados = leerFiltros();
             cargar(1);
         })();
     </script>
