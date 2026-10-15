@@ -106,7 +106,7 @@ aparte (`sia`) y **solo de lectura**.
 | Módulo | Ruta | Qué hace |
 |---|---|---|
 | **Escritorio** | `/` | Tarjetas de equipos y asistencia, gráfico de 14 días y panel de calidad de datos (se carga aparte por AJAX, porque cuenta la tabla entera) |
-| **Funcionarios** | `/funcionarios` | Listado con dos fuentes conmutables: **Mamoré** (por defecto) o **SIAT** (base local). Ficha con cuatro solapas |
+| **Funcionarios** | `/funcionarios` | Listado con dos fuentes conmutables: **Mamoré** (por defecto) o **SIA** (base local). Ficha con cuatro solapas |
 | **Marcaciones** | `/marcaciones` | Listado crudo con filtros. Dos formas de cargar: importar el CSV del reloj, o alta manual de a una (tipo `M`) para lo que el reloj no registró |
 | **Turnos** | `/turnos` | Jornada semanal: el nombre y sus horarios, que se cargan ahí mismo (con «Copiar a días»). Solo se crea o se elimina, sin edición: para cambiar la jornada se crea otro turno. **Sugerido** = se ofrece en Mamoré para elegir al dar de alta un contrato |
 | **Turnos asignados** | `/turnos-asignados` | Qué turno tiene cada funcionario, con fecha de inicio y de fin. Es **lo único que se asigna**. **Concluir** ≠ **Eliminar**: concluir pone fecha de fin y conserva la historia; eliminar es para lo cargado por error |

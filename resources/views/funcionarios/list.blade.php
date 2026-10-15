@@ -5,7 +5,7 @@
 @php
     // Mamoré entrega el contrato firmado dentro de cada persona, así que el cargo
     // y la dirección se muestran siempre (vacíos en quien no tiene contrato).
-    // SIAT no conoce los contratos: ahí esas columnas no tienen sentido.
+    // SIA no conoce los contratos: ahí esas columnas no tienen sentido.
     $muestraContrato = $fuente === 'mamore';
     // Con «Sin turnos/horarios» se agrega hasta cuándo tuvo horario, para
     // distinguir a quien se le venció del que nunca tuvo.
@@ -53,7 +53,7 @@
                     <td>{{ $persona['id'] }}</td>
                     <td>
                         <div class="persona-celda">
-                            {{-- La foto solo la tiene Mamoré; en SIAT queda el ícono genérico. --}}
+                            {{-- La foto solo la tiene Mamoré; en SIA queda el ícono genérico. --}}
                             <x-persona-avatar :thumb="$persona['imageThumb'] ?? null"
                                               :full="$persona['image'] ?? null"
                                               :nombre="$persona['nombre'] ?? ''" />

@@ -3,6 +3,8 @@
      Usa el estado de `fichaAsignacion()` del formulario que lo incluye
      (`ficha`, `contratoId`, `desde`, `hasta`…). El resumen y los avisos de
      fechas van aparte, en `_resumen-asignacion`. --}}
+@include('turnos-asignados._ficha-asignacion-js')
+
 @once
     <style>
         .contrato-opcion { border: 1px solid var(--border); border-radius: .4rem; padding: .65rem .75rem; margin-top: .4rem; }
@@ -11,74 +13,6 @@
         .contrato-opcion--elegido { border-color: var(--primary, #16a34a); box-shadow: 0 0 0 1px var(--primary, #16a34a); }
         .contrato-opcion--ocupado { opacity: .65; }
     </style>
-    <script>
-        window.fichaAsignacion = (inicial) => ({
-            ficha: null,
-            cargandoFicha: false,
-            errorFicha: '',
-            contratoId: inicial.contratoId || null,
-            turnoNombre: inicial.turnoNombre || '',
-            desde: inicial.desde,
-            hasta: inicial.hasta,
-            minDesde: null,
-            maxHasta: null,
-            async cargarFicha(ci) {
-                this.ficha = null;
-                this.errorFicha = '';
-                if (! ci) { return; }
-                this.cargandoFicha = true;
-                try {
-                    const resp = await fetch(`{{ route('turnos-asignados.ficha') }}?ci=${encodeURIComponent(ci)}`, { headers: { 'Accept': 'application/json' } });
-                    if (! resp.ok) { throw new Error(); }
-                    this.ficha = await resp.json();
-                    // Si volvió de un error de validación se respeta lo elegido y
-                    // sus fechas; si hay un solo contrato libre, se elige solo.
-                    const libres = this.ficha.contratos.filter(c => ! c.turno);
-                    const elegido = libres.find(c => String(c.id) === String(this.contratoId));
-                    if (elegido) {
-                        this.marcarContrato(elegido, false);
-                    } else {
-                        this.contratoId = null;
-                        if (libres.length === 1) { this.marcarContrato(libres[0], true); }
-                    }
-                } catch (e) {
-                    this.errorFicha = 'No se pudo cargar la información del funcionario. Reintentá.';
-                } finally {
-                    this.cargandoFicha = false;
-                }
-            },
-            // Las fechas salen del contrato; se pueden acortar, no estirar.
-            marcarContrato(contrato, conFechas) {
-                this.contratoId = contrato.id;
-                this.minDesde = contrato.desde;
-                this.maxHasta = contrato.hasta;
-                if (conFechas) {
-                    this.desde = contrato.desde;
-                    this.hasta = contrato.hasta || '';
-                }
-            },
-            contratoElegido() {
-                return this.ficha?.contratos.find(c => String(c.id) === String(this.contratoId)) || null;
-            },
-            // El selector de turno vive en su propio componente: el nombre del
-            // elegido se toma del `change` que sube hasta el formulario.
-            notarTurno(evento) {
-                if (evento.target.name === 'turno_id') { this.turnoNombre = evento.target.dataset.nombre || ''; }
-            },
-            fechaTexto(iso) {
-                if (! iso) { return ''; }
-                const [anio, mes, dia] = iso.split('-');
-                return `${dia}/${mes}/${anio}`;
-            },
-            hoy() {
-                const fecha = new Date();
-                return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
-            },
-            puedeAsignar() {
-                return this.ficha !== null && (! this.ficha.mamore || this.contratoId !== null);
-            },
-        });
-    </script>
 @endonce
 
 <input type="hidden" name="contrato_id" :value="contratoId || ''">
@@ -116,9 +50,19 @@
             <p class="ayuda" style="margin: .25rem 0 .5rem;">
                 Los vigentes y los que todavía no empezaron. El turno nuevo no puede cruzarse en fechas con ninguno de estos.
             </p>
-            <p class="aviso aviso--advertencia" style="margin: 0;" x-show="ficha.turnos.length === 0">
-                No tiene ningún turno asignado: hoy <strong>no se le controla la asistencia</strong>.
+            <p class="aviso aviso--advertencia" style="margin: 0;" x-show="ficha.turnos.length === 0 && ficha.heredados.length === 0">
+                No tiene turno ni horarios asignados: hoy <strong>no se le controla la asistencia</strong>.
             </p>
+            {{-- Sin turno pero con horarios del SIA: igual se le controla, y al
+                 asignar el turno esos horarios se cortan el día antes del inicio. --}}
+            <template x-for="(heredado, i) in ficha.heredados" :key="`h${i}`">
+                <div style="display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding: .35rem 0; border-top: 1px solid var(--border);">
+                    <strong>Horarios del sistema anterior</strong>
+                    <span x-text="`del ${heredado.desdeTexto} al ${heredado.hastaTexto}`"></span>
+                    <span class="pill pill--info" x-text="heredado.vigente ? 'Vigentes hoy' : 'Por empezar'"></span>
+                    <span class="ayuda" style="margin: 0;">Terminan el día antes del inicio del turno nuevo.</span>
+                </div>
+            </template>
             <template x-for="(turno, i) in ficha.turnos" :key="i">
                 <div style="display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding: .35rem 0; border-top: 1px solid var(--border);">
                     <strong x-text="turno.nombre"></strong>

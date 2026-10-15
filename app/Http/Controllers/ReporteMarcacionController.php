@@ -48,7 +48,7 @@ class ReporteMarcacionController extends Controller
      * formulario. Devuelve hasta 20 coincidencias como JSON.
      *
      * Busca en Mamoré, que además del nombre trae el cargo y la dirección. Si la
-     * API no está configurada o falla, cae a la base local (SIAT) para no dejar
+     * API no está configurada o falla, cae a la base local (SIA) para no dejar
      * el reporte inutilizable.
      */
     public function buscarFuncionarios(Request $request, DirectorioMamore $directorio): JsonResponse
@@ -85,7 +85,7 @@ class ReporteMarcacionController extends Controller
             return [
                 'id' => $ci,
                 'texto' => $ci.' — '.$nombre.($pin !== '' ? " (PIN {$pin})" : ''),
-                // SIAT no guarda fotos: solo las tiene Mamoré.
+                // SIA no guarda fotos: solo las tiene Mamoré.
                 'foto' => null,
             ];
         })->values());

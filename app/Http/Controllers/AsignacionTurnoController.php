@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\MamoreException;
 use App\Http\Requests\ConcluirAsignacionTurnoRequest;
 use App\Http\Requests\StoreAsignacionTurnoRequest;
+use App\Models\AsignacionHorario;
 use App\Models\AsignacionTurno;
 use App\Models\Turno;
 use App\Services\AsignadorTurnos;
@@ -258,6 +259,27 @@ class AsignacionTurnoController extends Controller
                     'hastaTexto' => $fecha($asignado->hasta),
                     'vigente' => $asignado->desde->lessThanOrEqualTo(today()),
                     'contrato' => $asignado->contrato_id !== null,
+                ]),
+            // Horarios del sistema anterior que siguen en pie. Sin turno, con
+            // ellos igual se le controla la asistencia; y al asignar un turno se
+            // cortan el día antes de su inicio, así que quien asigna tiene que
+            // verlos.
+            'heredados' => AsignacionHorario::query()
+                ->whereNull('asignacion_turno_id')
+                ->whereHas('horario')
+                ->where('ci', $ci)
+                ->where('hasta', '>=', today()->toDateString())
+                ->selectRaw('desde, hasta, count(*) as horarios')
+                ->groupBy('desde', 'hasta')
+                ->orderBy('desde')
+                ->get()
+                ->map(fn (AsignacionHorario $periodo): array => [
+                    'desde' => $periodo->desde?->toDateString(),
+                    'hasta' => $periodo->hasta?->toDateString(),
+                    'desdeTexto' => $fecha($periodo->desde),
+                    'hastaTexto' => $fecha($periodo->hasta),
+                    'horarios' => (int) $periodo->horarios,
+                    'vigente' => $periodo->desde?->lessThanOrEqualTo(today()) ?? false,
                 ]),
         ]);
     }

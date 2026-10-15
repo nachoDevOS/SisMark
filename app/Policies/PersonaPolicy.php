@@ -28,5 +28,5 @@ class PersonaPolicy
     }
 
     // Sin `create`, `update` ni `delete`: los funcionarios son de solo lectura,
-    // el alta y la baja viven en los sistemas de origen (Mamoré y SIAT).
+    // el alta y la baja viven en los sistemas de origen (Mamoré y SIA).
 }

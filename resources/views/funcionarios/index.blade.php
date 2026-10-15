@@ -25,10 +25,10 @@
         <div class="tabla-filtros__extra">
             <select id="f-fuente" aria-label="Fuente de datos">
                 <option value="mamore">Mamoré</option>
-                <option value="siat">SIAT</option>
+                <option value="sia">SIA</option>
             </select>
 
-            {{-- Solo Mamoré conoce los contratos: con SIAT el select se oculta.
+            {{-- Solo Mamoré conoce los contratos: con SIA el select se oculta.
                  Dentro de «Con contrato» van los tipos (permanente, eventual…),
                  que llegan con cada carga junto con su total. --}}
             <select id="f-contrato" aria-label="Situación de contrato">
@@ -74,7 +74,7 @@
             const selHorario = document.getElementById('f-horario');
             const grupoCon = selContrato.querySelector('optgroup');
 
-            // El filtro por contrato solo aplica a Mamoré (SIAT no tiene contratos).
+            // El filtro por contrato solo aplica a Mamoré (SIA no tiene contratos).
             function sincronizarContrato() {
                 const esMamore = selFuente.value === 'mamore';
                 selContrato.hidden = !esMamore;

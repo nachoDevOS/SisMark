@@ -22,7 +22,7 @@ use Illuminate\View\View;
 /**
  * Consulta (solo lectura) de los funcionarios. El listado tiene dos fuentes,
  * elegibles con un select: «Mamoré» (API externa de Datos Personales, por
- * defecto) y «SIAT» (base local MySQL, tabla `personas`). El alta/edición/
+ * defecto) y «SIA» (base local MySQL, tabla `personas`). El alta/edición/
  * borrado siguen siendo de los sistemas de origen.
  */
 class PersonaController extends Controller
@@ -41,7 +41,7 @@ class PersonaController extends Controller
     /**
      * Devuelve el parcial de la tabla (filas + paginación) para el AJAX del
      * listado, con búsqueda por CI o nombre desde la fuente elegida (Mamoré por
-     * defecto, o SIAT local).
+     * defecto, o SIA local).
      */
     public function list(Request $request, MamoreClient $mamore): View
     {
@@ -49,15 +49,15 @@ class PersonaController extends Controller
 
         $busqueda = trim((string) $request->query('q', ''));
         $porPagina = $this->porPagina($request);
-        $fuente = $request->query('fuente') === 'siat' ? 'siat' : 'mamore';
+        $fuente = $request->query('fuente') === 'sia' ? 'sia' : 'mamore';
         $contrato = $this->contrato($request);
         $tipo = $this->tipoContrato($request, $contrato);
         $horario = $this->horario($request, $contrato);
         $errorFuente = null;
         $totales = $this->totalesVacios();
 
-        if ($fuente === 'siat') {
-            // SIAT no conoce los contratos: el filtro es solo de Mamoré.
+        if ($fuente === 'sia') {
+            // SIA no conoce los contratos: el filtro es solo de Mamoré.
             $contrato = 'todos';
             $tipo = null;
             $horario = 'todos';
@@ -70,7 +70,7 @@ class PersonaController extends Controller
     }
 
     /**
-     * Ficha de detalle de un funcionario local (SIAT). Marcaciones, licencias y
+     * Ficha de detalle de un funcionario local (SIA). Marcaciones, licencias y
      * horarios no van en esta respuesta: son las tres solapas del pie de la
      * ficha, y cada una carga su tabla por AJAX cuando se la abre.
      */
@@ -396,7 +396,7 @@ class PersonaController extends Controller
     }
 
     /**
-     * Funcionarios de la base local (SIAT), normalizados a la forma común de la
+     * Funcionarios de la base local (SIA), normalizados a la forma común de la
      * tabla.
      */
     private function funcionariosLocales(string $busqueda, int $porPagina): LengthAwarePaginator
@@ -416,12 +416,12 @@ class PersonaController extends Controller
                 'nacimiento' => $persona->fechaNacimiento?->format('d/m/Y'),
                 'edad' => $persona->fechaNacimiento?->age,
                 'ver' => route('funcionarios.show', $persona),
-                // SIAT no tiene contratos: las columnas de Mamoré van vacías.
+                // SIA no tiene contratos: las columnas de Mamoré van vacías.
                 'cargo' => null,
                 'direccion' => null,
                 'conContrato' => null,
                 'tipoContrato' => null,
-                // SIAT no guarda fotos: solo las tiene Mamoré.
+                // SIA no guarda fotos: solo las tiene Mamoré.
                 'image' => null,
                 'imageThumb' => null,
             ]);

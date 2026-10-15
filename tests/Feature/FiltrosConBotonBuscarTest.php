@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Persona;
+
 /*
  * Los listados con filtros de combo o fecha los aplican recién con el botón
  * «Buscar», no al cambiar el combo.
@@ -24,4 +26,17 @@ test('el origen A de las marcaciones es la importación USB', function (): void 
         ->get(route('marcaciones.index'))
         ->assertSee('A · Importación USB')
         ->assertDontSee('Sin identificar');
+});
+
+test('la fuente local de funcionarios se llama SIA y lista la base local', function (): void {
+    Persona::factory()->create(['ci' => '7633685', 'paterno' => 'MOLINA', 'materno' => 'GUZMAN', 'nombres' => 'IGNACIO']);
+
+    $this->actingAs(superAdmin())
+        ->get(route('funcionarios.index'))
+        ->assertSee('<option value="sia">SIA</option>', false)
+        ->assertDontSee('SIAT');
+
+    $this->get(route('funcionarios.list', ['fuente' => 'sia']))
+        ->assertOk()
+        ->assertSee('7633685');
 });

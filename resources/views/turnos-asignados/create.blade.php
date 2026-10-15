@@ -119,9 +119,10 @@
         <div class="card card--padded" style="margin-top: 1rem;">
             <h2 style="margin-top: 0;">Turno y vigencia</h2>
 
+            <div style="font-weight: 600; font-size: .8rem; margin-bottom: .3rem;">Turno <span class="req">*</span></div>
             @include('turnos-asignados._selector-turno', ['turnos' => $turnos, 'sufijo' => 'form'])
 
-            <div class="grid-2">
+            <div class="grid-2" style="margin-top: .9rem;">
                 <div class="campo">
                     <label for="desde">Fecha de inicio <span class="req">*</span></label>
                     <input type="date" id="desde" name="desde" class="input"

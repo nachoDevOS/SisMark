@@ -2,6 +2,7 @@
 
 use App\Models\AsignacionHorario;
 use App\Models\AsignacionTurno;
+use App\Models\Persona;
 use App\Services\AsignadorTurnos;
 use Illuminate\Support\Carbon;
 
@@ -174,4 +175,37 @@ test('las pantallas responden y muestran el turno', function (): void {
     $this->get(route('turnos-asignados.create'))->assertSuccessful()->assertSee($this->turno->nombre);
     $this->get(route('funcionarios.horarios.list', ['ci' => '111']))->assertSuccessful()
         ->assertSee($this->turno->nombre)->assertSee('Concluir turno');
+});
+
+test('el modal de la ficha guía en cuatro pasos sin repetir los datos del funcionario', function (): void {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+    turnoLunesAViernes(sugerido: true);
+
+    $this->actingAs(superAdmin())
+        ->get(route('funcionarios.show', $persona))
+        ->assertOk()
+        ->assertSeeInOrder(['Asignar turno', 'Contrato', 'Turno', 'Desde cuándo', 'Observación'])
+        ->assertSee('ver semana')
+        ->assertDontSee('1. Funcionario')
+        ->assertDontSee('Ver ficha completa');
+});
+
+test('la ficha de asignación informa los horarios del sistema anterior que siguen en pie', function (): void {
+    Carbon::setTestNow('2026-10-15');
+    AsignacionHorario::factory()->create([
+        'ci' => '7633685', 'horario_id' => horario(2)->id, 'desde' => '2026-01-05', 'hasta' => '2026-12-31',
+    ]);
+    // Uno vencido no cuenta: ya no controla nada.
+    AsignacionHorario::factory()->create([
+        'ci' => '7633685', 'horario_id' => horario(3)->id, 'desde' => '2025-04-01', 'hasta' => '2025-12-31',
+    ]);
+
+    $this->actingAs(superAdmin())
+        ->getJson(route('turnos-asignados.ficha', ['ci' => '7633685']))
+        ->assertOk()
+        ->assertJsonCount(0, 'turnos')
+        ->assertJsonCount(1, 'heredados')
+        ->assertJsonPath('heredados.0.desde', '2026-01-05')
+        ->assertJsonPath('heredados.0.hasta', '2026-12-31')
+        ->assertJsonPath('heredados.0.vigente', true);
 });

@@ -190,7 +190,7 @@ class ResolutorNombres
     }
 
     /**
-     * Ficha de respaldo desde la base local: SIAT no conoce los contratos, así
+     * Ficha de respaldo desde la base local: SIA no conoce los contratos, así
      * que no hay cargo ni dirección administrativa.
      *
      * @return array<string, mixed>
@@ -208,22 +208,22 @@ class ResolutorNombres
             'direccion' => null,
             'pinReloj' => trim((string) $persona->pinReloj),
             'conContrato' => null,
-            // SIAT no guarda la extensión del carnet; `origenId` es lo más
+            // SIA no guarda la extensión del carnet; `origenId` es lo más
             // parecido que tiene, pero es otro dato y no se lo hace pasar por
             // este.
             'extension' => null,
             'ciCompleto' => null,
-            // SIAT tampoco conoce los haberes: sin Mamoré no hay con qué pasar
+            // SIA tampoco conoce los haberes: sin Mamoré no hay con qué pasar
             // los días de descuento a bolivianos, y la pantalla lo dice en vez
             // de inventar un monto.
             'sueldo' => null,
             'bono' => null,
             'contratoDesde' => null,
             'contratoHasta' => null,
-            // SIAT no guarda fotos: solo las tiene Mamoré.
+            // SIA no guarda fotos: solo las tiene Mamoré.
             'image' => null,
             'imageThumb' => null,
-            'origen' => 'siat',
+            'origen' => 'sia',
         ];
     }
 }

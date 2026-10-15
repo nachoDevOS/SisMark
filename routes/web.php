@@ -96,7 +96,7 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     Route::resource('tokens-api', SistemaExternoController::class)
         ->parameters(['tokens-api' => 'sistema']);
 
-    // Funcionarios (solo lectura). Listado con dos fuentes (Mamoré/SIAT) y ficha.
+    // Funcionarios (solo lectura). Listado con dos fuentes (Mamoré/SIA) y ficha.
     // La ficha por cédula de Mamoré va antes del resource para que no la capture
     // el binding {persona} del show local.
     Route::get('funcionarios/mamore/{ci}', [PersonaController::class, 'mamoreShow'])->name('funcionarios.mamore');
