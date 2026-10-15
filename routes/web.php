@@ -114,10 +114,12 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
         ->parameters(['funcionarios' => 'persona'])
         ->only(['index', 'show']);
 
-    // Horarios (del SIA): «Administrador de horarios» del escritorio.
+    // Horarios: solo consulta. Se cargan al crear el turno, que es su dueño;
+    // los que no tienen turno son los heredados del SIA.
     Route::get('horarios/ajax/list', [HorarioController::class, 'list'])->name('horarios.list');
     Route::resource('horarios', HorarioController::class)
-        ->parameters(['horarios' => 'horario']);
+        ->parameters(['horarios' => 'horario'])
+        ->only(['index', 'show']);
 
     // Turnos: la jornada semanal que agrupa horarios. Sin edición: se crea o se
     // elimina; lo único que cambia después es la marca de sugerido.

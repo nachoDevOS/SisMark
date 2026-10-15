@@ -6,12 +6,17 @@
     <div class="cabecera">
         <div class="cabecera__titulo">
             <span class="cabecera__icono"><x-heroicon-o-clock /></span>
-            <h1>Administrador de horarios</h1>
+            <h1>Horarios</h1>
         </div>
-        @can('create', \App\Models\Horario::class)
-            <a href="{{ route('horarios.create') }}" class="btn"><x-heroicon-o-plus />Nuevo horario</a>
+        @can('create', \App\Models\Turno::class)
+            <a href="{{ route('turnos.create') }}" class="btn"><x-heroicon-o-plus />Nuevo turno</a>
         @endcan
     </div>
+
+    <p class="ayuda">
+        Solo consulta. Los horarios se cargan al crear un turno y son de ese turno.
+        Los que figuran «Sin turno» son los heredados del sistema anterior.
+    </p>
 
     {{-- Filtros del listado (browse): disparan la carga AJAX de la tabla. --}}
     <div class="tabla-filtros">

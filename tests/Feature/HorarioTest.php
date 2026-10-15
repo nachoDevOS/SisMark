@@ -1,39 +1,35 @@
 <?php
 
-use App\Models\Horario;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 
-test('no elimina un horario que está dentro de un turno', function (): void {
+test('horarios es solo de consulta: se cargan al crear el turno', function (string $ruta): void {
+    expect(Route::has($ruta))->toBeFalse();
+})->with(['horarios.create', 'horarios.store', 'horarios.edit', 'horarios.update', 'horarios.destroy']);
+
+test('el listado muestra el turno de cada horario y marca los heredados', function (): void {
     $turno = turnoLunesAViernes();
-    $horario = $turno->horarios->first();
+    horario(7, '09:00', '13:00');
 
     $this->actingAs(superAdmin())
-        ->delete(route('horarios.destroy', $horario))
-        ->assertSessionHas('error', fn (string $mensaje): bool => str_contains($mensaje, $turno->nombre));
-
-    expect($horario->fresh()->trashed())->toBeFalse();
+        ->get(route('horarios.list'))
+        ->assertSuccessful()
+        ->assertSee($turno->nombre)
+        ->assertSee('Sin turno');
 });
 
-test('tampoco si el turno que lo usa ya se eliminó', function (): void {
+test('la ficha muestra el turno dueño del horario', function (): void {
     $turno = turnoLunesAViernes();
-    $horario = $turno->horarios->first();
-    $turno->delete();
 
-    $this->actingAs(superAdmin())
-        ->delete(route('horarios.destroy', $horario))
-        ->assertSessionHas('error');
+    $this->actingAs(superAdmin());
 
-    expect($horario->fresh()->trashed())->toBeFalse();
-});
-
-test('elimina con baja lógica un horario que no está en ningún turno', function (): void {
-    $horario = horario(2);
-
-    $this->actingAs(superAdmin())
-        ->delete(route('horarios.destroy', $horario))
-        ->assertSessionHas('estado');
-
-    expect(Horario::withTrashed()->find($horario->id)->trashed())->toBeTrue();
+    $this->get(route('horarios.index'))->assertSuccessful();
+    $this->get(route('horarios.show', $turno->horarios->first()))
+        ->assertSuccessful()
+        ->assertSee($turno->nombre);
+    $this->get(route('horarios.show', horario(7)))
+        ->assertSuccessful()
+        ->assertSee('Sin turno');
 });
 
 test('el horario ya no tiene la marca de sugerido', function (): void {
@@ -43,28 +39,4 @@ test('el horario ya no tiene la marca de sugerido', function (): void {
         ->get(route('horarios.list'))
         ->assertSuccessful()
         ->assertDontSee('Sugerido');
-});
-
-test('crea un horario', function (): void {
-    $this->actingAs(superAdmin())
-        ->post(route('horarios.store'), [
-            'Dia' => '2',
-            'nombreHorario' => 'LUN: 08:00 - 16:00',
-            'HEntrada' => '08:00',
-            'HTolerancia' => '08:10',
-            'EMinima' => '07:00',
-            'EMaxima' => '10:00',
-            'HSalida' => '16:00',
-            'STolerancia' => '16:00',
-            'SMinima' => '16:00',
-            'SMaxima' => '23:59',
-            'HTrabajadas' => '8',
-        ])
-        ->assertSessionHasNoErrors();
-
-    $horario = Horario::query()->sole();
-
-    expect($horario->nombreHorario)->toBe('LUN: 08:00 - 16:00')
-        ->and($horario->hEntrada->format('H:i'))->toBe('08:00')
-        ->and(strlen(trim($horario->idHorario)))->toBe(3);
 });

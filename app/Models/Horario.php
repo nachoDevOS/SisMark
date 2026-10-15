@@ -7,6 +7,7 @@ use Database\Factories\HorarioFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -15,6 +16,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * Conexión por defecto, con id propio, timestamps y eliminación lógica. Las
  * horas van como datetime sobre la fecha base 1899-12-30 (solo importa la hora),
  * como el SIA real.
+ *
+ * Los horarios que se cargan ahora son **de un turno** (`turno_id`) y nacen con
+ * él. Los heredados del SIA quedan sin turno: son historia de las asignaciones
+ * migradas.
+ *
+ * `idHorario` es el código del SIA y ya no se escribe: solo lo tienen los
+ * horarios migrados. Todo se relaciona por el `id`.
  */
 class Horario extends Model
 {
@@ -43,6 +51,7 @@ class Horario extends Model
      * @var list<string>
      */
     protected $fillable = [
+        'turno_id',
         'idHorario',
         'dia',
         'nombreHorario',
@@ -77,6 +86,14 @@ class Horario extends Model
             'hTrabajadas' => 'decimal:2',
             'siguienteDia' => 'boolean',
         ];
+    }
+
+    /**
+     * El turno dueño del horario; nulo en lo heredado del SIA.
+     */
+    public function turno(): BelongsTo
+    {
+        return $this->belongsTo(Turno::class)->withTrashed();
     }
 
     /**

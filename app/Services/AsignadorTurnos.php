@@ -75,12 +75,12 @@ class AsignadorTurnos
                 .$heredado->desde?->format('d/m/Y').'. Concluilos o eliminalos en «Horarios asignados» antes de asignarle el turno.';
         }
 
-        // La única `(ci, idHorario, desde)` de `asignacion_horarios` incluye las
+        // La única `(ci, horario_id, desde)` de `asignacion_horarios` incluye las
         // filas dadas de baja: se comprueba con `withTrashed()` para avisar en
         // vez de reventar.
         $repetido = AsignacionHorario::withTrashed()
             ->where('ci', $ci)
-            ->whereIn('idHorario', $horarios->pluck('idHorario')->all())
+            ->whereIn('horario_id', $horarios->pluck('id')->all())
             ->where('desde', $desde->toDateString())
             ->when($ignorar !== null, fn ($query) => $query->where(fn ($sub) => $sub
                 ->whereNull('asignacion_turno_id')
@@ -121,8 +121,6 @@ class AsignadorTurnos
                 AsignacionHorario::create([
                     'ci' => $ci,
                     'horario_id' => $horario->id,
-                    // Parte de la clave única de la tabla, como en lo del SIA.
-                    'idHorario' => $horario->idHorario,
                     'asignacion_turno_id' => $asignacion->id,
                     'desde' => $desde,
                     'hasta' => $hasta,

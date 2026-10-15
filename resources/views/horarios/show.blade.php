@@ -13,9 +13,6 @@
             <h1>{{ trim($horario->nombreHorario) ?: 'Horario' }}</h1>
         </div>
         <div class="acciones">
-            @can('update', $horario)
-                <a href="{{ route('horarios.edit', $horario) }}" class="btn"><x-heroicon-o-pencil-square />Editar</a>
-            @endcan
             <a href="{{ route('horarios.index') }}" class="btn btn--gris"><x-heroicon-o-arrow-left />Volver</a>
         </div>
     </div>
@@ -31,6 +28,16 @@
                 <div>
                     <dt>Nombre del horario</dt>
                     <dd>{{ trim($horario->nombreHorario) }}</dd>
+                </div>
+                <div>
+                    <dt>Turno</dt>
+                    <dd>
+                        @if ($horario->turno)
+                            <a href="{{ route('turnos.show', $horario->turno) }}">{{ $horario->turno->nombre }}</a>
+                        @else
+                            Sin turno (heredado del sistema anterior)
+                        @endif
+                    </dd>
                 </div>
             </dl>
         </div>

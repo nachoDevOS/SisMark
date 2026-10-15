@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreTurnoRequest;
 use App\Models\AsignacionTurno;
-use App\Models\Horario;
 use App\Models\Turno;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -76,28 +75,29 @@ class TurnoController extends Controller
     {
         $this->authorize('create', Turno::class);
 
-        $horarios = Horario::query()->ordenado()->get();
-
-        return view('turnos.create', compact('horarios'));
+        return view('turnos.create');
     }
 
     /**
-     * Guarda el turno con sus horarios.
+     * Guarda el turno y crea sus horarios, que nacen siendo suyos.
      */
     public function store(StoreTurnoRequest $request): RedirectResponse
     {
         $this->authorize('create', Turno::class);
 
         $datos = $request->validated();
+        $horarios = $request->horarios();
 
-        $turno = DB::transaction(function () use ($datos): Turno {
+        $turno = DB::transaction(function () use ($datos, $horarios): Turno {
             $turno = Turno::create([
                 'nombre' => trim($datos['nombre']),
                 'sugerido' => $datos['sugerido'] ?? false,
                 'observacion' => $datos['observacion'] ?? null,
             ]);
 
-            $turno->horarios()->attach($datos['horarioIds']);
+            foreach ($horarios as $horario) {
+                $turno->horarios()->create($horario);
+            }
 
             return $turno;
         });
@@ -123,8 +123,8 @@ class TurnoController extends Controller
     }
 
     /**
-     * Elimina el turno (eliminación lógica). Sus horarios quedan vinculados, así
-     * que lo procesado con él sigue dando lo mismo.
+     * Elimina el turno (eliminación lógica). Sus horarios no se tocan, así que lo
+     * procesado con él sigue dando lo mismo.
      */
     public function destroy(Turno $turno): RedirectResponse
     {

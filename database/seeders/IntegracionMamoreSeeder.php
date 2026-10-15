@@ -127,18 +127,19 @@ class IntegracionMamoreSeeder extends Seeder
         }
 
         // Un horario por día hábil: el de entrada 08:00 y salida 16:00, que en la
-        // tabla del SIA es único por día.
-        $ids = collect(['2', '3', '4', '5', '6'])
-            ->map(fn (string $dia): ?int => Horario::query()
+        // tabla del SIA es único por día. El turno se queda con una copia de cada
+        // uno: los horarios de un turno son suyos.
+        $modelos = collect(['2', '3', '4', '5', '6'])
+            ->map(fn (string $dia): ?Horario => Horario::query()
+                ->whereNull('turno_id')
                 ->where('dia', $dia)
                 ->whereTime('hEntrada', '08:00:00')
                 ->whereTime('hSalida', '16:00:00')
                 ->orderBy('id')
-                ->value('id'))
-            ->filter()
-            ->all();
+                ->first())
+            ->filter();
 
-        if ($ids === []) {
+        if ($modelos->isEmpty()) {
             return null;
         }
 
@@ -146,7 +147,9 @@ class IntegracionMamoreSeeder extends Seeder
             'nombre' => 'Horario general L-V 08:00 - 16:00',
             'sugerido' => true,
         ]);
-        $turno->horarios()->attach($ids);
+        $turno->horarios()->saveMany($modelos->map(fn (Horario $modelo): Horario => $modelo->replicate()->fill([
+            'idHorario' => null,
+        ])));
 
         return $turno->load('horarios');
     }

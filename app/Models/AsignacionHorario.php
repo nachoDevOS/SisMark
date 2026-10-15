@@ -19,8 +19,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * del SIA: el horario asignado a un funcionario en un rango de fechas.
  *
  * Conexión por defecto, con id propio, timestamps y eliminación lógica. El
- * carnet vive en `ci` (en el SIA era IdPersona). Se conserva `idHorario` (código
- * del SIA) y se agrega la FK `horario_id` → `horarios.id`, resuelta al copiar.
+ * carnet vive en `ci` (en el SIA era IdPersona). El horario va por la FK
+ * `horario_id` → `horarios.id`. `idHorario` (código del SIA) ya no se escribe:
+ * solo lo tienen las filas migradas, como dato histórico.
  *
  * Ya no se asignan horarios sueltos: lo nuevo es el detalle de un turno
  * asignado (`asignacion_turno_id`) y lo crea {@see AsignadorTurnos}. Lo del SIA

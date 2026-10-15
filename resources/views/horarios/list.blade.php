@@ -4,6 +4,7 @@
             <tr>
                 <th>Día</th>
                 <th>Horario</th>
+                <th>Turno</th>
                 <th>Entrada</th>
                 <th>Salida</th>
                 <th>Tol. entrada</th>
@@ -18,6 +19,13 @@
                 <tr>
                     <td><strong>{{ $horario->nombre_dia }}</strong></td>
                     <td>{{ trim($horario->nombreHorario) }}</td>
+                    <td>
+                        @if ($horario->turno)
+                            {{ $horario->turno->nombre }}
+                        @else
+                            <span class="pill pill--neutro">Sin turno</span>
+                        @endif
+                    </td>
                     <td>{{ $horario->hEntrada?->format('H:i') }}</td>
                     <td>{{ $horario->hSalida?->format('H:i') }}</td>
                     <td>{{ $horario->hTolerancia?->format('H:i') }}</td>
@@ -33,19 +41,12 @@
                             @can('view', $horario)
                                 <a href="{{ route('horarios.show', $horario) }}" class="btn-icon btn-icon--gris" title="Ver" aria-label="Ver"><x-heroicon-o-eye /></a>
                             @endcan
-                            @can('update', $horario)
-                                <a href="{{ route('horarios.edit', $horario) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
-                            @endcan
-                            @can('delete', $horario)
-                                <x-boton-eliminar :accion="route('horarios.destroy', $horario)"
-                                                  :mensaje="'Se elimina el horario «'.trim($horario->nombreHorario).'».'" />
-                            @endcan
                         </div>
                     </td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9" class="vacio">Aún no hay horarios registrados.</td>
+                    <td colspan="10" class="vacio">Aún no hay horarios registrados.</td>
                 </tr>
             @endforelse
         </tbody>

@@ -264,11 +264,11 @@ class AsignacionTurnoApiController extends Controller
      */
     private function moverHeredados($heredados, string $ci, Carbon $desde, Carbon $hasta): JsonResponse
     {
-        // `desde` es parte de la única `(ci, idHorario, desde)`: si se corrió la
+        // `desde` es parte de la única `(ci, horario_id, desde)`: si se corrió la
         // fecha de inicio, puede chocar con otra fila de esa terna.
         $choque = AsignacionHorario::withTrashed()
             ->where('ci', $ci)
-            ->whereIn('idHorario', $heredados->pluck('idHorario')->map(fn (string $id): string => trim($id))->all())
+            ->whereIn('horario_id', $heredados->pluck('horario_id')->all())
             ->where('desde', $desde->toDateString())
             ->whereNotIn('id', $heredados->pluck('id')->all())
             ->exists();

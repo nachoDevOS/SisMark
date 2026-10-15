@@ -42,6 +42,9 @@ test('asignar un turno crea la cabecera y un horario asignado por día', functio
     // Las fechas se guardan sin hora.
     expect($asignacion->getRawOriginal('desde'))->toBe('2026-10-20')
         ->and($asignacion->horariosAsignados->first()->getRawOriginal('hasta'))->toBe('2026-12-31');
+
+    // El código del SIA ya no se escribe.
+    expect($asignacion->horariosAsignados->pluck('idHorario')->filter())->toBeEmpty();
 });
 
 test('la fecha de fin no puede ser anterior a la de inicio', function (): void {

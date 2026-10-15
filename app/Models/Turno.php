@@ -7,14 +7,15 @@ use Database\Factories\TurnoFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Turno: la jornada semanal de una persona, armada con los horarios de cada día.
  *
- * `horarios` guarda un día por fila, así que lunes a viernes son cinco horarios;
- * el turno los junta bajo un nombre y es lo que se asigna.
+ * `horarios` guarda un día por fila, así que lunes a viernes son cinco horarios.
+ * Los horarios son **del turno** (`horarios.turno_id`): se cargan al crearlo y
+ * no se comparten con otros turnos. El turno es lo que se asigna.
  *
  * **No se edita.** Solo se crea y se elimina: la asistencia se calcula en vivo,
  * y cambiarle los horarios a un turno ya asignado reescribiría los reportes
@@ -55,11 +56,10 @@ class Turno extends Model
      * Incluye los horarios eliminados: el turno no se edita, así que si uno de
      * sus horarios se da de baja, el turno sigue siendo lo que se creó.
      */
-    public function horarios(): BelongsToMany
+    public function horarios(): HasMany
     {
-        return $this->belongsToMany(Horario::class, 'horario_turno')
+        return $this->hasMany(Horario::class)
             ->withTrashed()
-            ->withTimestamps()
             ->orderBy('dia')
             ->orderBy('hEntrada');
     }

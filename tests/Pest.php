@@ -95,7 +95,7 @@ function horario(int $dia, string $entrada = '08:00', string $salida = '16:00', 
 function turnoLunesAViernes(string $entrada = '08:00', string $salida = '16:00', bool $sugerido = false): Turno
 {
     $turno = Turno::factory()->create(['nombre' => "L-V {$entrada} - {$salida}", 'sugerido' => $sugerido]);
-    $turno->horarios()->attach(collect([2, 3, 4, 5, 6])->map(fn (int $dia): int => horario($dia, $entrada, $salida)->id));
+    $turno->horarios()->saveMany(collect([2, 3, 4, 5, 6])->map(fn (int $dia): Horario => horario($dia, $entrada, $salida)));
 
     return $turno->load('horarios');
 }
