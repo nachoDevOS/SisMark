@@ -7,9 +7,9 @@
     // y la dirección se muestran siempre (vacíos en quien no tiene contrato).
     // SIAT no conoce los contratos: ahí esas columnas no tienen sentido.
     $muestraContrato = $fuente === 'mamore';
-    // Con «sin horario vigente» se agrega hasta cuándo tuvo horario, para
+    // Con «Sin turnos/horarios» se agrega hasta cuándo tuvo horario, para
     // distinguir a quien se le venció del que nunca tuvo.
-    $muestraUltimoHorario = $contrato === 'sin_horario';
+    $muestraUltimoHorario = $horario === 'sin';
     $columnas = ($muestraContrato ? 7 : 5) + ($muestraUltimoHorario ? 1 : 0);
     // La etiqueta (tipo de contrato o «Sin contrato») sobra cuando la lista ya
     // está filtrada por eso mismo.
@@ -20,11 +20,12 @@
         : $totales['con'] + $totales['sin'];
 @endphp
 
-{{-- Totales que el shell lee para etiquetar el select de situación de contrato. --}}
+{{-- Totales que el shell lee para etiquetar los selects de contrato y de turnos/horarios. --}}
 <div id="totales-contrato" hidden
      data-todos="{{ $totalTodos }}"
      data-con="{{ $totales['con'] }}"
      data-sin="{{ $totales['sin'] }}"
+     data-con-horario="{{ $totales['conHorario'] }}"
      data-sin-horario="{{ $totales['sinHorario'] }}"
      data-tipos="{{ json_encode($totales['tipos']) }}"></div>
 

@@ -57,10 +57,12 @@ class MamoreClient
      * dirección de un mes pasado incluya a quien se fue a mitad de período o lo
      * pierda en silencio.
      *
-     * `$excluirCi` saca esas cédulas de la lista (el filtro «Sin horario
-     * vigente» manda las de quienes ya tienen horario).
+     * `$conHorarioCi` son las cédulas que hoy tienen horario en SisMark. Con
+     * ella el meta trae `total_con_horario` y `total_sin_horario`, y `$horario`
+     * («con» o «sin») recorta la lista a las que están o a las que no. Una lista
+     * vacía es válida: nadie tiene horario.
      *
-     * @param  list<string>  $excluirCi
+     * @param  list<string>|null  $conHorarioCi
      * @return array{data?: array<int, array<string, mixed>>, meta?: array<string, mixed>, links?: array<string, mixed>}
      */
     public function people(
@@ -73,7 +75,8 @@ class MamoreClient
         ?string $hasta = null,
         ?int $unidad = null,
         ?int $tipo = null,
-        array $excluirCi = [],
+        ?array $conHorarioCi = null,
+        ?string $horario = null,
     ): array {
         $parametros = ['page' => $page, 'limit' => $limit];
 
@@ -105,10 +108,14 @@ class MamoreClient
             $parametros['hasta'] = $hasta;
         }
 
-        // Las cédulas a excluir pueden ser cientos: no entran en una URL, así
-        // que con ellas la consulta viaja por POST, con todo en el cuerpo.
-        if ($excluirCi !== []) {
-            $parametros['excluir_ci'] = array_values($excluirCi);
+        // Las cédulas pueden ser cientos: no entran en una URL, así que con
+        // ellas la consulta viaja por POST, con todo en el cuerpo.
+        if ($conHorarioCi !== null) {
+            $parametros['con_horario_ci'] = array_values($conHorarioCi);
+
+            if (in_array($horario, ['con', 'sin'], true)) {
+                $parametros['horario'] = $horario;
+            }
 
             return $this->pedir('/people', $parametros, porPost: true);
         }

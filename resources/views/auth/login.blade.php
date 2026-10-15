@@ -219,8 +219,8 @@
                 </form>
 
                 <p class="ayuda">
-                    ¿Sin cuenta o con la contraseña olvidada? La habilita la unidad de
-                    Recursos Humanos del Gobierno Departamental.
+                    ¿Sin cuenta o con la contraseña olvidada? La habilita la Dirección de
+                    Sistemas y Telecomunicaciones del Gobierno Departamental.
                 </p>
             </div>
         </main>

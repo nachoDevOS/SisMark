@@ -30,16 +30,22 @@
 
             {{-- Solo Mamoré conoce los contratos: con SIAT el select se oculta.
                  Dentro de «Con contrato» van los tipos (permanente, eventual…),
-                 que llegan con cada carga junto con su total. «Sin horario
-                 vigente» es quien tiene contrato y hoy no tiene horario: la
-                 lista de a quién falta asignarle un turno. --}}
+                 que llegan con cada carga junto con su total. --}}
             <select id="f-contrato" aria-label="Situación de contrato">
                 <option value="todos">Todos</option>
                 <optgroup label="Con contrato">
                     <option value="con">Todos con contrato</option>
                 </optgroup>
-                <option value="sin_horario">Con contrato sin horario vigente</option>
                 <option value="sin">Sin contrato</option>
+            </select>
+
+            {{-- Aparece solo con contrato (cualquier tipo): «Sin turnos/horarios»
+                 es la lista de a quién falta asignarle un turno. Horario vigente
+                 hoy, de un turno asignado o heredado del SIA. --}}
+            <select id="f-horario" aria-label="Turnos y horarios" hidden>
+                <option value="todos">Todos</option>
+                <option value="con">Con turnos/horarios</option>
+                <option value="sin">Sin turnos/horarios</option>
             </select>
         </div>
 
@@ -62,6 +68,7 @@
             const selPaginate = document.getElementById('f-paginate');
             const selFuente = document.getElementById('f-fuente');
             const selContrato = document.getElementById('f-contrato');
+            const selHorario = document.getElementById('f-horario');
             const grupoCon = selContrato.querySelector('optgroup');
 
             // El filtro por contrato solo aplica a Mamoré (SIAT no tiene contratos).
@@ -69,6 +76,15 @@
                 const esMamore = selFuente.value === 'mamore';
                 selContrato.hidden = !esMamore;
                 if (!esMamore) { selContrato.value = 'todos'; }
+                sincronizarHorario();
+            }
+
+            // «Turnos/Horarios» solo con contrato: «Todos con contrato» o un tipo.
+            function sincronizarHorario() {
+                const conContrato = !selContrato.hidden
+                    && (selContrato.value === 'con' || selContrato.value.startsWith('tipo:'));
+                selHorario.hidden = !conContrato;
+                if (!conContrato) { selHorario.value = 'todos'; }
             }
 
             // Un tipo viaja como «tipo:5»: es «con contrato» de ese tipo.
@@ -84,9 +100,18 @@
             const etiquetas = {
                 todos: 'Todos',
                 con: 'Todos con contrato',
-                sin_horario: 'Con contrato sin horario vigente',
                 sin: 'Sin contrato',
             };
+            // El segundo combo repite lo elegido en el primero: «Eventual: todos»,
+            // «Eventual con turnos/horarios»… Con «Todos con contrato», «Con contrato».
+            function etiquetasHorario() {
+                const opcion = selContrato.selectedOptions[0];
+                const tipo = selContrato.value.startsWith('tipo:') ? opcion?.dataset.nombre : null;
+
+                return tipo
+                    ? { todos: `${tipo}: todos`, con: `${tipo} con turnos/horarios`, sin: `${tipo} sin turnos/horarios` }
+                    : { todos: 'Con contrato: todos', con: 'Con contrato y con turnos/horarios', sin: 'Con contrato y sin turnos/horarios' };
+            }
             const conTotal = (texto, total) => total === '' || total === undefined
                 ? texto
                 : `${texto} (${Number(total).toLocaleString('es-BO')})`;
@@ -95,11 +120,24 @@
                 const datos = resultados.querySelector('#totales-contrato');
                 for (const valor of Object.keys(etiquetas)) {
                     const opcion = selContrato.querySelector(`option[value="${valor}"]`);
-                    // data-sin-horario llega al dataset como sinHorario.
-                    const clave = valor.replace(/_(\w)/g, (_, letra) => letra.toUpperCase());
-                    opcion.textContent = conTotal(etiquetas[valor], datos ? datos.dataset[clave] : '');
+                    opcion.textContent = conTotal(etiquetas[valor], datos ? datos.dataset[valor] : '');
                 }
+                // Antes que el combo de horario: sus etiquetas llevan el nombre del tipo.
                 actualizarTipos(datos ? JSON.parse(datos.dataset.tipos || '[]') : []);
+
+                // data-con-horario llega al dataset como conHorario. «Todos» es la
+                // suma, solo si vinieron las dos.
+                const conHorario = datos ? datos.dataset.conHorario : '';
+                const sinHorario = datos ? datos.dataset.sinHorario : '';
+                const totalesHorario = {
+                    todos: conHorario !== '' && sinHorario !== '' ? Number(conHorario) + Number(sinHorario) : '',
+                    con: conHorario,
+                    sin: sinHorario,
+                };
+                const textos = etiquetasHorario();
+                for (const valor of Object.keys(textos)) {
+                    selHorario.querySelector(`option[value="${valor}"]`).textContent = conTotal(textos[valor], totalesHorario[valor]);
+                }
             }
 
             // Los tipos se rearman con cada carga, conservando la elección. La API
@@ -128,6 +166,7 @@
                     fuente: selFuente.value,
                     contrato: contrato,
                     tipo: tipo,
+                    horario: selHorario.value,
                     q: inputBuscar.value,
                     por_pagina: selPaginate.value,
                     page: page,
@@ -155,7 +194,8 @@
             });
 
             selPaginate.addEventListener('change', () => cargar(1));
-            selContrato.addEventListener('change', () => cargar(1));
+            selContrato.addEventListener('change', () => { sincronizarHorario(); cargar(1); });
+            selHorario.addEventListener('change', () => cargar(1));
             selFuente.addEventListener('change', () => { sincronizarContrato(); cargar(1); });
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {

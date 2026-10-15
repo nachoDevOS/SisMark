@@ -122,3 +122,10 @@ test('el formulario de usuario trae un solo rol, el ojo en la contraseña y no p
         ->assertSee('aria-controls="password"', false)
         ->assertDontSee('name="avatar"', false);
 });
+
+test('el ingreso dice que las cuentas las habilita la Dirección de Sistemas y Telecomunicaciones', function (): void {
+    $this->get(route('login'))
+        ->assertOk()
+        ->assertSee('Sistemas y Telecomunicaciones del Gobierno Departamental')
+        ->assertDontSee('Recursos Humanos');
+});
