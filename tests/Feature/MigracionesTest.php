@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Schema;
 test('todas las migraciones levantan la base de cero', function (): void {
     expect(Schema::hasTable('turnos'))->toBeTrue()
         ->and(Schema::hasTable('horario_turno'))->toBeFalse()
-        ->and(Schema::hasColumns('horario_turno_respaldo', ['turno_id', 'horario_id', 'horario_copia_id']))->toBeTrue()
+        ->and(Schema::hasTable('horario_turno_respaldo'))->toBeFalse()
         ->and(Schema::hasColumn('horarios', 'turno_id'))->toBeTrue()
         ->and(collect(Schema::getColumns('horarios'))->firstWhere('name', 'idHorario')['nullable'])->toBeTrue()
         ->and(collect(Schema::getColumns('asignacion_horarios'))->firstWhere('name', 'idHorario')['nullable'])->toBeTrue()

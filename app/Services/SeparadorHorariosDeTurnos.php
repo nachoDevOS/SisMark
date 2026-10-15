@@ -35,8 +35,7 @@ use RuntimeException;
 class SeparadorHorariosDeTurnos
 {
     /**
-     * Prefijo de la observación de baja de los originales que quedan sin uso. Es
-     * también la marca con la que {@see self::revertir()} los reconoce.
+     * Prefijo de la observación de baja de los originales que quedan sin uso.
      */
     public const OBSERVACION_BAJA = 'Reemplazado por su copia en el turno';
 
@@ -96,33 +95,6 @@ class SeparadorHorariosDeTurnos
         $this->verificar($pivote, $antes);
 
         return $resumen;
-    }
-
-    /**
-     * Deshace {@see self::separar()}: devuelve asignaciones y licencias al
-     * original, revive los originales dados de baja y borra las copias.
-     */
-    public function revertir(string $pivote): void
-    {
-        $pares = DB::table($pivote)->whereNotNull('horario_copia_id')->get(['id', 'horario_id', 'horario_copia_id']);
-
-        foreach ($pares as $par) {
-            DB::table('asignacion_horarios')
-                ->where('horario_id', $par->horario_copia_id)
-                ->update(['horario_id' => $par->horario_id]);
-
-            DB::table('licencias')
-                ->where('horario_id', $par->horario_copia_id)
-                ->update(['horario_id' => $par->horario_id]);
-
-            DB::table('horarios')
-                ->where('id', $par->horario_id)
-                ->where('deleteObservacion', 'like', self::OBSERVACION_BAJA.'%')
-                ->update(['deleted_at' => null, 'deleteObservacion' => null]);
-
-            DB::table($pivote)->where('id', $par->id)->update(['horario_copia_id' => null]);
-            DB::table('horarios')->where('id', $par->horario_copia_id)->delete();
-        }
     }
 
     /**

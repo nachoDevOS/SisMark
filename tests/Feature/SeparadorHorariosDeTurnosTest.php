@@ -8,11 +8,14 @@ use App\Models\Licencia;
 use App\Models\Turno;
 use App\Services\ProcesadorAsistencia as P;
 use App\Services\SeparadorHorariosDeTurnos;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /*
-| Escenario con la estructura vieja (turno ↔ horario por pivote):
+| Escenario con la estructura vieja (turno ↔ horario por pivote). La pivote ya
+| no existe después de migrar: se arma como estaba justo antes de separar.
 |
 | - «lunes» está en dos turnos (A y B) y además lo usa una asignación del SIA.
 | - «martes» solo en el turno A; «miércoles» solo en el B.
@@ -21,6 +24,14 @@ use Illuminate\Support\Facades\DB;
 */
 beforeEach(function (): void {
     Carbon::setTestNow('2026-10-26');
+
+    Schema::create('horario_turno', function (Blueprint $table): void {
+        $table->id();
+        $table->foreignId('turno_id')->constrained('turnos');
+        $table->foreignId('horario_id')->constrained('horarios');
+        $table->timestamps();
+        $table->foreignId('horario_copia_id')->nullable()->constrained('horarios');
+    });
 
     $this->lunes = horario(2);
     $this->martes = horario(3);
@@ -53,7 +64,7 @@ function turnoConPivote(string $nombre, array $horarios): Turno
     $turno = Turno::factory()->create(['nombre' => $nombre]);
 
     foreach ($horarios as $horario) {
-        DB::table('horario_turno_respaldo')->insert([
+        DB::table('horario_turno')->insert([
             'turno_id' => $turno->id, 'horario_id' => $horario->id, 'created_at' => now(), 'updated_at' => now(),
         ]);
     }
@@ -101,7 +112,7 @@ test('la asistencia procesada da exactamente lo mismo antes y después de separa
     // La licencia del lunes 12 sí pesa: si no se repuntara, ese día saldría como falta.
     expect($antes['222']['2026-10-12']['estado'])->toBe(P::LICENCIA);
 
-    app(SeparadorHorariosDeTurnos::class)->separar('horario_turno_respaldo');
+    app(SeparadorHorariosDeTurnos::class)->separar('horario_turno');
 
     $despues = collect(['222', '333', '111'])->mapWithKeys(fn (string $ci): array => [$ci => procesadoDeOctubre($ci)]);
 
@@ -109,7 +120,7 @@ test('la asistencia procesada da exactamente lo mismo antes y después de separa
 });
 
 test('cada turno queda con copias propias y lo de cada turno apunta a sus copias', function (): void {
-    $resumen = app(SeparadorHorariosDeTurnos::class)->separar('horario_turno_respaldo');
+    $resumen = app(SeparadorHorariosDeTurnos::class)->separar('horario_turno');
 
     expect($resumen['copias'])->toBe(4);
 
@@ -137,7 +148,7 @@ test('cada turno queda con copias propias y lo de cada turno apunta a sus copias
 });
 
 test('lo del SIA no se toca y el original que quedó sin uso se da de baja', function (): void {
-    app(SeparadorHorariosDeTurnos::class)->separar('horario_turno_respaldo');
+    app(SeparadorHorariosDeTurnos::class)->separar('horario_turno');
 
     // «lunes» lo sigue usando la asignación del SIA de 111: queda vivo.
     expect($this->lunes->fresh()->trashed())->toBeFalse()
@@ -154,26 +165,38 @@ test('lo del SIA no se toca y el original que quedó sin uso se da de baja', fun
 
 test('correrlo dos veces no duplica nada', function (): void {
     $separador = app(SeparadorHorariosDeTurnos::class);
-    $separador->separar('horario_turno_respaldo');
+    $separador->separar('horario_turno');
     $horarios = Horario::withTrashed()->count();
 
-    expect($separador->separar('horario_turno_respaldo')['copias'])->toBe(0)
+    expect($separador->separar('horario_turno')['copias'])->toBe(0)
         ->and(Horario::withTrashed()->count())->toBe($horarios);
 });
 
-test('revertir deja todo como estaba', function (): void {
-    $detalleAntes = AsignacionHorario::withTrashed()->orderBy('id')->get(['id', 'horario_id', 'idHorario'])->toArray();
-    $licenciasAntes = Licencia::query()->orderBy('id')->pluck('horario_id', 'id')->all();
-    $horariosAntes = Horario::withTrashed()->orderBy('id')->pluck('id')->all();
+test('volver atrás la migración rearma la pivote con los horarios de cada turno', function (): void {
+    $antes = collect(['222', '333', '111'])->mapWithKeys(fn (string $ci): array => [$ci => procesadoDeOctubre($ci)]);
 
-    $separador = app(SeparadorHorariosDeTurnos::class);
-    $separador->separar('horario_turno_respaldo');
-    $separador->revertir('horario_turno_respaldo');
+    app(SeparadorHorariosDeTurnos::class)->separar('horario_turno');
+    $propios = Horario::query()->whereNotNull('turno_id')->orderBy('id')->get(['id', 'turno_id'])
+        ->map(fn (Horario $horario): array => [$horario->turno_id, $horario->id])->all();
 
-    expect(AsignacionHorario::withTrashed()->orderBy('id')->get(['id', 'horario_id', 'idHorario'])->toArray())->toBe($detalleAntes)
-        ->and(Licencia::query()->orderBy('id')->pluck('horario_id', 'id')->all())->toBe($licenciasAntes)
-        ->and(Horario::withTrashed()->orderBy('id')->pluck('id')->all())->toBe($horariosAntes)
-        ->and(Horario::onlyTrashed()->count())->toBe(0);
+    // Lo que deja `up()` al terminar: la pivote eliminada.
+    Schema::drop('horario_turno');
+
+    // SQLite quita la columna rehaciendo `horarios`, y dentro de la transacción
+    // del test no puede apagar las FK: se difiere su control (MySQL no lo necesita).
+    DB::statement('PRAGMA defer_foreign_keys = ON');
+
+    (require database_path('migrations/2026_10_14_225028_separar_horarios_por_turno.php'))->down();
+
+    $pivote = DB::table('horario_turno')->orderBy('horario_id')->get(['turno_id', 'horario_id'])
+        ->map(fn (object $fila): array => [(int) $fila->turno_id, (int) $fila->horario_id])->all();
+
+    expect($pivote)->toBe($propios)
+        ->and(Schema::hasColumn('horarios', 'turno_id'))->toBeFalse();
+
+    $despues = collect(['222', '333', '111'])->mapWithKeys(fn (string $ci): array => [$ci => procesadoDeOctubre($ci)]);
+
+    expect($despues->all())->toBe($antes->all());
 });
 
 test('aborta si una asignación de turno usa un horario que no es de ese turno', function (): void {
@@ -182,7 +205,7 @@ test('aborta si una asignación de turno usa un horario que no es de ese turno',
 
     DB::beginTransaction();
 
-    expect(fn () => app(SeparadorHorariosDeTurnos::class)->separar('horario_turno_respaldo'))
+    expect(fn () => app(SeparadorHorariosDeTurnos::class)->separar('horario_turno'))
         ->toThrow(RuntimeException::class, 'no es de su turno');
 
     DB::rollBack();

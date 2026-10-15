@@ -76,7 +76,6 @@ aparte (`sia`) y **solo de lectura**.
 | `profesiones` | Catálogo | SIA |
 | `horarios` | Horarios: entrada, salida, tolerancias y ventanas de marca. Los de un turno llevan `turno_id` (son de ese turno); los heredados, null. `idHorario` es el código del SIA: solo lo tiene lo migrado | SIA + horarios de los turnos |
 | `turnos` | Jornada semanal con nombre; `sugerido` marca la que se ofrece a Mamoré. Sin edición | propio |
-| `horario_turno_respaldo` | La pivote vieja turno ↔ horario, con la copia que le tocó a cada par al pasar a `horarios.turno_id`. Solo para volver atrás; se elimina cuando producción esté verificada | propio |
 | `asignacion_turnos` | Qué turno tiene cada funcionario y desde/hasta cuándo (cabecera) | propio |
 | `asignacion_horarios` | Sus horarios día por día: el detalle de cada turno asignado (`asignacion_turno_id`) y lo heredado del SIA (con esa columna en null) | SIA + detalle de turnos |
 | `licencias` | Permisos y licencias, **una fila por día y horario** | SIA · RRHH · solicitudes de Mamoré |
