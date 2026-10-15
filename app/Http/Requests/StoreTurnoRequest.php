@@ -12,7 +12,7 @@ use Illuminate\Validation\Rule;
  * Alta de un turno: un nombre y los horarios de la semana que lo forman, que se
  * cargan acá mismo y nacen siendo del turno.
  *
- * Dos horarios del mismo día pueden convivir (mañana y tarde), pero no pisarse:
+ * Dos horarios del mismo día pueden convivir (mañana y tarde), pero no coincidir en el mismo momento:
  * el procesador no sabría a cuál imputar cada marca.
  */
 class StoreTurnoRequest extends FormRequest
@@ -62,27 +62,18 @@ class StoreTurnoRequest extends FormRequest
             'sugerido' => ['nullable', 'boolean'],
             'observacion' => ['nullable', 'string', 'max:255'],
             'horarios' => ['required', 'array', 'min:1'],
-            'horarios.*' => ['array:'.implode(',', [...self::CAMPOS_HORA, 'dia', 'hTrabajadas', 'siguienteDia'])],
+            'horarios.*' => ['array:'.implode(',', [...self::CAMPOS_HORA, 'dia'])],
             'horarios.*.dia' => ['required', Rule::in(array_map('strval', array_keys(Horario::DIAS)))],
             ...$horas,
-            'horarios.*.hTrabajadas' => ['required', 'numeric', 'min:0', 'max:24'],
-            'horarios.*.siguienteDia' => ['nullable', 'boolean'],
         ];
     }
 
     /**
-     * Los checkboxes llegan solo cuando están marcados.
+     * El checkbox llega solo cuando está marcado.
      */
     protected function prepareForValidation(): void
     {
-        $horarios = $this->input('horarios');
-
-        $this->merge([
-            'sugerido' => $this->boolean('sugerido'),
-            'horarios' => is_array($horarios)
-                ? array_map(fn ($fila) => is_array($fila) ? [...$fila, 'siguienteDia' => (bool) ($fila['siguienteDia'] ?? false)] : $fila, $horarios)
-                : $horarios,
-        ]);
+        $this->merge(['sugerido' => $this->boolean('sugerido')]);
     }
 
     /**
@@ -100,7 +91,7 @@ class StoreTurnoRequest extends FormRequest
 
                 if ($choque !== null) {
                     [$uno, $otro] = $choque;
-                    $validator->errors()->add('horarios', "Los horarios #{$uno} y #{$otro} se pisan: un turno no puede tener dos horarios a la misma hora.");
+                    $validator->errors()->add('horarios', "Los horarios #{$uno} y #{$otro} coinciden en el mismo momento: un turno no puede tener dos horarios a la misma hora.");
                 }
             },
         ];
@@ -117,8 +108,8 @@ class StoreTurnoRequest extends FormRequest
             $horario = [
                 'dia' => (string) $fila['dia'],
                 'nombreHorario' => self::ABREVIATURAS[(int) $fila['dia']].': '.$fila['hEntrada'].' - '.$fila['hSalida'],
-                'hTrabajadas' => $fila['hTrabajadas'],
-                'siguienteDia' => (bool) $fila['siguienteDia'],
+                'hTrabajadas' => $this->horasEntre($fila['hEntrada'], $fila['hSalida']),
+                'siguienteDia' => $this->cruzaMedianoche($fila['hEntrada'], $fila['hSalida']),
             ];
 
             foreach (self::CAMPOS_HORA as $campo) {
@@ -127,6 +118,28 @@ class StoreTurnoRequest extends FormRequest
 
             return $horario;
         }, array_values($this->validated('horarios')));
+    }
+
+    /**
+     * Horas que vale el horario: de la entrada a la salida. No se cargan a mano:
+     * en el SIA se escribían «5,1» por 5 h 10 min, y ese número es el que fija
+     * cuánto se espera del funcionario.
+     */
+    private function horasEntre(string $entrada, string $salida): float
+    {
+        $duracion = ($this->minutos($salida) - $this->minutos($entrada) + 1440) % 1440 ?: 1440;
+
+        return round($duracion / 60, 2);
+    }
+
+    /**
+     * ¿La salida es al día siguiente? No se elige: si la salida no es posterior
+     * a la entrada (22:00 → 06:00), cruza la medianoche. Marcarlo a mano en un
+     * 08:00 → 16:00 dejaba una jornada de 32 horas.
+     */
+    private function cruzaMedianoche(string $entrada, string $salida): bool
+    {
+        return $this->minutos($salida) <= $this->minutos($entrada);
     }
 
     /**
@@ -146,7 +159,7 @@ class StoreTurnoRequest extends FormRequest
             $inicio = ((int) $fila['dia'] - 1) * 1440 + $this->minutos($fila['hEntrada']);
             $fin = ((int) $fila['dia'] - 1) * 1440 + $this->minutos($fila['hSalida']);
 
-            if ($fila['siguienteDia'] || $fin <= $inicio) {
+            if ($fin <= $inicio) {
                 $fin += 1440;
             }
 
@@ -204,7 +217,6 @@ class StoreTurnoRequest extends FormRequest
             'horarios.*.sTolerancia' => 'tolerancia de salida del horario #:position',
             'horarios.*.sMinima' => 'marca de salida desde del horario #:position',
             'horarios.*.sMaxima' => 'marca de salida hasta del horario #:position',
-            'horarios.*.hTrabajadas' => 'horas trabajadas del horario #:position',
         ];
     }
 }
