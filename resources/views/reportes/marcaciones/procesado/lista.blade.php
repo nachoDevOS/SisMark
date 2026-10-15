@@ -46,10 +46,10 @@
     {{-- Columnas del reporte del sistema de escritorio viejo, con «Día» sumado
          adelante.
 
-         La pantalla no lleva barra de resumen: el total de horas, el saldo, los
-         desvíos acumulados y el conteo por estado son de lectura mensual y acá
-         estorbaban arriba de lo que se viene a mirar, que es día por día. El
-         imprimible y el Excel sí los conservan, que es donde ese cierre sirve. --}}
+         La pantalla no lleva barra de resumen arriba: el total de horas, el saldo
+         y el conteo por estado son de lectura mensual y estorbaban arriba de lo
+         que se viene a mirar, que es día por día. Abajo sí lleva la fila de
+         totales, igual que el imprimible. --}}
     <div style="overflow-x: auto;">
         <table>
             <thead>
@@ -131,6 +131,14 @@
                     <tr><td colspan="13" class="vacio">Sin días con horario asignado en el rango seleccionado.</td></tr>
                 @endforelse
             </tbody>
+            {{-- El mismo cierre que el imprimible: el atraso acumulado del rango. --}}
+            <tfoot>
+                <tr>
+                    <th colspan="5" style="text-align: right;">Total:</th>
+                    <th style="color: #92400e;">{{ P::desvio($totales['atraso']) }}</th>
+                    <th colspan="7"></th>
+                </tr>
+            </tfoot>
         </table>
     </div>
 

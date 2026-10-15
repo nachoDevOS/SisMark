@@ -41,6 +41,35 @@ use Illuminate\Support\Collection;
  */
 class ReporteDireccion
 {
+    /**
+     * Todo lo que la columna «Faltas» cuenta como falta: además del día sin
+     * ninguna marca, el que tiene una sola punta y el de horario mal cargado.
+     *
+     * @var list<string>
+     */
+    public const COMO_FALTA = [
+        ProcesadorAsistencia::FALTA,
+        ProcesadorAsistencia::SIN_ENTRADA,
+        ProcesadorAsistencia::SIN_SALIDA,
+        ProcesadorAsistencia::HORARIO_INVALIDO,
+    ];
+
+    /**
+     * Filtro «Mostrar» del reporte: qué tiene que haber tenido la persona en
+     * el rango para entrar en la lista. Son las mismas columnas de la tabla,
+     * así que filtrar por una deja solo a quien tiene algo en ella. «Minutos
+     * acumulados» no es un estado: mira el atraso sumado.
+     *
+     * @var array<string, array{etiqueta: string, estados: list<string>}>
+     */
+    public const FILTROS = [
+        'minutos' => ['etiqueta' => 'Con minutos acumulados', 'estados' => []],
+        'atraso' => ['etiqueta' => 'Con atraso', 'estados' => [ProcesadorAsistencia::ATRASO]],
+        'abandono' => ['etiqueta' => 'Con abandono', 'estados' => [ProcesadorAsistencia::ABANDONO]],
+        'falta' => ['etiqueta' => 'Con falta', 'estados' => self::COMO_FALTA],
+        'licencia' => ['etiqueta' => 'Con licencia', 'estados' => [ProcesadorAsistencia::LICENCIA]],
+    ];
+
     public function __construct(
         private DirectorioMamore $directorio,
         private ContratosFuncionario $contratos,
@@ -217,6 +246,45 @@ class ReporteDireccion
         1 => 'Ene', 2 => 'Feb', 3 => 'Mar', 4 => 'Abr', 5 => 'May', 6 => 'Jun',
         7 => 'Jul', 8 => 'Ago', 9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dic',
     ];
+
+    /**
+     * Solo las filas de quien tuvo algún día con los estados del filtro, en el
+     * rango completo (si cruza meses, en cualquiera de ellos). Sin filtro, o con
+     * uno desconocido, quedan todas.
+     *
+     * @param  Collection<int, array<string, mixed>>  $filas
+     * @return Collection<int, array<string, mixed>>
+     */
+    public static function filtrar(Collection $filas, ?string $filtro): Collection
+    {
+        if (! isset(self::FILTROS[$filtro])) {
+            return $filas;
+        }
+
+        $estados = self::FILTROS[$filtro]['estados'];
+
+        return $filas
+            ->filter(fn (array $fila): bool => $filtro === 'minutos'
+                ? $fila['totales']['atraso'] > 0
+                : self::contar($fila['totales']['porEstado'], $estados) > 0)
+            ->values();
+    }
+
+    /**
+     * Cuántos funcionarios abarca la hoja, y si el filtro recortó la lista,
+     * cuántos se muestran: «12 funcionario(s) · se muestran 10 con falta». Sin
+     * el aviso, un total chico se leería como el de toda la dirección.
+     */
+    public static function alcance(int $enLaDireccion, int $mostrados, ?string $filtro): string
+    {
+        $texto = "{$enLaDireccion} funcionario(s) con contrato en el rango";
+
+        if (! isset(self::FILTROS[$filtro])) {
+            return $texto;
+        }
+
+        return $texto." · se muestran {$mostrados} ".mb_strtolower(self::FILTROS[$filtro]['etiqueta']);
+    }
 
     /**
      * ¿El rango pisa más de un mes calendario?

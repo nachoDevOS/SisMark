@@ -48,6 +48,9 @@
              qUnidad: '',
              abiertoUnidad: false,
 
+             /* «Mostrar»: vacío es todos; si no, una clave de ReporteDireccion::FILTROS. */
+             con: '',
+
              generando: false,
              resultado: '',
 
@@ -180,6 +183,9 @@
                          hasta: this.hasta,
                          print: 0,
                      });
+                     if (this.con) {
+                         params.set('con', this.con);
+                     }
                      /* Sin unidad no se manda el parámetro: la dirección entera. */
                      if (this.unidad) {
                          params.set('unidad', this.unidad);
@@ -332,6 +338,17 @@
                 <div class="campo">
                     <label for="hasta">Hasta</label>
                     <input type="date" id="hasta" x-model="hasta" x-on:change="cargarCatalogo()" class="input">
+                </div>
+                {{-- Solo quien tuvo algo en esa columna. El total de abajo suma
+                     lo que queda en la lista. --}}
+                <div class="campo">
+                    <label for="con">Mostrar</label>
+                    <select id="con" x-model="con" class="input">
+                        <option value="">Todos</option>
+                        @foreach (\App\Services\ReporteDireccion::FILTROS as $clave => $filtro)
+                            <option value="{{ $clave }}">{{ $filtro['etiqueta'] }}</option>
+                        @endforeach
+                    </select>
                 </div>
                 <button type="button" class="btn" x-on:click="generar()" :disabled="! direccion || generando">
                     <span class="btn__contenido" x-show="! generando"><x-heroicon-o-cog-6-tooth />Generar</span>

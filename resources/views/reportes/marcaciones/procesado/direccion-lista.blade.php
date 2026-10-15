@@ -11,6 +11,7 @@
         'nombreUnidad' => $unidad === null ? null : $nombreUnidad,
         'desde' => $desde,
         'hasta' => $hasta,
+        'con' => $filtro,
     ], fn ($valor): bool => $valor !== null);
 
     // Todo lo que la columna «Faltas» cuenta como falta.
@@ -30,6 +31,14 @@
 @endphp
 
 {{-- Partial: se inyecta bajo el filtro del reporte vía AJAX (no lleva layout). --}}
+<style>
+    .fila-desplegable { cursor: pointer; }
+    .fila-desplegable--abierta td { background: #f0fdf4; }
+    .pestana-detalle { display: flex; align-items: center; gap: .5rem; background: none; border: 0; padding: 0;
+        font: inherit; color: inherit; text-align: left; cursor: pointer; }
+    .pestana-detalle__icono { width: 1rem; height: 1rem; flex-shrink: 0; color: var(--verde); transition: transform .15s; }
+    .fila-desplegable--abierta .pestana-detalle__icono { transform: rotate(90deg); }
+</style>
 <div class="card card--padded">
     <div class="cabecera" style="margin-bottom: 1rem;">
         <div>
@@ -38,18 +47,26 @@
                 {{-- Qué alcance tiene la tabla: sin esto no se sabe si es la
                      dirección entera o una unidad suelta. --}}
                 {{ $nombreUnidad }} ·
-                Rango: {{ $desde }} a {{ $hasta }} · {{ $totales['funcionarios'] }} funcionario(s)
+                Rango: {{ $desde }} a {{ $hasta }} · {{ $alcance }}
             </span>
         </div>
         <div class="acciones">
             <a class="btn" target="_blank" rel="noopener"
                href="{{ route('reportes.marcaciones.direccion.generar', $parametros + ['print' => 1]) }}"><x-heroicon-o-printer />Imprimir</a>
+            @can('Export:Reporte')
+                <a class="btn btn--gris"
+                   href="{{ route('reportes.marcaciones.direccion.generar', $parametros + ['print' => 2]) }}"><x-heroicon-o-table-cells />Excel</a>
+            @endcan
         </div>
     </div>
 
     @if ($filas->isEmpty())
         <p class="vacio" style="margin: 0;">
-            Nadie de esta dirección tuvo contrato dentro del rango, así que no hay días que controlar.
+            @if ($filtro)
+                Nadie de esta dirección queda con el filtro «{{ \App\Services\ReporteDireccion::FILTROS[$filtro]['etiqueta'] }}» en el rango.
+            @else
+                Nadie de esta dirección tuvo contrato dentro del rango, así que no hay días que controlar.
+            @endif
         </p>
     @else
         <div style="overflow-x: auto;">
@@ -66,7 +83,6 @@
                         <th>Abandonos</th>
                         <th title="Sin ninguna marca, con una sola punta, o horario mal configurado">Faltas</th>
                         <th>Licencia</th>
-                        <th></th>
                     </tr>
                 </thead>
 
@@ -108,10 +124,19 @@
                                 }
                             },
                         }">
-                        <tr>
+                        {{-- Toda la fila despliega el detalle; la pestaña del nombre lo
+                             indica. Imprimir y Excel están dentro del detalle. --}}
+                        <tr class="fila-desplegable" x-on:click="alternar()" :class="abierto && 'fila-desplegable--abierta'">
                             <td>
-                                <strong>{{ $nombre ?: 'Sin nombre' }}</strong><br>
-                                <small style="color: var(--muted);">CI {{ $persona['ci'] }}</small>
+                                <button type="button" class="pestana-detalle" x-on:click.stop="alternar()"
+                                        :aria-expanded="abierto" aria-controls="{{ $detalle }}"
+                                        :title="abierto ? 'Ocultar el detalle' : 'Ver el detalle día por día'">
+                                    <x-heroicon-s-chevron-right class="pestana-detalle__icono" />
+                                    <span>
+                                        <strong>{{ $nombre ?: 'Sin nombre' }}</strong><br>
+                                        <small style="color: var(--muted);">CI {{ $persona['ci'] }}</small>
+                                    </span>
+                                </button>
                             </td>
                             <td>
                                 {{-- Los tramos y no «el cargo de hoy»: quien renovó o se pasó
@@ -144,15 +169,6 @@
                             <td @if ($abandonos > 0) style="color: #991b1b; font-weight: 700;" @endif>{{ $abandonos ?: '' }}</td>
                             <td @if ($faltas > 0) style="color: #991b1b; font-weight: 700;" @endif>{{ $faltas ?: '' }}</td>
                             <td>{{ R::contar($porEstado, [P::LICENCIA]) ?: '' }}</td>
-                            <td style="white-space: nowrap;">
-                                <button type="button" class="btn btn--gris" style="padding: .3rem .55rem;"
-                                        x-on:click="alternar()" :aria-expanded="abierto" aria-controls="{{ $detalle }}">
-                                    <span x-text="abierto ? 'Ocultar' : 'Detalle'">Detalle</span>
-                                </button>
-                                <a class="btn btn--gris" style="padding: .3rem .55rem;" target="_blank" rel="noopener"
-                                   href="{{ route('reportes.marcaciones.procesado.generar', $suyo + ['print' => 1]) }}"
-                                   title="Imprimible individual"><x-heroicon-o-printer /></a>
-                            </td>
                         </tr>
                         @if ($cruzaMeses)
                             @foreach ($fila['meses'] as $mes)
@@ -170,13 +186,12 @@
                                     <td>{{ R::contar($delMes, [P::ABANDONO]) ?: '' }}</td>
                                     <td>{{ R::contar($delMes, $comoFalta) ?: '' }}</td>
                                     <td>{{ R::contar($delMes, [P::LICENCIA]) ?: '' }}</td>
-                                    <td></td>
                                 </tr>
                             @endforeach
                         @endif
 
                         <tr x-show="abierto" x-cloak id="{{ $detalle }}">
-                            <td colspan="{{ $cruzaMeses ? 9 : 8 }}" style="background: var(--bg);">
+                            <td colspan="{{ $cruzaMeses ? 8 : 7 }}" style="background: var(--bg); padding: .75rem;">
                                 <div x-show="cargando" style="color: var(--muted); padding: .5rem;">Cargando el detalle…</div>
                                 <div x-html="html"></div>
                             </td>
@@ -186,7 +201,7 @@
 
                 <tfoot>
                     <tr>
-                        <th colspan="{{ $cruzaMeses ? 3 : 2 }}" style="text-align: right;">Total de la dirección:</th>
+                        <th colspan="{{ $cruzaMeses ? 3 : 2 }}" style="text-align: right;">Total:</th>
                         <th>
                             @if ($cruzaMeses)
                                 <span style="font-weight: normal;" title="Los minutos se acumulan por mes y no se suman entre meses">—</span>
@@ -198,7 +213,6 @@
                         <th>{{ R::contar($totales['porEstado'], [P::ABANDONO]) }}</th>
                         <th>{{ R::contar($totales['porEstado'], $comoFalta) }}</th>
                         <th>{{ R::contar($totales['porEstado'], [P::LICENCIA]) }}</th>
-                        <th></th>
                     </tr>
                 </tfoot>
             </table>

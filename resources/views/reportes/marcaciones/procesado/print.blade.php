@@ -144,7 +144,7 @@
                 </tr>
             @endforelse
             <tr>
-                <th colspan="5" style="text-align: right">Totales del rango:</th>
+                <th colspan="5" style="text-align: right">Total:</th>
                 <th style="text-align: center">{{ P::desvio($totales['atraso']) }}</th>
                 <th colspan="7"></th>
             </tr>

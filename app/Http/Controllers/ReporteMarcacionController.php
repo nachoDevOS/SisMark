@@ -7,6 +7,7 @@ use App\Models\Asistencia;
 use App\Models\Persona;
 use App\Services\DirectorioMamore;
 use App\Services\ExcelMarcacionesProcesadas;
+use App\Services\ExcelReporteDireccion;
 use App\Services\ProcesadorAsistencia;
 use App\Services\ReporteDireccion;
 use App\Services\ResolutorNombres;
@@ -261,11 +262,17 @@ class ReporteMarcacionController extends Controller
      * Genera el reporte de la dirección elegida: `print=1` es el imprimible, y
      * cualquier otra cosa la tabla en pantalla, que se pide por AJAX.
      */
-    public function porDireccionList(Request $request, ReporteDireccion $reporte): View|RedirectResponse
+    public function porDireccionList(Request $request, ReporteDireccion $reporte, ExcelReporteDireccion $excel): View|BinaryFileResponse|RedirectResponse
     {
         $this->autorizarPermiso('ViewAny:Reporte');
 
         $impresion = (int) $request->query('print', 0);
+
+        // El Excel saca los datos del sistema: mismo permiso aparte que el del
+        // reporte individual.
+        if ($impresion === 2) {
+            $this->autorizarPermiso('Export:Reporte');
+        }
         $direccion = (int) $request->query('direccion', 0);
         $nombreDireccion = trim((string) $request->query('nombre', ''));
 
@@ -299,6 +306,15 @@ class ReporteMarcacionController extends Controller
             );
         }
 
+        // «Mostrar»: solo quien tuvo atraso, abandono, falta o licencia. Se
+        // filtra después de procesar, así que cada fila es la misma que sin
+        // filtro; lo que cambia es cuáles se listan y, con ellas, el total.
+        $filtro = array_key_exists((string) $request->query('con'), ReporteDireccion::FILTROS)
+            ? (string) $request->query('con')
+            : null;
+        $enLaDireccion = $filas->count();
+        $filas = ReporteDireccion::filtrar($filas, $filtro);
+
         $datos = [
             'filas' => $filas,
             'totales' => $reporte->totales($filas),
@@ -318,11 +334,29 @@ class ReporteMarcacionController extends Controller
             // fila por mes. Dentro de un solo mes el total del rango ya es
             // mensual y la fila por persona alcanza.
             'cruzaMeses' => ReporteDireccion::cruzaMeses($desde, $hasta),
+            'filtro' => $filtro,
+            'alcance' => ReporteDireccion::alcance($enLaDireccion, $filas->count(), $filtro),
         ];
 
-        return $impresion === 1
-            ? view('reportes.marcaciones.procesado.direccion-print', $datos)
-            : view('reportes.marcaciones.procesado.direccion-lista', $datos);
+        return match ($impresion) {
+            1 => view('reportes.marcaciones.procesado.direccion-print', $datos),
+            2 => response()
+                ->download(
+                    $excel->generar(
+                        $datos['filas'],
+                        $datos['totales'],
+                        $datos['nombreDireccion'],
+                        $datos['nombreUnidad'],
+                        $datos['desde'],
+                        $datos['hasta'],
+                        $datos['cruzaMeses'],
+                        $datos['alcance'],
+                    ),
+                    $excel->nombreArchivo($datos['nombreDireccion']),
+                )
+                ->deleteFileAfterSend(),
+            default => view('reportes.marcaciones.procesado.direccion-lista', $datos),
+        };
     }
 
     /**

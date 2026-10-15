@@ -2,6 +2,7 @@
 
 use App\Models\AsignacionHorario;
 use App\Models\Asistencia;
+use App\Models\Persona;
 use App\Services\AsignadorTurnos;
 use App\Services\ProcesadorAsistencia as P;
 use Illuminate\Support\Carbon;
@@ -77,4 +78,20 @@ test('el lunes del turno no se mezcla con el horario viejo', function (): void {
 
     expect($dia['bloques'])->toHaveCount(1)
         ->and($dia['bloques'][0]['horario']->hEntrada->format('H:i'))->toBe('08:00');
+});
+
+test('la vista previa del reporte procesado cierra con los totales del rango, como el imprimible', function (): void {
+    Persona::factory()->create(['ci' => '111']);
+    marcar('2026-10-20', ['08:25', '16:05']);
+
+    $parametros = ['persona' => '111', 'desde' => '2026-10-19', 'hasta' => '2026-10-23'];
+
+    $this->actingAs(superAdmin())
+        ->get(route('reportes.marcaciones.procesado.generar', $parametros))
+        ->assertOk()
+        ->assertSeeInOrder(['Total:', '25 min']);
+
+    $this->get(route('reportes.marcaciones.procesado.generar', $parametros + ['print' => 1]))
+        ->assertOk()
+        ->assertSeeInOrder(['Total:', '25 min']);
 });

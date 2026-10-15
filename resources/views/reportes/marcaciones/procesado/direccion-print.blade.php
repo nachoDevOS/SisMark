@@ -46,7 +46,7 @@
     $qrTexto = "REPORTE DE MARCACIONES POR DIRECCION - GAD BENI\n"
         ."Direccion: {$nombreDireccion}\n"
         ."Unidad: {$nombreUnidad}\n"
-        .'Funcionarios: '.$totales['funcionarios']."\n"
+        .'Funcionarios: '.$alcance."\n"
         ."Rango: {$desdeFmt} a {$hastaFmt}\n"
         .'Atrasos: '.R::contar($totales['porEstado'], [P::ATRASO])
         .($cruzaMeses ? '' : ' ('.$minutosDeAtraso($totales['atraso']).' min)')
@@ -87,7 +87,7 @@
         {{-- El alcance va en la hoja: firmada y archivada, tiene que decir sola
              si cubre la dirección entera o una unidad. --}}
         <br><b>Unidad:</b> {{ $nombreUnidad }}
-        <br><b>Funcionarios con contrato en el rango:</b> {{ $totales['funcionarios'] }}
+        <br><b>Funcionarios:</b> {{ $alcance }}
     </p>
 
     <table style="width: 100%; font-size: 11px" border="1" cellspacing="0" cellpadding="3">
@@ -159,12 +159,16 @@
             @empty
                 <tr>
                     <td colspan="{{ $cruzaMeses ? 10 : 9 }}" style="text-align: center">
-                        Nadie de esta dirección tuvo contrato dentro del rango.
+                        @if ($filtro)
+                            Nadie de esta dirección queda con el filtro «{{ R::FILTROS[$filtro]['etiqueta'] }}» en el rango.
+                        @else
+                            Nadie de esta dirección tuvo contrato dentro del rango.
+                        @endif
                     </td>
                 </tr>
             @endforelse
             <tr>
-                <th colspan="{{ $cruzaMeses ? 5 : 4 }}" style="text-align: right">Totales de la dirección:</th>
+                <th colspan="{{ $cruzaMeses ? 5 : 4 }}" style="text-align: right">Total:</th>
                 <th style="text-align: center">{{ $cruzaMeses ? '—' : $minutosDeAtraso($totales['atraso']) }}</th>
                 <th style="text-align: center">{{ R::contar($totales['porEstado'], [P::ATRASO]) }}</th>
                 <th style="text-align: center">{{ R::contar($totales['porEstado'], [P::ABANDONO]) }}</th>

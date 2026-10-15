@@ -239,6 +239,8 @@
         tbody tr:last-child td:last-child { border-bottom-right-radius: .625rem; }
         tbody td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
         tbody tr:last-child td { border-bottom: 0; }
+        /* Fila de totales: alineada con las celdas de arriba (el navegador centra los th). */
+        tfoot th, tfoot td { text-align: left; padding: .6rem .75rem; background: var(--bg); border-top: 2px solid var(--border); }
         tbody tr:hover { background: #f9fafb; }
         /* Fila de solo lectura (p. ej. asignación de horario vencida). */
         tbody tr.fila--inactiva td { color: var(--muted); background: var(--bg); }
