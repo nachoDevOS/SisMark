@@ -872,15 +872,16 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Solo las fechas con motivo cargado: la tabla tiene una fila por día del
-     * calendario, y las que no tienen motivo son días comunes.
+     * Solo las fechas con motivo cargado y activas: la tabla tiene una fila por
+     * día del calendario, las que no tienen motivo son días comunes, y las dadas
+     * de baja tampoco cuentan.
      *
      * @return Collection<string, DiaExcepcional>
      */
     private function excepcionalesDelRango(Carbon $desde, Carbon $hasta): Collection
     {
         return DiaExcepcional::query()
-            ->whereNotNull('motivoInasistencia')
+            ->vigentes()
             ->whereBetween('fecha', [$desde->toDateString(), $hasta->toDateString()])
             ->get()
             ->keyBy(fn (DiaExcepcional $dia): string => $dia->fecha->toDateString());

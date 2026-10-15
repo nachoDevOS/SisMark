@@ -26,7 +26,10 @@ class UpdateDiaExcepcionalRequest extends FormRequest
             'fecha' => [
                 'required',
                 'date',
-                Rule::unique('dias_excepcionales', 'fecha')->ignore($this->route('diaExcepcional')),
+                Rule::unique('dias_excepcionales', 'fecha')
+                    ->ignore($this->route('diaExcepcional'))
+                    ->whereNotNull('motivoInasistencia')
+                    ->withoutTrashed(),
             ],
             'motivoInasistencia' => ['required', 'string', 'max:255'],
             // Respaldo del día: decreto, resolución o memorándum. Opcional, y
@@ -56,7 +59,7 @@ class UpdateDiaExcepcionalRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'fecha.unique' => 'Ya existe un día excepcional registrado para esa fecha.',
+            'fecha.unique' => 'Ya existe un día excepcional registrado para esa fecha. Si está dado de baja, activalo desde el listado.',
             'respaldo.mimes' => 'El respaldo debe ser una imagen (JPG o PNG) o un PDF.',
             'respaldo.max' => 'El respaldo no puede pesar más de 5 MB.',
         ];

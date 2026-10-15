@@ -181,6 +181,9 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     // Respaldo del día (decreto, resolución). Igual que en licencias: va contra
     // el bucket con un enlace firmado de vida corta, el archivo nunca es público.
     Route::get('dias-excepcionales/{diaExcepcional}/respaldo', [DiaExcepcionalController::class, 'respaldo'])->name('dias-excepcionales.respaldo');
+    // Dar de baja / activar: dado de baja no cuenta en los reportes, pero no se
+    // elimina. Mismo permiso que editar.
+    Route::patch('dias-excepcionales/{diaExcepcional}/estado', [DiaExcepcionalController::class, 'cambiarEstado'])->name('dias-excepcionales.estado');
     Route::resource('dias-excepcionales', DiaExcepcionalController::class)
         ->parameters(['dias-excepcionales' => 'diaExcepcional'])
         ->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);

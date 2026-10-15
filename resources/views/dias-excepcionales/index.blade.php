@@ -27,6 +27,16 @@
             registros
         </label>
 
+        {{-- Dado de baja = sigue en el listado pero no cuenta en los reportes. --}}
+        <label class="tabla-filtros__mostrar">
+            Estado
+            <select id="f-estado" aria-label="Filtrar por estado">
+                <option value="todos" @selected($estado === 'todos')>Todos</option>
+                <option value="activos" @selected($estado === 'activos')>Activos</option>
+                <option value="inactivos" @selected($estado === 'inactivos')>Inactivos</option>
+            </select>
+        </label>
+
         <div class="buscador">
             <x-heroicon-o-magnifying-glass />
             <input type="text" id="f-buscar" value="{{ $busqueda }}" placeholder="Buscar por motivo o fecha…">
@@ -44,10 +54,12 @@
             const resultados = document.getElementById('div-results');
             const inputBuscar = document.getElementById('f-buscar');
             const selPaginate = document.getElementById('f-paginate');
+            const selEstado = document.getElementById('f-estado');
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
                     q: inputBuscar.value,
+                    estado: selEstado.value,
                     por_pagina: selPaginate.value,
                     page: page,
                 });
@@ -73,6 +85,7 @@
             });
 
             selPaginate.addEventListener('change', () => cargar(1));
+            selEstado.addEventListener('change', () => cargar(1));
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.
             inputBuscar.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); cargar(1); }

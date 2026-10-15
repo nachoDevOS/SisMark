@@ -28,12 +28,14 @@ class DiaExcepcionalController extends Controller
 
         $busqueda = trim((string) $request->query('q', ''));
         $porPagina = $this->porPagina($request);
+        $estado = $this->estado($request);
 
-        return view('dias-excepcionales.index', compact('busqueda', 'porPagina'));
+        return view('dias-excepcionales.index', compact('busqueda', 'porPagina', 'estado'));
     }
 
     /**
-     * Devuelve el listado para AJAX.
+     * Devuelve el listado para AJAX, con todas las filas del calendario (con
+     * motivo o sin él), filtrado por estado.
      */
     public function list(Request $request): View
     {
@@ -41,8 +43,11 @@ class DiaExcepcionalController extends Controller
 
         $busqueda = trim((string) $request->query('q', ''));
         $porPagina = $this->porPagina($request);
+        $estado = $this->estado($request);
 
         $diasExcepcionales = DiaExcepcional::query()
+            ->when($estado === 'activos', fn (Builder $query) => $query->where('estado', DiaExcepcional::ACTIVO))
+            ->when($estado === 'inactivos', fn (Builder $query) => $query->where('estado', '!=', DiaExcepcional::ACTIVO))
             ->when($busqueda !== '', fn (Builder $query) => $this->filtrarBusqueda($query, $busqueda))
             ->orderByDesc('fecha')
             ->paginate($porPagina)
@@ -96,7 +101,16 @@ class DiaExcepcionalController extends Controller
             );
         }
 
-        DiaExcepcional::create($datos);
+        // La fecha ya tiene su fila vacía del calendario del SIA: se completa
+        // esa en vez de sumar otra.
+        $vacia = DiaExcepcional::query()
+            ->whereDate('fecha', $datos['fecha'])
+            ->whereNull('motivoInasistencia')
+            ->first();
+
+        $datos['estado'] = DiaExcepcional::ACTIVO;
+
+        $vacia === null ? DiaExcepcional::create($datos) : $vacia->update($datos);
 
         return redirect()
             ->route('dias-excepcionales.index')
@@ -145,6 +159,35 @@ class DiaExcepcionalController extends Controller
         return redirect()
             ->route('dias-excepcionales.index')
             ->with('estado', 'Día excepcional actualizado correctamente.');
+    }
+
+    /**
+     * Da de baja o vuelve a dar de alta el día. Dado de baja sigue en el
+     * listado pero no cuenta en los reportes: el día se procesa como uno común.
+     */
+    public function cambiarEstado(DiaExcepcional $diaExcepcional): RedirectResponse
+    {
+        $this->authorize('update', $diaExcepcional);
+
+        $diaExcepcional->update([
+            'estado' => $diaExcepcional->activo ? DiaExcepcional::INACTIVO : DiaExcepcional::ACTIVO,
+        ]);
+
+        $fecha = $diaExcepcional->fecha?->format('d/m/Y');
+
+        return back()->with('estado', $diaExcepcional->activo
+            ? "Día excepcional del {$fecha} activado: vuelve a contar en los reportes."
+            : "Día excepcional del {$fecha} dado de baja: los reportes lo procesan como un día común.");
+    }
+
+    /**
+     * Filtro de estado del listado: `todos`, `activos` o `inactivos`.
+     */
+    private function estado(Request $request): string
+    {
+        $estado = (string) $request->query('estado', 'todos');
+
+        return in_array($estado, ['todos', 'activos', 'inactivos'], true) ? $estado : 'todos';
     }
 
     /**

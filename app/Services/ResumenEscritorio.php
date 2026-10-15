@@ -87,7 +87,7 @@ class ResumenEscritorio
     public function proximoExcepcional(): ?DiaExcepcional
     {
         return DiaExcepcional::query()
-            ->whereNotNull('motivoInasistencia')
+            ->vigentes()
             ->where('fecha', '>=', today()->toDateString())
             ->where('fecha', '<', today()->addDays(8)->toDateString())
             ->orderBy('fecha')

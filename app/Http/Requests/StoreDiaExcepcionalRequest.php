@@ -23,7 +23,15 @@ class StoreDiaExcepcionalRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'fecha' => ['required', 'date', Rule::unique('dias_excepcionales', 'fecha')],
+            // Las filas vacías del calendario del SIA no cuentan: el alta
+            // completa esa fila. Las eliminadas tampoco.
+            'fecha' => [
+                'required',
+                'date',
+                Rule::unique('dias_excepcionales', 'fecha')
+                    ->whereNotNull('motivoInasistencia')
+                    ->withoutTrashed(),
+            ],
             'motivoInasistencia' => ['required', 'string', 'max:255'],
             // Respaldo del día: decreto, resolución o memorándum. Opcional —hay
             // tolerancias que se cargan por instrucción verbal y el documento
@@ -52,7 +60,7 @@ class StoreDiaExcepcionalRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'fecha.unique' => 'Ya existe un día excepcional registrado para esa fecha.',
+            'fecha.unique' => 'Ya existe un día excepcional registrado para esa fecha. Si está dado de baja, activalo desde el listado.',
             'respaldo.mimes' => 'El respaldo debe ser una imagen (JPG o PNG) o un PDF.',
             'respaldo.max' => 'El respaldo no puede pesar más de 5 MB.',
         ];

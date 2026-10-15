@@ -5,6 +5,7 @@
                 <th>ID</th>
                 <th>Fecha</th>
                 <th>Motivo de inasistencia general</th>
+                <th>Estado</th>
                 <th></th>
             </tr>
         </thead>
@@ -25,8 +26,26 @@
                             </a>
                         @endif
                     </td>
+                    <td>
+                        <span class="pill {{ $dia->activo ? 'pill--ok' : 'pill--no' }}">{{ $dia->activo ? 'Activo' : 'Inactivo' }}</span>
+                    </td>
                     <td class="acciones">
                         @can('update', $dia)
+                            @php($accionEstado = $dia->activo ? 'Dar de baja' : 'Activar')
+                            <form action="{{ route('dias-excepcionales.estado', $dia) }}" method="POST" style="margin: 0; display: inline-flex;"
+                                  onsubmit="return confirm(@js($dia->activo
+                                      ? '¿Dar de baja el día excepcional del '.$dia->fecha?->format('d/m/Y').'? Los reportes lo van a procesar como un día común.'
+                                      : '¿Activar el día excepcional del '.$dia->fecha?->format('d/m/Y').'? Vuelve a contar en los reportes.'))">
+                                @csrf
+                                @method('PATCH')
+                                <button type="submit" class="btn-icon" title="{{ $accionEstado }}" aria-label="{{ $accionEstado }}">
+                                    @if ($dia->activo)
+                                        <x-heroicon-o-pause />
+                                    @else
+                                        <x-heroicon-o-play />
+                                    @endif
+                                </button>
+                            </form>
                             <a href="{{ route('dias-excepcionales.edit', $dia) }}" class="btn-icon" title="Editar" aria-label="Editar"><x-heroicon-o-pencil-square /></a>
                         @endcan
                         @can('delete', $dia)
@@ -36,7 +55,7 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="4" class="vacio">{{ $busqueda !== '' ? 'Sin días excepcionales para la búsqueda.' : 'Aún no hay días excepcionales registrados.' }}</td></tr>
+                <tr><td colspan="5" class="vacio">{{ $busqueda !== '' ? 'Sin días excepcionales para la búsqueda.' : 'Aún no hay días excepcionales registrados.' }}</td></tr>
             @endforelse
         </tbody>
     </table>
