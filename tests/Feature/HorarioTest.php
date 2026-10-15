@@ -23,7 +23,11 @@ test('la ficha muestra el turno dueño del horario', function (): void {
 
     $this->actingAs(superAdmin());
 
-    $this->get(route('horarios.index'))->assertSuccessful();
+    // Sin botones de alta: ni horario ni turno.
+    $this->get(route('horarios.index'))
+        ->assertSuccessful()
+        ->assertDontSee(route('turnos.create'))
+        ->assertDontSee('Nuevo horario');
     $this->get(route('horarios.show', $turno->horarios->first()))
         ->assertSuccessful()
         ->assertSee($turno->nombre);

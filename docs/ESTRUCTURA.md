@@ -74,9 +74,9 @@ aparte (`sia`) y **solo de lectura**.
 | `asistencias` | Marcaciones crudas: `ci`, `fecha`, `hora`, `tipo`. **4,4 millones de filas.** Sin baja lógica | reloj · CSV · alta manual · SIA |
 | `personas` | Padrón local de funcionarios | SIA |
 | `profesiones` | Catálogo | SIA |
-| `horarios` | Horarios: entrada, salida, tolerancias y ventanas de marca | SIA |
+| `horarios` | Horarios: entrada, salida, tolerancias y ventanas de marca. Los de un turno llevan `turno_id` (son de ese turno); los heredados, null. `idHorario` es el código del SIA: solo lo tiene lo migrado | SIA + horarios de los turnos |
 | `turnos` | Jornada semanal con nombre; `sugerido` marca la que se ofrece a Mamoré. Sin edición | propio |
-| `horario_turno` | Los horarios que forman cada turno | propio |
+| `horario_turno_respaldo` | La pivote vieja turno ↔ horario, con la copia que le tocó a cada par al pasar a `horarios.turno_id`. Solo para volver atrás; se elimina cuando producción esté verificada | propio |
 | `asignacion_turnos` | Qué turno tiene cada funcionario y desde/hasta cuándo (cabecera) | propio |
 | `asignacion_horarios` | Sus horarios día por día: el detalle de cada turno asignado (`asignacion_turno_id`) y lo heredado del SIA (con esa columna en null) | SIA + detalle de turnos |
 | `licencias` | Permisos y licencias, **una fila por día y horario** | SIA · RRHH · solicitudes de Mamoré |
@@ -109,8 +109,8 @@ aparte (`sia`) y **solo de lectura**.
 | **Escritorio** | `/` | Tarjetas de equipos y asistencia, gráfico de 14 días y panel de calidad de datos (se carga aparte por AJAX, porque cuenta la tabla entera) |
 | **Funcionarios** | `/funcionarios` | Listado con dos fuentes conmutables: **Mamoré** (por defecto) o **SIAT** (base local). Ficha con cuatro solapas |
 | **Marcaciones** | `/marcaciones` | Listado crudo con filtros. Dos formas de cargar: importar el CSV del reloj, o alta manual de a una (tipo `M`) para lo que el reloj no registró |
-| **Horarios** | `/horarios` | CRUD de horarios |
-| **Turnos** | `/turnos` | Jornada semanal que agrupa horarios. Solo se crea o se elimina, sin edición: para cambiar la jornada se crea otro turno. **Sugerido** = se ofrece en Mamoré para elegir al dar de alta un contrato |
+| **Horarios** | `/horarios` | Solo consulta, con el turno de cada horario (los heredados figuran «Sin turno»). Los horarios se cargan al crear el turno |
+| **Turnos** | `/turnos` | Jornada semanal: el nombre y sus horarios, que se cargan ahí mismo (con «Copiar a días»). Solo se crea o se elimina, sin edición: para cambiar la jornada se crea otro turno. **Sugerido** = se ofrece en Mamoré para elegir al dar de alta un contrato |
 | **Turnos asignados** | `/turnos-asignados` | Qué turno tiene cada funcionario, con fecha de inicio y de fin. Es **lo único que se asigna**. **Concluir** ≠ **Eliminar**: concluir pone fecha de fin y conserva la historia; eliminar es para lo cargado por error |
 | **Horarios asignados** | `/horarios-asignados` | Historial día por día. Sin alta: lo de un turno se maneja desde el turno; acá solo se concluye o elimina lo heredado del SIA |
 | **Licencias** | `/licencias` | Listado, alta en lote, ficha de la solicitud y resolución de lo que llega de Mamoré |
@@ -633,7 +633,7 @@ app/
 │   │   ├── ConfiguracionController.php  # «Configuración», un grupo por tarjeta
 │   │   ├── DashboardController.php
 │   │   ├── DiaExcepcionalController.php
-│   │   ├── HorarioController.php     # «Horarios»
+│   │   ├── HorarioController.php     # «Horarios»: solo consulta
 │   │   ├── EquipoController.php       # CRUD + probar/exportar/sincronizar/vaciar
 │   │   ├── LicenciaController.php     # alta, ficha, aprobar (con control de tope)
 │   │   ├── MarcacionController.php

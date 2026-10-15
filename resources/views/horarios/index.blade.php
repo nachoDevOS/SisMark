@@ -8,9 +8,6 @@
             <span class="cabecera__icono"><x-heroicon-o-clock /></span>
             <h1>Horarios</h1>
         </div>
-        @can('create', \App\Models\Turno::class)
-            <a href="{{ route('turnos.create') }}" class="btn"><x-heroicon-o-plus />Nuevo turno</a>
-        @endcan
     </div>
 
     <p class="ayuda">
