@@ -1,6 +1,6 @@
 # SisMark
 
-Sistema de Sincronización de Biométricos — Gobierno Autónomo Departamental
+SISTEMA DE CONTROL DE ASISTENCIA — Gobierno Autónomo Departamental
 del Beni. Aplicación **Laravel 13** (MVC clásico) que administra los equipos
 biométricos ZKTeco de la institución (vía un microservicio Python) y
 consulta la asistencia registrada en la base institucional **SIA**
@@ -115,7 +115,7 @@ php artisan db:seed             # usuario de prueba test@example.com
 Configurar en `.env`:
 
 ```env
-APP_NAME="SISTEMA DE SINCRONIZACIÓN DE BIOMETRICO"
+APP_NAME="SISTEMA DE CONTROL DE ASISTENCIA"
 DB_DATABASE=sismark ...                    # MySQL local
 DB_HOST_SIA=... DB_USERNAME_SIA=...       # SQL Server del SIA (sección 6)
 DEVICE_SERVICE_URL=http://127.0.0.1:9001  # microservicio (sección 5)
@@ -281,14 +281,14 @@ docker run -d --name sismark-devices --restart unless-stopped \
 1. Verifica que `APP_KEY`, `DB_HOST` y `DB_DATABASE` estén cargadas; si falta
    alguna, se detiene diciendo cuál.
 2. Espera a que MySQL acepte conexiones (hasta 2 minutos).
-3. Siembra los permisos que falten y el rol `Administrador del sistema` (se saltea con `SISMARK_SEED=false`).
-4. Cachea configuración, rutas y vistas.
-5. Le cede el control a NGINX Unit.
+3. Cachea configuración, rutas y vistas.
+4. Le cede el control a NGINX Unit.
 
-**No corre migraciones.** El sistema está en producción: un cambio de esquema
-se aplica a mano, cuando se decide (ver «Actualizar»).
+**No corre migraciones ni seeders.** El sistema está en producción: un redeploy
+nunca escribe en la base por su cuenta; lo que haga falta se corre a mano,
+cuando se decide (ver «Al actualizar versión»).
 
-> El paso 4 no es opcional: **Unit no le pasa el entorno del contenedor a los
+> El paso 3 no es opcional: **Unit no le pasa el entorno del contenedor a los
 > procesos de PHP**, así que la aplicación funciona con lo que quedó en
 > `bootstrap/cache/config.php`. Por eso el arranque siempre lo regenera.
 
@@ -296,10 +296,11 @@ En Coolify, la ruta de salud es `/up` y el puerto a exponer es el 8000.
 
 ### Primer usuario
 
-El primer arranque deja creados los permisos y el rol `Administrador del sistema`. El usuario
-se crea a mano:
+En una base nueva, primero los permisos y el rol `Administrador del sistema`, y
+después el usuario, todo a mano:
 
 ```bash
+docker exec -it sismark-app php artisan db:seed --class=RolesAndPermissionsSeeder --force
 docker exec -it sismark-app php artisan tinker
 ```
 
@@ -336,6 +337,13 @@ mano desde la terminal del contenedor (en Coolify: el recurso → «Terminal»):
 ```bash
 php artisan migrate --status   # qué migraciones faltan
 php artisan migrate --force    # aplicarlas (nunca migrate:fresh)
+```
+
+Tampoco siembra. Si el despliegue trae permisos nuevos, o cambia el nombre del
+rol `Administrador del sistema`, se corre:
+
+```bash
+php artisan db:seed --class=RolesAndPermissionsSeeder --force
 ```
 
 ### Nota sobre las colas

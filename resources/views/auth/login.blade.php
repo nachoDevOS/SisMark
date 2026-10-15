@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ app()->environment('local') ? '[LOCAL] ' : '' }}Acceso · {{ config('app.name') }}</title>
-    <meta name="description" content="Sistema de sincronización de biométricos del Gobierno Autónomo Departamental del Beni.">
+    <meta name="description" content="SISTEMA DE CONTROL DE ASISTENCIA del Gobierno Autónomo Departamental del Beni.">
     <link rel="icon" type="image/png" href="{{ asset('image/huella.png') }}">
     <style>
         :root {
@@ -148,7 +148,9 @@
             </div>
 
             <div>
-                <h1 class="marca__titulo">Sistema de sincronización de <span>biométricos</span></h1>
+                <h1 class="marca__titulo">SISTEMA DE CONTROL DE ASISTENCIA 
+                    {{-- <span>biométricos</span> --}}
+                </h1>
                 <p class="marca__bajada">
                     Reúne las marcas de los relojes de cada oficina y las cruza con los horarios,
                     las licencias y los contratos vigentes en Mamoré para armar la asistencia

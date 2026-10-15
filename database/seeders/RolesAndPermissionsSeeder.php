@@ -13,7 +13,7 @@ use Spatie\Permission\PermissionRegistrar;
 /**
  * Reproduce en cualquier entorno (dev, staging, CI) los permisos y el rol
  * Administrador. Sin este seeder, un `migrate:fresh --seed` deja el sistema sin
- * accesos configurados. Corre en cada arranque del contenedor.
+ * accesos configurados. No corre solo: se ejecuta a mano (ver README).
  *
  * La lista de permisos vive en RolePolicy::nombresDePermiso() (misma fuente
  * que usa RoleController para la matriz de checkboxes).
@@ -44,10 +44,9 @@ class RolesAndPermissionsSeeder extends Seeder
      * id, así que sus usuarios lo conservan y no se crea un rol nuevo. Va antes
      * del `firstOrCreate`, que si no crearía un Administrador vacío.
      *
-     * Si ya existe otro rol llamado Administrador no se puede renombrar (el
-     * nombre es único) y se corta el arranque: el código nuevo solo reconoce a
-     * Administrador, y seguir dejaría a los administradores sin acceso total.
-     * Cortado, el orquestador mantiene la versión anterior funcionando.
+     * Si ya existe otro rol con el nombre nuevo no se puede renombrar (el
+     * nombre es único) y se corta sin tocar nada: hay que resolver a mano cuál
+     * de los dos queda.
      */
     private function renombrarRolAnterior(): void
     {

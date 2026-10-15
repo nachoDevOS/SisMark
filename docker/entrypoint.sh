@@ -84,29 +84,21 @@ echo "[sismark] MySQL responde."
 chown -R unit:unit storage bootstrap/cache
 chmod -R 775 storage bootstrap/cache
 
-# --- Migraciones: NO se corren en el arranque --------------------------------
-# El sistema está en producción y un cambio de esquema se aplica a mano, cuando
-# se decide, desde la terminal del contenedor:
+# --- Migraciones y seeders: NO se corren en el arranque ----------------------
+# El sistema está en producción: un redeploy nunca escribe en la base por su
+# cuenta. Cuando un despliegue lo necesita, se corre a mano desde la terminal
+# del contenedor:
 #
-#   php artisan migrate --status   (qué falta)
+#   php artisan migrate --status   (qué migraciones faltan)
 #   php artisan migrate --force
 #
-# Así un redeploy nunca toca la base por su cuenta.
+#   php artisan db:seed --class=RolesAndPermissionsSeeder --force
+#       Cuando el despliegue trae permisos nuevos (RolePolicy::MODULOS): tienen
+#       que existir en `permissions` antes de marcarlos en /roles, o guardar el
+#       rol falla con PermissionDoesNotExist. Crea lo que falta y no toca lo
+#       que ya existe.
 
-# --- 4. Permisos y rol Administrador ----------------------------------------
-# Corre en cada arranque: los permisos se declaran en RolePolicy::MODULOS, y un
-# permiso nuevo que llega con el despliegue tiene que existir en la tabla
-# `permissions` antes de marcarlo en /roles —si no, guardar el rol falla con
-# PermissionDoesNotExist—. Es idempotente: crea lo que falta y no toca lo que
-# ya existe, así que los permisos de cada rol se conservan.
-#
-# Se apaga con SISMARK_SEED=false.
-if [ "${SISMARK_SEED:-true}" = "true" ]; then
-    echo "[sismark] Sembrando roles y permisos…"
-    php artisan db:seed --class=RolesAndPermissionsSeeder --force
-fi
-
-# --- 5. Cachés de producción -------------------------------------------------
+# --- 4. Cachés de producción -------------------------------------------------
 # Primero se borra lo que pueda haber quedado del despliegue anterior:
 #
 #   view:clear              `storage` suele venir de un volumen, así que las
@@ -129,7 +121,7 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
-# --- 6. Microservicio de biométricos ----------------------------------------
+# --- 5. Microservicio de biométricos ----------------------------------------
 # El microservicio Python corre DENTRO de este contenedor y se levanta acá. La
 # imagen lo trae encendido (ENV SISMARK_DEVICE_SERVICE=true en el Dockerfile):
 # no hay que configurar nada para que las acciones de equipos funcionen.
@@ -198,7 +190,7 @@ if [ "${devices}" = "true" ]; then
     fi
 fi
 
-# --- 7. Planificador de tareas ----------------------------------------------
+# --- 6. Planificador de tareas ----------------------------------------------
 # `schedule:work` es el cron del sistema dentro del contenedor: despierta cada
 # minuto y corre lo que declara routes/console.php. Hoy eso es
 # `sismark:sincronizar-equipos`, que baja las marcaciones de cada reloj en los

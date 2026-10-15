@@ -27,8 +27,9 @@ class Role extends SpatieRole
      *
      * Para cambiarle el nombre no alcanza con esta constante: la base guarda el
      * nombre viejo. Hay que poner el nombre viejo en
-     * `RolesAndPermissionsSeeder::NOMBRE_ANTERIOR`, o el seeder del arranque
-     * crearía un rol nuevo vacío y el actual perdería el acceso total.
+     * `RolesAndPermissionsSeeder::NOMBRE_ANTERIOR` y correr ese seeder a mano
+     * al desplegar; si no, el seeder crearía un rol nuevo vacío y el actual
+     * perdería el acceso total.
      */
     public const ADMINISTRADOR = 'Administrador del sistema';
 }
