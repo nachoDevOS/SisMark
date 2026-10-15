@@ -134,6 +134,7 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     Route::get('turnos-asignados/ajax/list', [AsignacionTurnoController::class, 'list'])->name('turnos-asignados.list');
     // Búsqueda JSON de funcionarios para el combo del formulario de asignación.
     Route::get('turnos-asignados/ajax/funcionarios', [AsignacionTurnoController::class, 'buscarFuncionarios'])->name('turnos-asignados.funcionarios');
+    Route::get('turnos-asignados/ajax/ficha', [AsignacionTurnoController::class, 'ficha'])->name('turnos-asignados.ficha');
     Route::get('turnos-asignados/create', [AsignacionTurnoController::class, 'create'])->name('turnos-asignados.create');
     Route::post('turnos-asignados', [AsignacionTurnoController::class, 'store'])->name('turnos-asignados.store');
     // Concluir = ponerle fecha de fin (el funcionario dejó ese turno, pero la
@@ -142,12 +143,10 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     Route::delete('turnos-asignados/{asignacion}', [AsignacionTurnoController::class, 'destroy'])->name('turnos-asignados.destroy');
     Route::get('turnos-asignados', [AsignacionTurnoController::class, 'index'])->name('turnos-asignados.index');
 
-    // Horarios asignados: historial día por día. Ya no se asignan horarios
-    // sueltos; lo heredado del sistema anterior se concluye o se elimina acá.
-    Route::get('horarios-asignados/ajax/list', [AsignacionHorarioController::class, 'list'])->name('horarios-asignados.list');
+    // Horarios heredados del sistema anterior: se concluyen o se eliminan desde
+    // el panel «Horarios» de la ficha del funcionario. No hay pantalla propia.
     Route::patch('horarios-asignados/{asignacion}/concluir', [AsignacionHorarioController::class, 'concluir'])->name('horarios-asignados.concluir');
     Route::delete('horarios-asignados/{asignacion}', [AsignacionHorarioController::class, 'destroy'])->name('horarios-asignados.destroy');
-    Route::get('horarios-asignados', [AsignacionHorarioController::class, 'index'])->name('horarios-asignados.index');
 
     // Licencias/permisos de personal: listado AJAX + pantalla «Licenciar»
     // (horarios asignados + rango de fechas). Sin edición: se anota o se elimina.

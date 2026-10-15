@@ -107,40 +107,6 @@ class AsignacionHorario extends Model
     }
 
     /**
-     * Filtra por CI, por nombre del funcionario o por nombre del horario. Cada
-     * palabra del texto debe aparecer en alguno de los tres.
-     *
-     * Las dos tablas chicas se resuelven **antes** y entran como una lista, en
-     * vez de ir como `whereHas`. Un `whereHas` es un `EXISTS` correlacionado:
-     * MySQL lo evalúa una vez por cada una de las 420.721 filas de esta tabla,
-     * dos veces por término. Medido, el conteo de la búsqueda tardaba 3,1 s y
-     * traer la página otros 3,8 s.
-     *
-     * Preguntarle primero a `personas` (5.469 filas) y a `horarios` (757) qué
-     * cruza el término, y después filtrar por esas listas, da exactamente el
-     * mismo resultado en 150 ms.
-     */
-    public function scopeBuscar(Builder $query, string $texto): Builder
-    {
-        foreach (Persona::terminos($texto) as $termino) {
-            $cis = Persona::query()
-                ->where(fn (Builder $nombre) => $nombre->coincideNombre($termino))
-                ->pluck('ci');
-
-            $horarios = Horario::query()
-                ->where('nombreHorario', 'like', "%{$termino}%")
-                ->pluck('id');
-
-            $query->where(fn (Builder $sub) => $sub
-                ->where('ci', 'like', "%{$termino}%")
-                ->orWhereIn('ci', $cis)
-                ->orWhereIn('horario_id', $horarios));
-        }
-
-        return $query;
-    }
-
-    /**
      * Asignaciones que cubren la fecha dada (`desde` ≤ fecha ≤ `hasta`).
      *
      * Sin `whereDate()`: envolver la columna en `DATE()` anula el índice

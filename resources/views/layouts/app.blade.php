@@ -661,7 +661,6 @@
                 'dias-excepcionales' => request()->routeIs('dias-excepcionales.*'),
                 'horarios' => request()->routeIs('horarios.*'),
                 'turnos' => request()->routeIs('turnos.*'),
-                'horarios-asignados' => request()->routeIs('horarios-asignados.*'),
                 'turnos-asignados' => request()->routeIs('turnos-asignados.*'),
                 'licencias' => request()->routeIs('licencias.*'),
                 'reportes' => request()->routeIs('reportes.*'),
@@ -677,7 +676,7 @@
             // El grupo «Parámetros» arranca desplegado cuando la pantalla actual
             // es una de las suyas; si no, el ítem activo quedaría escondido.
             $enParametros = $enMenu['dias-excepcionales'] || $enMenu['horarios']
-                || $enMenu['turnos'] || $enMenu['turnos-asignados'] || $enMenu['horarios-asignados'] || $enMenu['licencias'];
+                || $enMenu['turnos'] || $enMenu['turnos-asignados'] || $enMenu['licencias'];
         @endphp
 
         {{-- El texto de cada opción va en su propio span: plegado queda solo el
@@ -687,7 +686,7 @@
              enteros cuando ninguna de sus opciones está permitida. --}}
         @php
             $puedeParametros = auth()->user()?->canAny([
-                'ViewAny:DiaExcepcional', 'ViewAny:Horario', 'ViewAny:Turno', 'ViewAny:AsignacionTurno', 'ViewAny:AsignacionHorario', 'ViewAny:Licencia',
+                'ViewAny:DiaExcepcional', 'ViewAny:Horario', 'ViewAny:Turno', 'ViewAny:AsignacionTurno', 'ViewAny:Licencia',
             ]);
         @endphp
 
@@ -736,11 +735,6 @@
                     @can('ViewAny:AsignacionTurno')
                         <a href="{{ route('turnos-asignados.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['turnos-asignados']]) title="Turnos asignados"@if ($enMenu['turnos-asignados']) aria-current="page"@endif>
                             <x-heroicon-o-user-plus /><span class="sidebar__texto">Turnos asignados</span>
-                        </a>
-                    @endcan
-                    @can('ViewAny:AsignacionHorario')
-                        <a href="{{ route('horarios-asignados.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['horarios-asignados']]) title="Horarios asignados"@if ($enMenu['horarios-asignados']) aria-current="page"@endif>
-                            <x-heroicon-o-user-group /><span class="sidebar__texto">Horarios asignados</span>
                         </a>
                     @endcan
                     @can('ViewAny:Licencia')

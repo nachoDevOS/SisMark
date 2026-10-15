@@ -20,7 +20,7 @@
                      :style="elegido === '{{ $turno->id }}' ? 'border-color: var(--primary, #16a34a); box-shadow: 0 0 0 1px var(--primary, #16a34a);' : ''">
                     <div style="display: flex; align-items: center; gap: .6rem;">
                         <input type="radio" name="turno_id" value="{{ $turno->id }}" id="turno-{{ $sufijo }}-{{ $turno->id }}"
-                               x-model="elegido" required>
+                               data-nombre="{{ $turno->nombre }}" x-model="elegido" required>
                         <label for="turno-{{ $sufijo }}-{{ $turno->id }}" style="margin: 0; flex: 1; cursor: pointer;">
                             <strong>{{ $turno->nombre }}</strong>
                             @if ($turno->sugerido)

@@ -13,6 +13,12 @@
 
     <form action="{{ route('turnos-asignados.store') }}" method="POST"
           x-data="{
+              ...fichaAsignacion({
+                  contratoId: @js(old('contrato_id')),
+                  turnoNombre: @js($turnos->firstWhere('id', (int) old('turno_id'))?->nombre),
+                  desde: @js(old('desde', now()->toDateString())),
+                  hasta: @js(old('hasta', '')),
+              }),
               ci: @js(old('ci', $ci)),
               etiqueta: @js($ficha ? trim($ci.' — '.($ficha['nombre'] ?? '')).($ficha['cargo'] ? ' · '.$ficha['cargo'] : '') : ''),
               q: '',
@@ -54,7 +60,9 @@
                   this.q = '';
               },
           }"
-          x-on:click.outside="abierto = false">
+          x-init="$watch('ci', valor => cargarFicha(valor)); cargarFicha(ci)"
+          x-on:click.outside="abierto = false"
+          x-on:change="notarTurno($event)">
         @csrf
         <input type="hidden" name="ci" :value="ci">
         <input type="hidden" name="origen" value="{{ $origen }}">
@@ -104,6 +112,10 @@
             @error('ci') <div class="error">{{ $message }}</div> @enderror
         </div>
 
+        <div class="card card--padded" style="margin-top: 1rem;" x-show="ci" x-cloak>
+            @include('turnos-asignados._ficha-asignacion')
+        </div>
+
         <div class="card card--padded" style="margin-top: 1rem;">
             <h2 style="margin-top: 0;">Turno y vigencia</h2>
 
@@ -113,13 +125,13 @@
                 <div class="campo">
                     <label for="desde">Fecha de inicio <span class="req">*</span></label>
                     <input type="date" id="desde" name="desde" class="input"
-                           value="{{ old('desde', now()->toDateString()) }}" required>
+                           x-model="desde" :min="minDesde" :max="maxHasta" required>
                     @error('desde') <div class="error">{{ $message }}</div> @enderror
                 </div>
                 <div class="campo">
                     <label for="hasta">Fecha de fin <span class="req">*</span></label>
                     <input type="date" id="hasta" name="hasta" class="input"
-                           value="{{ old('hasta', now()->endOfYear()->toDateString()) }}" required>
+                           x-model="hasta" :min="desde || minDesde" :max="maxHasta" required>
                     @error('hasta') <div class="error">{{ $message }}</div> @enderror
                 </div>
             </div>
@@ -136,8 +148,10 @@
                 @error('observacion') <div class="error">{{ $message }}</div> @enderror
             </div>
 
+            @include('turnos-asignados._resumen-asignacion')
+
             <div class="form-acciones">
-                <button type="submit" class="btn" :disabled="! ci"><x-heroicon-o-check />Asignar turno</button>
+                <button type="submit" class="btn" :disabled="! ci || ! puedeAsignar()"><x-heroicon-o-check />Asignar turno</button>
                 <a href="{{ route('turnos-asignados.index') }}" class="btn btn--gris"><x-heroicon-o-x-mark />Cancelar</a>
             </div>
         </div>

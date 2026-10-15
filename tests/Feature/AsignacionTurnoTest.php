@@ -158,7 +158,10 @@ test('lo heredado del sistema anterior sí se concluye día por día', function 
 
 test('ya no se asignan horarios sueltos', function (): void {
     expect(Route::has('horarios-asignados.create'))->toBeFalse()
-        ->and(Route::has('horarios-asignados.store'))->toBeFalse();
+        ->and(Route::has('horarios-asignados.store'))->toBeFalse()
+        // Tampoco hay pantalla: lo heredado se concluye o elimina desde la ficha.
+        ->and(Route::has('horarios-asignados.index'))->toBeFalse()
+        ->and(Route::has('horarios-asignados.list'))->toBeFalse();
 });
 
 test('las pantallas responden y muestran el turno', function (): void {
@@ -169,7 +172,6 @@ test('las pantallas responden y muestran el turno', function (): void {
     $this->get(route('turnos-asignados.index'))->assertSuccessful();
     $this->get(route('turnos-asignados.list'))->assertSuccessful()->assertSee($this->turno->nombre);
     $this->get(route('turnos-asignados.create'))->assertSuccessful()->assertSee($this->turno->nombre);
-    $this->get(route('horarios-asignados.list'))->assertSuccessful()->assertSee('Turno: '.$this->turno->nombre);
     $this->get(route('funcionarios.horarios.list', ['ci' => '111']))->assertSuccessful()
         ->assertSee($this->turno->nombre)->assertSee('Concluir turno');
 });

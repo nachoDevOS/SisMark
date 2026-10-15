@@ -30,7 +30,6 @@ class DashboardController extends Controller
         'ViewAny:Asistencia' => 'marcaciones.index',
         'ViewAny:DiaExcepcional' => 'dias-excepcionales.index',
         'ViewAny:Horario' => 'horarios.index',
-        'ViewAny:AsignacionHorario' => 'horarios-asignados.index',
         'ViewAny:Licencia' => 'licencias.index',
         'ViewAny:Reporte' => 'reportes.marcaciones.sin-procesar',
         'ViewAny:Equipo' => 'equipos.index',

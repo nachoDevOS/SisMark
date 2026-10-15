@@ -111,7 +111,6 @@ aparte (`sia`) y **solo de lectura**.
 | **Horarios** | `/horarios` | Solo consulta, con el turno de cada horario (los heredados figuran «Sin turno»). Los horarios se cargan al crear el turno |
 | **Turnos** | `/turnos` | Jornada semanal: el nombre y sus horarios, que se cargan ahí mismo (con «Copiar a días»). Solo se crea o se elimina, sin edición: para cambiar la jornada se crea otro turno. **Sugerido** = se ofrece en Mamoré para elegir al dar de alta un contrato |
 | **Turnos asignados** | `/turnos-asignados` | Qué turno tiene cada funcionario, con fecha de inicio y de fin. Es **lo único que se asigna**. **Concluir** ≠ **Eliminar**: concluir pone fecha de fin y conserva la historia; eliminar es para lo cargado por error |
-| **Horarios asignados** | `/horarios-asignados` | Historial día por día. Sin alta: lo de un turno se maneja desde el turno; acá solo se concluye o elimina lo heredado del SIA |
 | **Licencias** | `/licencias` | Listado, alta en lote, ficha de la solicitud y resolución de lo que llega de Mamoré |
 | **Días excepcionales** | `/dias-excepcionales` | Feriados y días sin control, con su decreto adjunto |
 | **Equipos** | `/equipos` | CRUD de relojes + probar conexión, exportar, sincronizar y vaciar |
@@ -626,7 +625,7 @@ app/
 │   │   │   ├── AsistenciaFuncionarioController.php   # los GET de la API v1
 │   │   │   ├── SolicitudLicenciaController.php       # POST y DELETE
 │   │   │   └── TurnoApiController.php                  # los turnos sugeridos
-│   │   ├── AsignacionHorarioController.php  # historial día por día
+│   │   ├── AsignacionHorarioController.php  # concluir/eliminar lo heredado (botones de la ficha)
 │   │   ├── AsignacionTurnoController.php    # «Turnos asignados»
 │   │   ├── Auth/LoginController.php
 │   │   ├── ConfiguracionController.php  # «Configuración», un grupo por tarjeta

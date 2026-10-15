@@ -39,7 +39,6 @@ test('cada pantalla pide su propio permiso', function (string $ruta, string $per
 })->with([
     'turnos' => ['turnos.index', 'ViewAny:Turno'],
     'turnos asignados' => ['turnos-asignados.index', 'ViewAny:AsignacionTurno'],
-    'horarios asignados' => ['horarios-asignados.index', 'ViewAny:AsignacionHorario'],
     'horarios' => ['horarios.index', 'ViewAny:Horario'],
 ]);
 

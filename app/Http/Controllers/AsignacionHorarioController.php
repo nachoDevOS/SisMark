@@ -4,21 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ConcluirAsignacionHorarioRequest;
 use App\Models\AsignacionHorario;
-use App\Services\ResolutorNombres;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\View\View;
 
 /**
- * Historial de los horarios asignados a cada funcionario, día por día: la tabla
- * local `asignacion_horarios`, migrada de «AsignacionTurnos» del SIA.
+ * Concluir o eliminar un horario heredado del sistema anterior (la tabla
+ * `asignacion_horarios`, migrada de «AsignacionTurnos» del SIA), desde los
+ * botones del panel «Horarios» de la ficha del funcionario.
  *
- * Ya no se asignan horarios sueltos: se asigna un turno
- * ({@see AsignacionTurnoController}) y sus horarios quedan acá como detalle. Lo
- * único que se hace desde esta pantalla es concluir o eliminar lo heredado del
- * sistema anterior; el detalle de un turno se maneja desde el turno.
+ * Ya no hay pantalla propia: se asigna un turno ({@see AsignacionTurnoController})
+ * y el detalle de un turno se maneja desde el turno.
  *
  * El funcionario se cruza por **CI** (la asignación solo guarda la cédula) y el
  * horario por la FK **`horario_id`**; `idHorario` queda como dato histórico del SIA y
@@ -26,68 +22,6 @@ use Illuminate\View\View;
  */
 class AsignacionHorarioController extends Controller
 {
-    /**
-     * Situaciones posibles respecto de hoy, para el filtro del listado.
-     *
-     * @var array<string, string>
-     */
-    public const SITUACIONES = [
-        'vigentes' => 'Vigentes hoy',
-        'futuras' => 'Aún no vigentes',
-        'vencidas' => 'Vencidas',
-    ];
-
-    /**
-     * Pantalla del listado (browse): el «shell» con los filtros. La tabla la
-     * carga por AJAX contra `list()`.
-     */
-    public function index(Request $request): View
-    {
-        $this->authorize('viewAny', AsignacionHorario::class);
-
-        $buscar = trim((string) $request->query('buscar', ''));
-        $dia = (string) $request->query('dia', '');
-        $situacion = $this->situacion($request);
-        $porPagina = $this->porPagina($request);
-
-        return view('horarios-asignados.index', compact('buscar', 'dia', 'situacion', 'porPagina'));
-    }
-
-    /**
-     * Devuelve el parcial de la tabla (filas + paginación) para el AJAX.
-     */
-    public function list(Request $request, ResolutorNombres $resolutor): View
-    {
-        $this->authorize('viewAny', AsignacionHorario::class);
-
-        $buscar = trim((string) $request->query('q', ''));
-        $dia = (string) $request->query('dia', '');
-        $situacion = $this->situacion($request);
-        $porPagina = $this->porPagina($request);
-
-        $asignaciones = AsignacionHorario::query()
-            ->with(['horario', 'asignacionTurno.turno'])
-            ->when($buscar !== '', fn (Builder $query) => $query->buscar($buscar))
-            ->when($dia !== '', fn (Builder $query) => $query->whereHas('horario', fn (Builder $horario) => $horario->where('dia', $dia)))
-            // Los tres van por rango y no con `whereDate()`: `DATE(columna)`
-            // anula el índice `(hasta, desde)` y manda a recorrer las 420.721
-            // filas. `desde` y `hasta` son fechas, así que «después de hoy»
-            // es «desde mañana a las cero».
-            ->when($situacion === 'vigentes', fn (Builder $query) => $query->vigenteEn(today()))
-            ->when($situacion === 'futuras', fn (Builder $query) => $query->where('desde', '>=', today()->addDay()->toDateString()))
-            ->when($situacion === 'vencidas', fn (Builder $query) => $query->where('hasta', '<', today()->toDateString()))
-            ->orderByDesc('desde')
-            ->orderBy('ci')
-            ->paginate($porPagina)
-            ->withQueryString();
-
-        // La columna «Funcionario» (nombre y cargo) sale de Mamoré y, si el CI
-        // no está ahí, de la base local.
-        $fichas = $resolutor->fichasPorCi($asignaciones->pluck('ci'));
-
-        return view('horarios-asignados.list', compact('asignaciones', 'fichas', 'buscar'));
-    }
-
     /**
      * Concluye una asignación: le pone fecha de fin y deja de estar vigente.
      *
@@ -142,9 +76,9 @@ class AsignacionHorarioController extends Controller
 
     /**
      * A dónde volver después de guardar: a la ficha desde la que se entró
-     * («mamore» o «local») o, si se entró por el listado, al listado filtrado
-     * por ese funcionario. Solo se aceptan estos dos orígenes conocidos, así
-     * un valor manipulado nunca redirige fuera del sitio.
+     * («mamore» o «local») o, si no vino el origen, a la página anterior. Solo
+     * se aceptan estos dos orígenes conocidos, así un valor manipulado nunca
+     * redirige fuera del sitio.
      */
     private function destino(Request $request, string $ci): string
     {
@@ -152,7 +86,7 @@ class AsignacionHorarioController extends Controller
         return match ($this->origen($request)) {
             'mamore' => route('funcionarios.mamore', ['ci' => $ci]).'#horarios',
             'local' => route('funcionarios.show', ['persona' => $ci]).'#horarios',
-            default => route('horarios-asignados.index', ['buscar' => $ci]),
+            default => url()->previous().'#horarios',
         };
     }
 
@@ -164,16 +98,5 @@ class AsignacionHorarioController extends Controller
         $origen = (string) $request->input('origen', '');
 
         return in_array($origen, ['mamore', 'local'], true) ? $origen : '';
-    }
-
-    /**
-     * Filtro de situación del listado: «todas» (por defecto) o una de
-     * {@see self::SITUACIONES}. Un valor desconocido cae en «todas».
-     */
-    private function situacion(Request $request): string
-    {
-        $situacion = (string) $request->query('situacion', 'todas');
-
-        return array_key_exists($situacion, self::SITUACIONES) ? $situacion : 'todas';
     }
 }

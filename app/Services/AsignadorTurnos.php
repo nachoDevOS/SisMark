@@ -72,7 +72,7 @@ class AsignadorTurnos
 
         if ($heredado !== null) {
             return 'Tiene horarios asignados (del sistema anterior) que empiezan el '
-                .$heredado->desde?->format('d/m/Y').'. Concluilos o eliminalos en «Horarios asignados» antes de asignarle el turno.';
+                .$heredado->desde?->format('d/m/Y').'. Concluilos o eliminalos en la ficha del funcionario (panel «Horarios») antes de asignarle el turno.';
         }
 
         // La única `(ci, horario_id, desde)` de `asignacion_horarios` incluye las

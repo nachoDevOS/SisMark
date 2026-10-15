@@ -131,35 +131,76 @@ class ContratosFuncionario
      */
     private function tramosDeContratos(array $contratos): array
     {
-        $tramos = [];
-
-        foreach ($contratos as $contrato) {
-            $inicio = $this->fecha($contrato['start'] ?? null);
-
-            // Sin fecha de inicio no se sabe desde cuándo rige, así que no puede
-            // habilitar ningún día.
-            if ($inicio === null) {
-                continue;
-            }
-
-            $direccion = is_array($contrato['direccion_administrativa'] ?? null)
-                ? $contrato['direccion_administrativa']
-                : null;
-
-            $tramos[] = [
-                'desde' => $inicio,
-                // Sin fecha de término el contrato sigue abierto.
-                'hasta' => $this->fecha($contrato['finish'] ?? null),
-                'direccion' => $direccion === null ? null : (trim((string) (
-                    $direccion['sigla'] ?? $direccion['nombre'] ?? ''
-                )) ?: null),
-                'cargo' => trim((string) ($contrato['job']['name'] ?? '')) ?: null,
-            ];
-        }
+        $tramos = array_values(array_filter(array_map($this->tramo(...), $contratos)));
 
         usort($tramos, fn (array $a, array $b): int => $a['desde']->getTimestamp() <=> $b['desde']->getTimestamp());
 
         return $tramos;
+    }
+
+    /**
+     * Los contratos **firmados** de la persona que siguen vigentes hoy o que
+     * todavía no empezaron: a los que se les puede asignar un turno. Los
+     * concluidos ya no admiten turno nuevo.
+     *
+     * `null` es «no se sabe»: Mamoré no está configurado.
+     *
+     * @return list<array{id: int, codigo: ?string, desde: Carbon, hasta: ?Carbon, direccion: ?string, cargo: ?string}>|null
+     *
+     * @throws MamoreException si la API está configurada pero no responde
+     */
+    public function asignables(string $ci): ?array
+    {
+        if (! $this->mamore->configurado()) {
+            return null;
+        }
+
+        $hoy = today();
+
+        return collect($this->mamore->contractsByCi(trim($ci)))
+            ->filter(fn (array $contrato): bool => ($contrato['status'] ?? null) === 'firmado' && isset($contrato['id']))
+            ->map(fn (array $contrato): ?array => ($tramo = $this->tramo($contrato)) === null ? null : [
+                'id' => (int) $contrato['id'],
+                'codigo' => trim((string) ($contrato['code'] ?? '')) ?: null,
+                ...$tramo,
+            ])
+            ->filter(fn (?array $contrato): bool => $contrato !== null
+                && ($contrato['hasta'] === null || $contrato['hasta']->greaterThanOrEqualTo($hoy)))
+            ->sortBy(fn (array $contrato): int => $contrato['desde']->getTimestamp())
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Un contrato de la API como tramo, o `null` si no trae fecha de inicio:
+     * sin ella no se sabe desde cuándo rige, así que no habilita ningún día.
+     *
+     * Lleva la dirección y el cargo **de ese contrato**, no los de hoy.
+     *
+     * @param  array<string, mixed>  $contrato
+     * @return Tramo|null
+     */
+    private function tramo(array $contrato): ?array
+    {
+        $inicio = $this->fecha($contrato['start'] ?? null);
+
+        if ($inicio === null) {
+            return null;
+        }
+
+        $direccion = is_array($contrato['direccion_administrativa'] ?? null)
+            ? $contrato['direccion_administrativa']
+            : null;
+
+        return [
+            'desde' => $inicio,
+            // Sin fecha de término el contrato sigue abierto.
+            'hasta' => $this->fecha($contrato['finish'] ?? null),
+            'direccion' => $direccion === null ? null : (trim((string) (
+                $direccion['sigla'] ?? $direccion['nombre'] ?? ''
+            )) ?: null),
+            'cargo' => trim((string) ($contrato['job']['name'] ?? '')) ?: null,
+        ];
     }
 
     /**

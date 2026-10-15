@@ -8,6 +8,7 @@ use App\Http\Requests\StoreAsignacionTurnoRequest;
 use App\Models\AsignacionTurno;
 use App\Models\Turno;
 use App\Services\AsignadorTurnos;
+use App\Services\ContratosFuncionario;
 use App\Services\DirectorioMamore;
 use App\Services\ResolutorNombres;
 use Illuminate\Database\Eloquent\Builder;
@@ -118,7 +119,8 @@ class AsignacionTurnoController extends Controller
             Turno::query()->with('horarios')->findOrFail($datos['turno_id']),
             Carbon::parse($datos['desde']),
             Carbon::parse($datos['hasta']),
-            observacion: $datos['observacion'] ?? null,
+            isset($datos['contrato_id']) ? (int) $datos['contrato_id'] : null,
+            $datos['observacion'] ?? null,
         );
 
         return redirect($this->destino($request, $ci))->with('estado', 'Turno asignado correctamente.');
@@ -180,6 +182,84 @@ class AsignacionTurnoController extends Controller
             'id' => $persona['ci'],
             'texto' => $directorio->etiqueta($persona),
         ])->values());
+    }
+
+    /**
+     * Lo que hay que ver antes de asignarle un turno a alguien: sus datos, sus
+     * contratos firmados vigentes (a uno de ellos se ata el turno) y los turnos
+     * que ya tiene, vigentes o por empezar.
+     *
+     * `mamore: false` es «Mamoré no está configurado»: ahí se asigna sin
+     * contrato, como antes. Si está configurado y no responde, los contratos
+     * vienen vacíos con el motivo en `errorContratos`, y no se puede asignar.
+     */
+    public function ficha(Request $request, ResolutorNombres $resolutor, ContratosFuncionario $contratos): JsonResponse
+    {
+        $this->authorize('create', AsignacionTurno::class);
+
+        $ci = trim((string) $request->query('ci', ''));
+        abort_if($ci === '', 422, 'Falta la cédula.');
+
+        $persona = $resolutor->fichaPorCi($ci);
+        $errorContratos = null;
+
+        try {
+            $asignables = $contratos->asignables($ci);
+        } catch (MamoreException $e) {
+            $asignables = [];
+            $errorContratos = 'No se pudieron consultar los contratos en Mamoré: '.$e->getMessage();
+        }
+
+        $turnoPorContrato = AsignacionTurno::query()
+            ->with('turno')
+            ->whereIn('contrato_id', collect($asignables ?? [])->pluck('id'))
+            ->get()
+            ->keyBy('contrato_id');
+
+        $fecha = fn (?Carbon $valor): ?string => $valor?->format('d/m/Y');
+
+        return response()->json([
+            'persona' => $persona === null ? null : [
+                'ci' => $ci,
+                'ciCompleto' => $persona['ciCompleto'] ?? null,
+                'nombre' => $persona['nombre'] ?? null,
+                'cargo' => $persona['cargo'] ?? null,
+                'direccion' => $persona['direccion'] ?? null,
+                'tipoContrato' => $persona['tipoContrato'] ?? null,
+                'ver' => $persona['ver'] ?? null,
+            ],
+            'mamore' => $asignables !== null,
+            'errorContratos' => $errorContratos,
+            'contratos' => collect($asignables ?? [])->map(fn (array $contrato): array => [
+                'id' => $contrato['id'],
+                'codigo' => $contrato['codigo'],
+                'cargo' => $contrato['cargo'],
+                'direccion' => $contrato['direccion'],
+                'desde' => $contrato['desde']->toDateString(),
+                'hasta' => $contrato['hasta']?->toDateString(),
+                'desdeTexto' => $fecha($contrato['desde']),
+                'hastaTexto' => $fecha($contrato['hasta']),
+                'empezo' => $contrato['desde']->lessThanOrEqualTo(today()),
+                'turno' => ($asignado = $turnoPorContrato->get($contrato['id'])) === null ? null : [
+                    'nombre' => $asignado->turno?->nombre,
+                    'desdeTexto' => $fecha($asignado->desde),
+                    'hastaTexto' => $fecha($asignado->hasta),
+                ],
+            ])->values(),
+            'turnos' => AsignacionTurno::query()
+                ->with('turno')
+                ->where('ci', $ci)
+                ->where('hasta', '>=', today()->toDateString())
+                ->orderBy('desde')
+                ->get()
+                ->map(fn (AsignacionTurno $asignado): array => [
+                    'nombre' => $asignado->turno?->nombre,
+                    'desdeTexto' => $fecha($asignado->desde),
+                    'hastaTexto' => $fecha($asignado->hasta),
+                    'vigente' => $asignado->desde->lessThanOrEqualTo(today()),
+                    'contrato' => $asignado->contrato_id !== null,
+                ]),
+        ]);
     }
 
     /**

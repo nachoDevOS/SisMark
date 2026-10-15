@@ -17,7 +17,19 @@
      formulario de `turnos-asignados/create` sigue existiendo para cuando se
      entra por el listado y hay que elegir a la persona. --}}
 @can('create', \App\Models\AsignacionTurno::class)
-    <div x-data="{ abierto: {{ $abierto }} }" {{ $attributes }}>
+    {{-- La ficha (datos, turnos y contratos) se pide recién al abrir el modal. --}}
+    <div x-data="{
+             ...fichaAsignacion({
+                 contratoId: @js(old('_form') === 'turno-asignado' ? old('contrato_id') : null),
+                 turnoNombre: @js(old('_form') === 'turno-asignado' ? $turnos->firstWhere('id', (int) old('turno_id'))?->nombre : null),
+                 desde: @js(old('_form') === 'turno-asignado' ? old('desde') : now()->toDateString()),
+                 hasta: @js(old('_form') === 'turno-asignado' ? old('hasta') : ''),
+             }),
+             abierto: {{ $abierto }},
+             ci: @js($ciFijo),
+         }"
+         x-init="$watch('abierto', valor => { if (valor && ! ficha) { cargarFicha(ci); } }); if (abierto) { cargarFicha(ci); }"
+         {{ $attributes }}>
         <button type="button" class="btn" x-on:click="abierto = true">
             <x-heroicon-o-plus />{{ $etiqueta }}
         </button>
@@ -27,12 +39,14 @@
             <div class="modal-caja modal-caja--ancha modal-caja--horarios">
                 <h2>Asignar turno a CI {{ $ciFijo }}</h2>
 
-                <form method="POST" action="{{ route('turnos-asignados.store') }}">
+                <form method="POST" action="{{ route('turnos-asignados.store') }}" x-on:change="notarTurno($event)">
                     @csrf
                     <input type="hidden" name="_form" value="turno-asignado">
                     <input type="hidden" name="ci" value="{{ $ciFijo }}">
                     <input type="hidden" name="origen" value="{{ $origen }}">
                     @error('ci') <div class="error">{{ $message }}</div> @enderror
+
+                    @include('turnos-asignados._ficha-asignacion')
 
                     @include('turnos-asignados._selector-turno', ['turnos' => $turnos, 'sufijo' => $sufijo])
 
@@ -40,13 +54,13 @@
                         <div class="campo">
                             <label for="turno-desde-{{ $sufijo }}">Fecha de inicio <span class="req">*</span></label>
                             <input type="date" id="turno-desde-{{ $sufijo }}" name="desde"
-                                   value="{{ old('desde', now()->toDateString()) }}" required>
+                                   x-model="desde" :min="minDesde" :max="maxHasta" required>
                             @error('desde') <div class="error">{{ $message }}</div> @enderror
                         </div>
                         <div class="campo">
                             <label for="turno-hasta-{{ $sufijo }}">Fecha de fin <span class="req">*</span></label>
                             <input type="date" id="turno-hasta-{{ $sufijo }}" name="hasta"
-                                   value="{{ old('hasta', now()->endOfYear()->toDateString()) }}" required>
+                                   x-model="hasta" :min="desde || minDesde" :max="maxHasta" required>
                             @error('hasta') <div class="error">{{ $message }}</div> @enderror
                         </div>
                     </div>
@@ -63,11 +77,13 @@
                         @error('observacion') <div class="error">{{ $message }}</div> @enderror
                     </div>
 
+                    @include('turnos-asignados._resumen-asignacion')
+
                     <div class="modal-acciones">
                         <button type="button" class="btn btn--gris" x-on:click="abierto = false">
                             <x-heroicon-o-x-mark />Cancelar
                         </button>
-                        <button type="submit" class="btn"><x-heroicon-o-check />Asignar turno</button>
+                        <button type="submit" class="btn" :disabled="! puedeAsignar()"><x-heroicon-o-check />Asignar turno</button>
                     </div>
                 </form>
             </div>
