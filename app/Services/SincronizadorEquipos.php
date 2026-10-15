@@ -18,7 +18,7 @@ use Throwable;
  * el microservicio, registran con {@see RegistroAsistencia} y dejan la entrada
  * en la bitácora.
  *
- * También vuelca el CSV que se importa desde Biométricos o Marcaciones
+ * También vuelca el archivo (.dat del USB o CSV) que se importa desde Biométricos o Marcaciones
  * ({@see importar()}): no lee el reloj ni lleva equipo, pero guarda igual y
  * queda en la bitácora.
  *
@@ -171,12 +171,12 @@ class SincronizadorEquipos
     }
 
     /**
-     * Sube a la base un CSV de marcaciones, dejando en la bitácora quién lo
+     * Sube a la base un archivo de marcaciones (.dat del USB o CSV), dejando en la bitácora quién lo
      * subió, por qué y qué pasó con cada fila.
      *
      * Es el camino para lo que no se pudo sincronizar: un reloj sin red cuyo
      * historial se bajó por USB, o un respaldo guardado antes de vaciarlo. Va
-     * sin equipo porque el CSV no dice de qué reloj salió; las marcaciones
+     * sin equipo porque el archivo no dice de qué reloj salió; las marcaciones
      * quedan atadas solo a esta entrada de la bitácora.
      *
      * @param  list<array{ci: ?string, momento: ?Carbon}>  $filas

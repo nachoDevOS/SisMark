@@ -6,14 +6,21 @@ use Illuminate\Support\Carbon;
 use Throwable;
 
 /**
- * Lee el CSV de marcaciones y lo deja en las filas que espera
- * {@see RegistroAsistencia::registrar()}.
+ * Lee un archivo de marcaciones y lo deja en las filas que espera
+ * {@see RegistroAsistencia::registrar()}. Lo usan las dos importaciones: la de
+ * Marcaciones y la de Biométricos. Entiende dos formatos:
  *
- * Es el mismo archivo que genera EquipoController::exportarMarcaciones()
- * (columnas CI/ID, Nombre, Fecha, Hora), o uno reguardado desde Excel. Lo usan
- * las dos importaciones: la de Marcaciones y la de Biométricos.
+ * - **CSV**: el que genera EquipoController::exportarMarcaciones() (columnas
+ *   CI/ID, Nombre, Fecha, Hora), o uno reguardado desde Excel.
+ * - **`.dat` del reloj** (`attlog.dat`, el que baja el ZKTeco por USB): una
+ *   marcación por línea, separada por tabulaciones, con el CI y la fecha y hora
+ *   juntas: «  7633685⇥2026-10-14 08:02:11⇥1⇥0⇥1⇥0». Las columnas de después
+ *   (estado, verificación) no se usan.
+ *
+ * El formato se reconoce por el contenido y no por la extensión: la tabulación
+ * no aparece en el CSV.
  */
-class LectorCsvMarcaciones
+class LectorArchivoMarcaciones
 {
     /**
      * Devuelve una fila por marcación del archivo.
@@ -38,10 +45,16 @@ class LectorCsvMarcaciones
                 continue;
             }
 
-            [$ci, , $fechaCsv, $horaCsv] = array_pad($columnas, 4, null);
+            if ($separador === "\t") {
+                [$ci, $momentoDat] = array_pad($columnas, 2, null);
+                [$fechaTexto, $horaTexto] = array_pad(explode(' ', trim((string) $momentoDat), 2), 2, '');
+            } else {
+                [$ci, , $fechaTexto, $horaTexto] = array_pad($columnas, 4, null);
+            }
 
-            $fecha = $this->parsearFecha(trim((string) $fechaCsv));
-            $hora = $this->parsearHora(trim((string) $horaCsv));
+            $ci = trim((string) $ci);
+            $fecha = $this->parsearFecha(trim((string) $fechaTexto));
+            $hora = $this->parsearHora(trim((string) $horaTexto));
 
             if ((! $fecha || ! $hora) && $esPrimeraFila) {
                 $esPrimeraFila = false;
@@ -72,6 +85,10 @@ class LectorCsvMarcaciones
         $manejador = fopen($ruta, 'r');
         $primeraLinea = (string) fgets($manejador);
         fclose($manejador);
+
+        if (str_contains($primeraLinea, "\t")) {
+            return "\t";
+        }
 
         return substr_count($primeraLinea, ';') > substr_count($primeraLinea, ',') ? ';' : ',';
     }

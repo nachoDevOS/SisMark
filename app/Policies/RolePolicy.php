@@ -44,7 +44,7 @@ class RolePolicy
         'Approve' => 'Aprobar',
         'Export' => 'Exportar',
         'Sync' => 'Sincronizar',
-        'Import' => 'Importar CSV',
+        'Import' => 'Importar marcaciones',
         'Clear' => 'Limpiar biométrico',
         // Emitir la credencial con la que un sistema externo consume la API.
         // Va aparte de `Update` porque no es editar la ficha: un token da

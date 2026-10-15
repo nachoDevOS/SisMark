@@ -10,7 +10,7 @@ use App\Http\Requests\UpdateEquipoRequest;
 use App\Models\Equipo;
 use App\Models\EquipoAuditoria;
 use App\Services\DeviceService;
-use App\Services\LectorCsvMarcaciones;
+use App\Services\LectorArchivoMarcaciones;
 use App\Services\RegistroAsistencia;
 use App\Services\SincronizadorEquipos;
 use Illuminate\Database\Eloquent\Builder;
@@ -327,7 +327,7 @@ class EquipoController extends Controller
      */
     public function importarMarcaciones(
         ImportarMarcacionesEquipoRequest $request,
-        LectorCsvMarcaciones $lector,
+        LectorArchivoMarcaciones $lector,
         SincronizadorEquipos $sincronizador,
         RegistroAsistencia $registro,
     ): RedirectResponse {

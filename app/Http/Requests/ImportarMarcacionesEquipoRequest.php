@@ -26,7 +26,9 @@ class ImportarMarcacionesEquipoRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'archivo' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            // Solo el CSV del sistema y el `.dat` que baja el reloj por USB. Se mira la
+            // extensión: los dos son texto plano y el tipo MIME no los distingue.
+            'archivo' => ['required', 'file', 'extensions:csv,dat', 'max:10240'],
             'motivo' => ['required', 'string', 'min:15', 'max:500'],
             'consentimiento' => ['accepted'],
         ];
@@ -38,7 +40,7 @@ class ImportarMarcacionesEquipoRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'archivo' => 'archivo CSV',
+            'archivo' => 'archivo',
         ];
     }
 
@@ -50,6 +52,7 @@ class ImportarMarcacionesEquipoRequest extends FormRequest
         return [
             'motivo.required' => 'Escribí por qué subís estas marcaciones: queda en la bitácora.',
             'motivo.min' => 'El motivo tiene que tener al menos 15 caracteres.',
+            'archivo.extensions' => 'El archivo tiene que ser .csv o el .dat que baja el reloj por USB.',
             'consentimiento.accepted' => 'Tenés que marcar la declaración para importar.',
         ];
     }

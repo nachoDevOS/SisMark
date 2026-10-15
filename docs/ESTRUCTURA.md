@@ -71,7 +71,7 @@ aparte (`sia`) y **solo de lectura**.
 
 | Tabla | Qué guarda | Origen |
 |---|---|---|
-| `asistencias` | Marcaciones crudas: `ci`, `fecha`, `hora`, `tipo`. **4,4 millones de filas.** Sin baja lógica | reloj · CSV · alta manual · SIA |
+| `asistencias` | Marcaciones crudas: `ci`, `fecha`, `hora`, `tipo`. **4,4 millones de filas.** Sin baja lógica | reloj · archivo (.csv o .dat del USB) · alta manual · SIA |
 | `personas` | Padrón local de funcionarios | SIA |
 | `profesiones` | Catálogo | SIA |
 | `horarios` | Horarios: entrada, salida, tolerancias y ventanas de marca. Los de un turno llevan `turno_id` (son de ese turno); los heredados, null. `idHorario` es el código del SIA: solo lo tiene lo migrado | SIA + horarios de los turnos |
@@ -107,7 +107,7 @@ aparte (`sia`) y **solo de lectura**.
 |---|---|---|
 | **Escritorio** | `/` | Tarjetas de equipos y asistencia, gráfico de 14 días y panel de calidad de datos (se carga aparte por AJAX, porque cuenta la tabla entera) |
 | **Funcionarios** | `/funcionarios` | Listado con dos fuentes conmutables: **Mamoré** (por defecto) o **SIA** (base local). Ficha con cuatro solapas |
-| **Marcaciones** | `/marcaciones` | Listado crudo con filtros. Dos formas de cargar: importar el CSV del reloj, o alta manual de a una (tipo `M`) para lo que el reloj no registró |
+| **Marcaciones** | `/marcaciones` | Listado crudo con filtros. Dos formas de cargar: importar un archivo (el .dat que baja el reloj por USB o un .csv), o alta manual de a una (tipo `M`) para lo que el reloj no registró |
 | **Turnos** | `/turnos` | Jornada semanal: el nombre y sus horarios, que se cargan ahí mismo (con «Copiar a días»). Solo se crea o se elimina, sin edición: para cambiar la jornada se crea otro turno. **Sugerido** = se ofrece en Mamoré para elegir al dar de alta un contrato |
 | **Turnos asignados** | `/turnos-asignados` | Qué turno tiene cada funcionario, con fecha de inicio y de fin. Es **lo único que se asigna**. **Concluir** ≠ **Eliminar**: concluir pone fecha de fin y conserva la historia; eliminar es para lo cargado por error |
 | **Licencias** | `/licencias` | Listado, alta en lote, ficha de la solicitud y resolución de lo que llega de Mamoré |

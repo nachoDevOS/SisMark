@@ -12,7 +12,7 @@
     </div>
 
     <p style="margin: -.4rem 0 1.1rem; color: var(--muted); font-size: .85rem;">
-        Quién exportó, registró en el sistema, importó un CSV, limpió o dio de baja cada
+        Quién exportó, registró en el sistema, importó un archivo, limpió o dio de baja cada
         equipo biométrico. Las importaciones y las acciones que borran información llevan
         el motivo escrito por quien las hizo.
         Cada sincronización se mide en dos tramos:
@@ -106,7 +106,7 @@
                             {{-- Se muestran los datos guardados al momento de la acción: siguen
                                  siendo correctos aunque después le cambien la IP o lo den de baja. --}}
                             <strong>{{ $registro->nombreEquipo() }}</strong>
-                            {{-- Una importación de CSV no tiene equipo: no hay IP que mostrar. --}}
+                            {{-- Una importación de archivo no tiene equipo: no hay IP que mostrar. --}}
                             @if (! empty($registro->datos_equipo))
                                 <div style="color: var(--muted); font-size: .75rem;">
                                     {{ $registro->datos_equipo['ip'] ?? '—' }}:{{ $registro->datos_equipo['puerto'] ?? '—' }}

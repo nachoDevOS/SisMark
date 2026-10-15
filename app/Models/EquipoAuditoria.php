@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * Una entrada de la bitácora de equipos biométricos.
  *
  * Se escribe sola cada vez que alguien exporta el CSV, sincroniza el reloj,
- * importa un CSV de marcaciones, vacía el reloj o da de baja un equipo. No se
+ * importa un archivo de marcaciones, vacía el reloj o da de baja un equipo. No se
  * edita ni se borra: es el registro de quién hizo qué y por qué.
  */
 class EquipoAuditoria extends Model
@@ -33,7 +33,7 @@ class EquipoAuditoria extends Model
     /** Dio de baja el equipo del sistema. */
     public const ACCION_ELIMINAR = 'eliminar';
 
-    /** Subió a la base un CSV con marcaciones del equipo, con motivo. */
+    /** Subió a la base un archivo de marcaciones (.dat del USB o CSV), con motivo. */
     public const ACCION_IMPORTAR = 'importar';
 
     /**
@@ -46,7 +46,7 @@ class EquipoAuditoria extends Model
         self::ACCION_SINCRONIZAR => 'Envió a la BD',
         self::ACCION_LIMPIAR => 'Limpió el equipo',
         self::ACCION_ELIMINAR => 'Eliminó el equipo',
-        self::ACCION_IMPORTAR => 'Importó CSV',
+        self::ACCION_IMPORTAR => 'Importó archivo',
     ];
 
     /**
@@ -117,7 +117,7 @@ class EquipoAuditoria extends Model
      * trait RegistersUserEvents en `registerUser_id`. Quien llama solo pasa lo
      * propio de la acción.
      *
-     * El equipo va en null en la importación de CSV: el archivo no dice de qué
+     * El equipo va en null en la importación de archivo: no dice de qué
      * reloj salió, así que no hay equipo que anotar ni foto que sacar.
      *
      * @param  array{motivo?: ?string, en_equipo?: ?int, total_marcaciones?: ?int, nuevas?: ?int, repetidas?: ?int, sin_funcionario?: ?int, fallidas?: ?int, desde?: ?string, hasta?: ?string, detalle?: ?string, exito?: bool}  $extra
@@ -210,12 +210,16 @@ class EquipoAuditoria extends Model
 
     /**
      * Nombre del equipo tal como estaba al momento de la acción. Una
-     * importación de CSV no tiene equipo: el archivo no dice de qué reloj salió.
+     * importación no tiene equipo: el archivo no dice de qué reloj salió. Se
+     * dice qué archivo fue, según la extensión del nombre que quedó en el
+     * detalle («Importación de «…_attlog.dat»…»).
      */
     public function nombreEquipo(): string
     {
         if ($this->accion === self::ACCION_IMPORTAR && empty($this->datos_equipo)) {
-            return 'Archivo CSV';
+            return preg_match('/«[^»]*\.dat»/i', (string) $this->detalle) === 1
+                ? 'Archivo .dat (USB)'
+                : 'Archivo CSV';
         }
 
         return $this->datos_equipo['nombre'] ?? 'Equipo eliminado';

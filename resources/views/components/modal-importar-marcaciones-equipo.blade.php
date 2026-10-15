@@ -4,22 +4,25 @@
     $abierto = $errors->hasAny(['archivo', 'motivo', 'consentimiento']) ? 'true' : 'false';
 @endphp
 
-{{-- Importación del CSV de marcaciones, la única que hay: se ofrece en
-     Biométricos y en Marcaciones. Sin equipo, porque el CSV no dice de qué
-     reloj salió. Queda en la bitácora: se escribe por qué se sube y se declara
+{{-- Importación de marcaciones desde archivo (CSV o el .dat que baja el reloj
+     por USB), la única que hay: se ofrece en Biométricos y en Marcaciones. Sin
+     equipo, porque el archivo no dice de qué reloj salió. Queda en la bitácora: se escribe por qué se sube y se declara
      que las marcaciones son auténticas. --}}
 @can('import', \App\Models\Equipo::class)
-    <div x-data="{ abierto: {{ $abierto }}, archivo: '', motivo: @js(old('motivo', '')), consiente: {{ old('consentimiento') ? 'true' : 'false' }} }" {{ $attributes }}>
+    {{-- Mientras se importa (`importando`) el modal no se cierra: un archivo de
+         años tarda, y cerrarlo hacía pensar que no había pasado nada. --}}
+    <div x-data="{ abierto: {{ $abierto }}, importando: false, archivo: '', motivo: @js(old('motivo', '')), consiente: {{ old('consentimiento') ? 'true' : 'false' }} }" {{ $attributes }}>
         <button type="button" class="btn btn--gris" x-on:click="abierto = true">
-            <x-heroicon-o-arrow-up-tray />Importar CSV
+            <x-heroicon-o-arrow-up-tray />Importar marcaciones
         </button>
 
         <div class="modal-fondo" x-show="abierto" x-cloak
-             x-on:click.self="abierto = false" x-on:keydown.escape.window="abierto = false">
+             x-on:click.self="if (! importando) { abierto = false }" x-on:keydown.escape.window="if (! importando) { abierto = false }">
             <div class="modal-caja modal-caja--ancha">
                 <h2>Importar marcaciones</h2>
 
-                <form method="POST" action="{{ route('equipos.marcaciones.importar') }}" enctype="multipart/form-data">
+                <form method="POST" action="{{ route('equipos.marcaciones.importar') }}" enctype="multipart/form-data"
+                      x-on:submit="importando = true">
                     @csrf
 
                     <p class="ayuda" style="margin: 0 0 .9rem;">
@@ -29,11 +32,12 @@
                     </p>
 
                     <div class="campo">
-                        <label for="importar-archivo">Archivo CSV <span class="req">*</span></label>
-                        <input type="file" id="importar-archivo" name="archivo" accept=".csv,text/csv" required
+                        <label for="importar-archivo">Archivo (.csv o .dat) <span class="req">*</span></label>
+                        <input type="file" id="importar-archivo" name="archivo" accept=".csv,.dat" required
                                x-on:change="archivo = $event.target.files[0]?.name ?? ''">
                         <div class="ayuda">
-                            Mismo formato que baja «Descargar y sincronizar»: <code>CI/ID,Nombre,Fecha,Hora</code>.
+                            El <strong>.dat</strong> que baja el reloj por USB (por ejemplo <code>…_attlog.dat</code>),
+                            o el <strong>.csv</strong> de «Descargar y sincronizar»: <code>CI/ID,Nombre,Fecha,Hora</code>.
                         </div>
                         @error('archivo') <div class="error">{{ $message }}</div> @enderror
                     </div>
@@ -60,13 +64,19 @@
                         @error('consentimiento') <div class="error">{{ $message }}</div> @enderror
                     </div>
 
+                    <p class="aviso" style="margin: 0 0 .25rem; display: flex; gap: .5rem; align-items: center;" x-show="importando" x-cloak>
+                        <span class="spinner-anillo spinner-anillo--verde"></span>
+                        <span>Importando <strong x-text="archivo"></strong>… No cierres esta ventana: con un archivo de varios años puede tardar un poco.</span>
+                    </p>
+
                     <div class="modal-acciones">
-                        <button type="button" class="btn btn--gris" x-on:click="abierto = false">
+                        <button type="button" class="btn btn--gris" x-on:click="abierto = false" :disabled="importando">
                             <x-heroicon-o-x-mark />Cancelar
                         </button>
                         <button type="submit" class="btn"
-                                :disabled="! archivo || motivo.trim().length < 15 || ! consiente">
-                            <x-heroicon-o-arrow-up-tray />Importar
+                                :disabled="importando || ! archivo || motivo.trim().length < 15 || ! consiente">
+                            <span class="btn__contenido" x-show="! importando"><x-heroicon-o-arrow-up-tray />Importar</span>
+                            <span class="btn__contenido" x-show="importando" x-cloak><span class="spinner-anillo"></span>Importando…</span>
                         </button>
                     </div>
                 </form>
