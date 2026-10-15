@@ -5,7 +5,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Horarios copiados del SIA («DiaTurnos»).
+ * Horarios: los copiados del SIA («DiaTurnos») y los de cada turno.
+ *
+ * `turno_id` se agrega en la migración de `turnos`, que se crea después.
  */
 return new class extends Migration
 {
@@ -13,7 +15,8 @@ return new class extends Migration
     {
         Schema::create('horarios', function (Blueprint $table): void {
             $table->id();
-            $table->char('idHorario', 3)->unique();
+            // Código del SIA: solo lo tiene lo migrado; ya no se escribe.
+            $table->char('idHorario', 3)->nullable()->unique();
             // Día de la semana del SIA: 1 = domingo … 7 = sábado.
             $table->char('dia', 1);
             $table->string('nombreHorario', 25);

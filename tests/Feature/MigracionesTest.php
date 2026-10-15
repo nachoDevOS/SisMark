@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 test('todas las migraciones levantan la base de cero', function (): void {
@@ -11,26 +10,9 @@ test('todas las migraciones levantan la base de cero', function (): void {
         ->and(collect(Schema::getColumns('horarios'))->firstWhere('name', 'idHorario')['nullable'])->toBeTrue()
         ->and(collect(Schema::getColumns('asignacion_horarios'))->firstWhere('name', 'idHorario')['nullable'])->toBeTrue()
         ->and(collect(Schema::getIndexes('asignacion_horarios'))->contains(fn (array $indice): bool => $indice['unique'] && $indice['columns'] === ['ci', 'horario_id', 'desde']))->toBeTrue()
+        ->and(Schema::hasColumns('users', ['cambiar_password', 'activo']))->toBeTrue()
         ->and(Schema::hasTable('asignacion_turnos'))->toBeTrue()
         ->and(Schema::hasColumns('asignacion_horarios', ['asignacion_turno_id', 'desde', 'hasta']))->toBeTrue()
         ->and(Schema::hasColumns('configuraciones', ['vigente_desde', 'vigente_hasta', 'motivo']))->toBeTrue()
         ->and(Schema::hasColumn('horarios', 'sugerido'))->toBeFalse();
-});
-
-test('elimina horario_turno_respaldo donde quedó de la primera versión de la separación', function (): void {
-    Schema::create('horario_turno_respaldo', function (Blueprint $table): void {
-        $table->id();
-        $table->foreignId('turno_id')->constrained('turnos');
-        $table->foreignId('horario_id')->constrained('horarios');
-        $table->timestamps();
-        $table->foreignId('horario_copia_id')->nullable()->constrained('horarios');
-    });
-
-    $migracion = require database_path('migrations/2026_10_14_235424_eliminar_horario_turno_respaldo.php');
-    $migracion->up();
-
-    expect(Schema::hasTable('horario_turno_respaldo'))->toBeFalse();
-
-    // Donde ya no estaba, no falla.
-    $migracion->up();
 });

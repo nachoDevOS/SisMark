@@ -5,7 +5,11 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Turnos: la jornada semanal que agrupa horarios. Solo se crean y se eliminan.
+ * Turnos: la jornada semanal con sus propios horarios. Solo se crean y se
+ * eliminan.
+ *
+ * Acá también va `horarios.turno_id`: `horarios` se crea antes que `turnos`, así
+ * que la FK no puede declararse allá.
  */
 return new class extends Migration
 {
@@ -25,10 +29,19 @@ return new class extends Migration
             $table->text('deleteObservacion')->nullable();
             $table->index('sugerido');
         });
+
+        Schema::table('horarios', function (Blueprint $table): void {
+            // El turno dueño del horario; null en lo heredado del SIA.
+            $table->foreignId('turno_id')->nullable()->after('id')->constrained('turnos');
+        });
     }
 
     public function down(): void
     {
+        Schema::table('horarios', function (Blueprint $table): void {
+            $table->dropConstrainedForeignId('turno_id');
+        });
+
         Schema::dropIfExists('turnos');
     }
 };

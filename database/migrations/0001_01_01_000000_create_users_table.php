@@ -15,6 +15,10 @@ return new class extends Migration
             $table->string('avatar_path')->nullable();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+            // Quien entra con una contraseña puesta por otro debe cambiarla.
+            $table->boolean('cambiar_password')->default(false);
+            // Inhabilitado no entra, pero conserva su cuenta y su historial.
+            $table->boolean('activo')->default(true);
             $table->rememberToken();
             $table->timestamps();
             $table->foreignId('registerUser_id')->nullable()->constrained('users');

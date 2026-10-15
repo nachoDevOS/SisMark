@@ -16,7 +16,8 @@ return new class extends Migration
         Schema::create('asignacion_horarios', function (Blueprint $table): void {
             $table->id();
             $table->char('ci', 12);
-            $table->char('idHorario', 3);
+            // Código del SIA: solo lo tiene lo migrado; ya no se escribe.
+            $table->char('idHorario', 3)->nullable();
             $table->foreignId('horario_id')->nullable()->constrained('horarios');
             $table->foreignId('asignacion_turno_id')->nullable()->constrained('asignacion_turnos');
             $table->date('desde');
@@ -30,7 +31,7 @@ return new class extends Migration
             $table->softDeletes();
             $table->foreignId('deleteUser_id')->nullable()->constrained('users');
             $table->text('deleteObservacion')->nullable();
-            $table->unique(['ci', 'idHorario', 'desde']);
+            $table->unique(['ci', 'horario_id', 'desde']);
             $table->index('ci');
             $table->index('contrato_id');
             $table->index(['hasta', 'desde'], 'asignacion_horarios_vigencia_index');
