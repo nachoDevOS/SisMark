@@ -31,7 +31,7 @@ class StoreMarcacionRequest extends FormRequest
             'ci' => ['required', 'string', Rule::exists('personas', 'ci')],
             'fecha' => ['required', 'date'],
             'hora' => ['required', 'date_format:H:i,H:i:s'],
-            'observacion' => ['required', 'string', 'min:5', 'max:500'],
+            'observacion' => ['required', 'string', 'min:15', 'max:500'],
         ];
     }
 
@@ -43,6 +43,7 @@ class StoreMarcacionRequest extends FormRequest
         return [
             'ci.exists' => 'No existe un funcionario con ese CI.',
             'observacion.required' => 'Indique el motivo de la marcación manual.',
+            'observacion.min' => 'El motivo debe tener al menos :min caracteres.',
         ];
     }
 

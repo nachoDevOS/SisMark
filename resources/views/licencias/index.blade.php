@@ -27,33 +27,38 @@
             registros
         </label>
 
-        {{-- Filtro de estado: es cómo Recursos Humanos encuentra las solicitudes
-             que llegaron de Mamoré y todavía esperan decisión, sin tener que
-             barrer un listado dominado por el histórico ya aprobado. --}}
-        <label class="tabla-filtros__mostrar">
-            Estado
-            <select id="f-estado" aria-label="Filtrar por estado de aprobación">
-                <option value="">Todos</option>
-                @foreach (\App\Models\Licencia::ESTADOS as $e)
-                    <option value="{{ $e }}" @selected($estado === $e)>{{ $e }}</option>
-                @endforeach
-            </select>
-        </label>
+        <div class="tabla-filtros__extra">
+            <label class="filtro">Desde <input type="date" id="f-desde" value="{{ $desde }}"></label>
+            <label class="filtro">Hasta <input type="date" id="f-hasta" value="{{ $hasta }}"></label>
 
-        {{-- Filtro de tipo: separa los permisos personales —los que cuentan
-             contra el tope— de las licencias institucionales. --}}
-        <label class="tabla-filtros__mostrar">
-            Tipo
-            <select id="f-tipo" aria-label="Filtrar por tipo de licencia">
-                <option value="">Todos</option>
-                @foreach (\App\Models\Licencia::TIPOS as $valor => $etiqueta)
-                    <option value="{{ $valor }}" @selected($tipo === $valor)>{{ $etiqueta }}</option>
-                @endforeach
-            </select>
-        </label>
+            {{-- Filtro de estado: es cómo Recursos Humanos encuentra las solicitudes
+                 que llegaron de Mamoré y todavía esperan decisión, sin tener que
+                 barrer un listado dominado por el histórico ya aprobado. --}}
+            <label class="filtro">
+                Estado
+                <select id="f-estado" aria-label="Filtrar por estado de aprobación">
+                    <option value="">Todos</option>
+                    @foreach (\App\Models\Licencia::ESTADOS as $e)
+                        <option value="{{ $e }}" @selected($estado === $e)>{{ $e }}</option>
+                    @endforeach
+                </select>
+            </label>
 
-        {{-- Estado y tipo recién se aplican con este botón. --}}
-        <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
+            {{-- Filtro de tipo: separa los permisos personales —los que cuentan
+                 contra el tope— de las licencias institucionales. --}}
+            <label class="filtro">
+                Tipo
+                <select id="f-tipo" aria-label="Filtrar por tipo de licencia">
+                    <option value="">Todos</option>
+                    @foreach (\App\Models\Licencia::TIPOS as $valor => $etiqueta)
+                        <option value="{{ $valor }}" @selected($tipo === $valor)>{{ $etiqueta }}</option>
+                    @endforeach
+                </select>
+            </label>
+
+            {{-- Fechas, estado y tipo recién se aplican con este botón. --}}
+            <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
+        </div>
 
         <div class="buscador">
             <x-heroicon-o-magnifying-glass />
@@ -75,11 +80,15 @@
             const selEstado = document.getElementById('f-estado');
             const selTipo = document.getElementById('f-tipo');
             // Los que se ven en la tabla: los combos solo cuentan al apretar Buscar.
-            const aplicados = { estado: selEstado.value, tipo: selTipo.value };
+            const dateDesde = document.getElementById('f-desde');
+            const dateHasta = document.getElementById('f-hasta');
+            const aplicados = { desde: dateDesde.value, hasta: dateHasta.value, estado: selEstado.value, tipo: selTipo.value };
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
                     q: inputBuscar.value,
+                    desde: aplicados.desde,
+                    hasta: aplicados.hasta,
                     estado: aplicados.estado,
                     tipo: aplicados.tipo,
                     por_pagina: selPaginate.value,
@@ -108,6 +117,8 @@
 
             selPaginate.addEventListener('change', () => cargar(1));
             document.getElementById('btn-buscar').addEventListener('click', () => {
+                aplicados.desde = dateDesde.value;
+                aplicados.hasta = dateHasta.value;
                 aplicados.estado = selEstado.value;
                 aplicados.tipo = selTipo.value;
                 cargar(1);

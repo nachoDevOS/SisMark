@@ -355,7 +355,6 @@
                 <input type="text" id="combo-funcionario" class="input" x-model="q"
                        x-on:input="buscar()"
                        placeholder="Escribí CI o nombre y elegí de la lista…" autocomplete="off">
-                <p class="ayuda" style="margin-bottom: 0;">Los funcionarios se buscan en la API de Mamoré.</p>
 
                 <div x-show="abierto" x-cloak
                      style="position: absolute; z-index: 20; top: 100%; left: 0; right: 0; margin-top: .2rem;

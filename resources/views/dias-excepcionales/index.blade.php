@@ -27,18 +27,23 @@
             registros
         </label>
 
-        {{-- Dado de baja = sigue en el listado pero no cuenta en los reportes. --}}
-        <label class="tabla-filtros__mostrar">
-            Estado
-            <select id="f-estado" aria-label="Filtrar por estado">
-                <option value="todos" @selected($estado === 'todos')>Todos</option>
-                <option value="activos" @selected($estado === 'activos')>Activos</option>
-                <option value="inactivos" @selected($estado === 'inactivos')>Inactivos</option>
-            </select>
-        </label>
+        <div class="tabla-filtros__extra">
+            <label class="filtro">Desde <input type="date" id="f-desde" value="{{ $desde }}"></label>
+            <label class="filtro">Hasta <input type="date" id="f-hasta" value="{{ $hasta }}"></label>
 
-        {{-- El filtro de estado recién se aplica con este botón. --}}
-        <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
+            {{-- Dado de baja = sigue en el listado pero no cuenta en los reportes. --}}
+            <label class="filtro">
+                Estado
+                <select id="f-estado" aria-label="Filtrar por estado">
+                    <option value="todos" @selected($estado === 'todos')>Todos</option>
+                    <option value="activos" @selected($estado === 'activos')>Activos</option>
+                    <option value="inactivos" @selected($estado === 'inactivos')>Inactivos</option>
+                </select>
+            </label>
+
+            {{-- Fechas y estado recién se aplican con este botón. --}}
+            <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
+        </div>
 
         <div class="buscador">
             <x-heroicon-o-magnifying-glass />
@@ -58,13 +63,17 @@
             const inputBuscar = document.getElementById('f-buscar');
             const selPaginate = document.getElementById('f-paginate');
             const selEstado = document.getElementById('f-estado');
-            // El que se ve en la tabla: el combo solo cuenta al apretar Buscar.
-            let estadoAplicado = selEstado.value;
+            const dateDesde = document.getElementById('f-desde');
+            const dateHasta = document.getElementById('f-hasta');
+            // Los que se ven en la tabla: fechas y estado solo cuentan al apretar Buscar.
+            const aplicados = { desde: dateDesde.value, hasta: dateHasta.value, estado: selEstado.value };
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
                     q: inputBuscar.value,
-                    estado: estadoAplicado,
+                    desde: aplicados.desde,
+                    hasta: aplicados.hasta,
+                    estado: aplicados.estado,
                     por_pagina: selPaginate.value,
                     page: page,
                 });
@@ -91,7 +100,9 @@
 
             selPaginate.addEventListener('change', () => cargar(1));
             document.getElementById('btn-buscar').addEventListener('click', () => {
-                estadoAplicado = selEstado.value;
+                aplicados.desde = dateDesde.value;
+                aplicados.hasta = dateHasta.value;
+                aplicados.estado = selEstado.value;
                 cargar(1);
             });
             // La búsqueda se dispara solo con Enter: escribir no recarga la tabla.

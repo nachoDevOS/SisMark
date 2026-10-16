@@ -69,8 +69,9 @@
                     <div class="campo">
                         <label for="observacion-{{ $sufijo }}">Motivo <span class="req">*</span></label>
                         <textarea id="observacion-{{ $sufijo }}" name="observacion" rows="2" required
-                                  maxlength="500" placeholder="Por qué se carga a mano: papeleta, equipo caído, olvido del funcionario…"
+                                  minlength="15" maxlength="500" placeholder="Por qué se carga a mano: papeleta, equipo caído, olvido del funcionario…"
                         >{{ old('observacion') }}</textarea>
+                        <div class="ayuda">Mínimo 15 caracteres.</div>
                         @error('observacion') <div class="error">{{ $message }}</div> @enderror
                     </div>
 

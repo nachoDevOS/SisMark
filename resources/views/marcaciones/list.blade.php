@@ -16,9 +16,13 @@
                      y separados obligaban a leer dos columnas para identificar
                      a una persona. --}}
                 <th>Funcionario</th>
-                <th>Fecha</th>
-                <th>Hora</th>
-                <th>Origen</th>
+                <th style="text-align: center">Fecha</th>
+                <th style="text-align: center">Hora</th>
+                <th style="text-align: center">Origen</th>
+                {{-- Solo para las manuales: quién la cargó y por qué. Lo que trae
+                     el reloj no tiene autor ni motivo. --}}
+                <th style="text-align: center">Registrado por</th>
+                <th>Motivo</th>
             </tr>
         </thead>
         <tbody>
@@ -58,16 +62,34 @@
                             </div>
                         @endif
                     </td>
-                    <td>{{ $marcacion->fecha?->format('d/m/Y') }}</td>
-                    <td>{{ $marcacion->hora?->format('H:i:s') }}</td>
+                    <td style="text-align: center">{{ $marcacion->fecha?->format('d/m/Y') }}</td>
+                    <td style="text-align: center">{{ $marcacion->hora?->format('H:i:s') }}</td>
                     @php($tipoMarcacion = trim((string) $marcacion->tipo))
-                    <td style="white-space: nowrap;">
+                    <td style="white-space: nowrap; text-align: center">
                         <span class="pill {{ $pillPorTipo[$tipoMarcacion] ?? 'pill--info' }}">{{ $tipoMarcacion }}</span>
                         <span class="ayuda">{{ Asistencia::TIPOS[$tipoMarcacion] ?? '—' }}</span>
                     </td>
+                    <td style="max-width: 280px; text-align: center">
+                        @if ($tipoMarcacion === Asistencia::TIPO_MANUAL && ($marcacion->registrador || filled($marcacion->observacion)))
+                            <div class="persona-nombre">{{ $marcacion->registrador?->name ?? 'Sin usuario' }}</div>
+                            <div class="persona-meta" >{{ $marcacion->created_at?->format('d/m/Y H:i') }}</div>
+                        @elseif ($tipoMarcacion === Asistencia::TIPO_MANUAL)
+                            {{-- Las manuales migradas del SIA llegaron sin autor ni motivo. --}}
+                            <span class="ayuda">Sistema anterior, sin datos</span>
+                        @else
+                            <span class="ayuda">—</span>
+                        @endif
+                    </td>
+                    <td style="max-width: 280px; white-space: normal;">
+                        @if ($tipoMarcacion === Asistencia::TIPO_MANUAL && filled($marcacion->observacion))
+                            {{ $marcacion->observacion }}
+                        @else
+                            <span class="ayuda">—</span>
+                        @endif
+                    </td>
                 </tr>
             @empty
-                <tr><td colspan="5" class="vacio">Sin marcaciones en el rango seleccionado.</td></tr>
+                <tr><td colspan="7" class="vacio">Sin marcaciones en el rango seleccionado.</td></tr>
             @endforelse
         </tbody>
     </table>

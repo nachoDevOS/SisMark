@@ -101,6 +101,19 @@ class Asistencia extends Model
     }
 
     /**
+     * Usuario que cargó la marcación manual (tipo M).
+     *
+     * Null en lo que trae el reloj y en las manuales migradas del SIA, que
+     * llegaron sin autor.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function registrador(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'registerUser_id')->withTrashed();
+    }
+
+    /**
      * Reloj del que salió la marcación.
      *
      * Null cuando no vino de ninguno, o cuando el equipo se borró físicamente

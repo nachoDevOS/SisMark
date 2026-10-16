@@ -127,6 +127,26 @@ test('el listado filtra por estado y «Todos» incluye las filas sin motivo', fu
     $listar('inactivos')->assertSee('NAVIDAD')->assertSee('03/11/2026')->assertDontSee('DÍA DE DIFUNTOS');
 });
 
+test('el listado filtra por rango de fechas', function (): void {
+    DiaExcepcional::factory()->create(['fecha' => '2026-10-12', 'motivoInasistencia' => 'DÍA DE LA HISPANIDAD']);
+    DiaExcepcional::factory()->create(['fecha' => '2026-11-02', 'motivoInasistencia' => 'DÍA DE DIFUNTOS']);
+
+    $this->actingAs(superAdmin())
+        ->get(route('dias-excepcionales.list', ['desde' => '2026-10-01', 'hasta' => '2026-10-31']))
+        ->assertSee('DÍA DE LA HISPANIDAD')
+        ->assertDontSee('DÍA DE DIFUNTOS');
+});
+
+test('la pantalla propone el mes en curso completo', function (): void {
+    Carbon::setTestNow('2026-10-16');
+
+    $this->actingAs(superAdmin())
+        ->get(route('dias-excepcionales.index'))
+        ->assertOk()
+        ->assertSee('value="2026-10-01"', false)
+        ->assertSee('value="2026-10-31"', false);
+});
+
 test('el reporte procesado ignora los días dados de baja', function (): void {
     app(AsignadorTurnos::class)->asignar('222', turnoLunesAViernes(), Carbon::parse('2026-11-02'), Carbon::parse('2026-11-03'));
     DiaExcepcional::factory()->create(['fecha' => '2026-11-02', 'motivoInasistencia' => 'DÍA DE DIFUNTOS']);

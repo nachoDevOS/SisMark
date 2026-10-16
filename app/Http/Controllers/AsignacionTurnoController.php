@@ -53,7 +53,11 @@ class AsignacionTurnoController extends Controller
         $situacion = $this->situacion($request);
         $porPagina = $this->porPagina($request);
 
-        return view('turnos-asignados.index', compact('buscar', 'situacion', 'porPagina'));
+        // Por defecto, el mes en curso completo: del 1.º al último día.
+        $desde = (string) $request->query('desde', now()->startOfMonth()->toDateString());
+        $hasta = (string) $request->query('hasta', now()->endOfMonth()->toDateString());
+
+        return view('turnos-asignados.index', compact('buscar', 'situacion', 'porPagina', 'desde', 'hasta'));
     }
 
     /**
@@ -66,6 +70,8 @@ class AsignacionTurnoController extends Controller
         $buscar = trim((string) $request->query('q', ''));
         $situacion = $this->situacion($request);
         $porPagina = $this->porPagina($request);
+        $desde = trim((string) $request->query('desde', ''));
+        $hasta = trim((string) $request->query('hasta', ''));
 
         $asignaciones = AsignacionTurno::query()
             ->with('turno.horarios')
@@ -73,6 +79,11 @@ class AsignacionTurnoController extends Controller
             ->when($situacion === 'vigentes', fn (Builder $query) => $query->vigenteEn(today()))
             ->when($situacion === 'futuras', fn (Builder $query) => $query->where('desde', '>=', today()->addDay()->toDateString()))
             ->when($situacion === 'vencidas', fn (Builder $query) => $query->where('hasta', '<', today()->toDateString()))
+            // Entra la asignación cuya vigencia se cruza con el rango, aunque
+            // empiece antes o termine después. Sin `desde` o sin `hasta`, ese
+            // extremo queda abierto.
+            ->when($desde !== '', fn (Builder $query) => $query->where('hasta', '>=', $desde))
+            ->when($hasta !== '', fn (Builder $query) => $query->where('desde', '<=', $hasta))
             ->orderByDesc('desde')
             ->orderBy('ci')
             ->paginate($porPagina)

@@ -62,6 +62,8 @@ class MarcacionController extends Controller
         $porPagina = $this->porPagina($request, 10);
 
         $marcaciones = Asistencia::query()
+            // Quién cargó cada marcación manual, para la columna «Registro».
+            ->with('registrador:id,name')
             ->when($carga, fn (Builder $query) => $query->where('equipo_auditoria_id', $carga->id))
             ->enRango($desde, $hasta)
             ->when($buscar !== '', fn (Builder $query) => $query->buscar($buscar))

@@ -30,12 +30,18 @@ class DiaExcepcionalController extends Controller
         $porPagina = $this->porPagina($request);
         $estado = $this->estado($request);
 
-        return view('dias-excepcionales.index', compact('busqueda', 'porPagina', 'estado'));
+        // Por defecto, el mes en curso completo: del 1.º al último día, porque
+        // los feriados se cargan por adelantado y los de fin de mes ya cuentan.
+        $desde = (string) $request->query('desde', now()->startOfMonth()->toDateString());
+        $hasta = (string) $request->query('hasta', now()->endOfMonth()->toDateString());
+
+        return view('dias-excepcionales.index', compact('busqueda', 'porPagina', 'estado', 'desde', 'hasta'));
     }
 
     /**
      * Devuelve el listado para AJAX, con todas las filas del calendario (con
-     * motivo o sin él), filtrado por estado.
+     * motivo o sin él), filtrado por estado y por rango de fechas. Sin `desde`
+     * o sin `hasta`, ese extremo queda abierto.
      */
     public function list(Request $request): View
     {
@@ -44,8 +50,12 @@ class DiaExcepcionalController extends Controller
         $busqueda = trim((string) $request->query('q', ''));
         $porPagina = $this->porPagina($request);
         $estado = $this->estado($request);
+        $desde = trim((string) $request->query('desde', ''));
+        $hasta = trim((string) $request->query('hasta', ''));
 
         $diasExcepcionales = DiaExcepcional::query()
+            ->when($desde !== '', fn (Builder $query) => $query->where('fecha', '>=', $desde))
+            ->when($hasta !== '', fn (Builder $query) => $query->where('fecha', '<=', $hasta))
             ->when($estado === 'activos', fn (Builder $query) => $query->where('estado', DiaExcepcional::ACTIVO))
             ->when($estado === 'inactivos', fn (Builder $query) => $query->where('estado', '!=', DiaExcepcional::ACTIVO))
             ->when($busqueda !== '', fn (Builder $query) => $this->filtrarBusqueda($query, $busqueda))

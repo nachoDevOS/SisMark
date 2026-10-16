@@ -25,13 +25,15 @@
         </label>
 
         <div class="tabla-filtros__extra">
+            <label class="filtro">Desde <input type="date" id="f-desde" value="{{ $desde }}"></label>
+            <label class="filtro">Hasta <input type="date" id="f-hasta" value="{{ $hasta }}"></label>
             <select id="f-situacion" aria-label="Situación de la asignación">
                 <option value="todas">Todas</option>
                 @foreach (\App\Http\Controllers\AsignacionTurnoController::SITUACIONES as $valor => $etiqueta)
                     <option value="{{ $valor }}" @selected($situacion === $valor)>{{ $etiqueta }}</option>
                 @endforeach
             </select>
-            {{-- El filtro de situación recién se aplica con este botón. --}}
+            {{-- Fechas y situación recién se aplican con este botón. --}}
             <button type="button" id="btn-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
         </div>
 
@@ -53,12 +55,16 @@
             const inputBuscar = document.getElementById('f-buscar');
             const selPaginate = document.getElementById('f-paginate');
             const selSituacion = document.getElementById('f-situacion');
-            // El que se ve en la tabla: el combo solo cuenta al apretar Buscar.
-            let situacionAplicada = selSituacion.value;
+            const dateDesde = document.getElementById('f-desde');
+            const dateHasta = document.getElementById('f-hasta');
+            // Los que se ven en la tabla: fechas y situación solo cuentan al apretar Buscar.
+            const aplicados = { desde: dateDesde.value, hasta: dateHasta.value, situacion: selSituacion.value };
 
             async function cargar(page = 1) {
                 const params = new URLSearchParams({
-                    situacion: situacionAplicada,
+                    desde: aplicados.desde,
+                    hasta: aplicados.hasta,
+                    situacion: aplicados.situacion,
                     q: inputBuscar.value,
                     por_pagina: selPaginate.value,
                     page: page,
@@ -84,7 +90,9 @@
 
             selPaginate.addEventListener('change', () => cargar(1));
             document.getElementById('btn-buscar').addEventListener('click', () => {
-                situacionAplicada = selSituacion.value;
+                aplicados.desde = dateDesde.value;
+                aplicados.hasta = dateHasta.value;
+                aplicados.situacion = selSituacion.value;
                 cargar(1);
             });
             inputBuscar.addEventListener('keydown', (e) => {

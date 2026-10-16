@@ -42,7 +42,12 @@ class LicenciaController extends Controller
         $estado = $this->estado($request);
         $tipo = $this->tipo($request);
 
-        return view('licencias.index', compact('busqueda', 'porPagina', 'estado', 'tipo'));
+        // Por defecto, el mes en curso completo: del 1.º al último día, porque
+        // una licencia se pide por adelantado y los días de fin de mes ya cuentan.
+        $desde = (string) $request->query('desde', now()->startOfMonth()->toDateString());
+        $hasta = (string) $request->query('hasta', now()->endOfMonth()->toDateString());
+
+        return view('licencias.index', compact('busqueda', 'porPagina', 'estado', 'tipo', 'desde', 'hasta'));
     }
 
     /**
@@ -56,6 +61,8 @@ class LicenciaController extends Controller
         $porPagina = $this->porPagina($request);
         $estado = $this->estado($request);
         $tipo = $this->tipo($request);
+        $desde = trim((string) $request->query('desde', ''));
+        $hasta = trim((string) $request->query('hasta', ''));
 
         // Una fila por solicitud, no por día: el alta expande el rango a una
         // fila por día y horario, así que sin esto «14 al 15 de agosto» sale como
@@ -67,7 +74,12 @@ class LicenciaController extends Controller
             Licencia::query()
                 ->when($busqueda !== '', fn (Builder $query) => $query->buscar($busqueda))
                 ->when($estado !== '', fn (Builder $query) => $query->where('estado', $estado))
-                ->when($tipo !== '', fn (Builder $query) => $query->where('tipo', $tipo)),
+                ->when($tipo !== '', fn (Builder $query) => $query->where('tipo', $tipo))
+                // Entra la solicitud con algún día dentro del rango; la fila que
+                // la abre y el resumen siguen mostrándola entera. Sin `desde` o
+                // sin `hasta`, ese extremo queda abierto.
+                ->when($desde !== '', fn (Builder $query) => $query->where('fecha', '>=', $desde))
+                ->when($hasta !== '', fn (Builder $query) => $query->where('fecha', '<=', $hasta)),
             $porPagina,
         )->withQueryString();
 
