@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 /**
  * Asignación de horario en la base local (MySQL), migrada desde «AsignacionTurnos»
@@ -120,6 +121,47 @@ class AsignacionHorario extends Model
         return $query
             ->where('desde', '<=', $dia->toDateString())
             ->where('hasta', '>=', $dia->toDateString());
+    }
+
+    /**
+     * Cédulas con horario vigente en la fecha: lo heredado del SIA y lo que
+     * generan los turnos asignados, que también deja sus días en esta tabla.
+     * Es la lista que se le manda a Mamoré para separar «con» y «sin» turnos.
+     *
+     * @return list<string>
+     */
+    public static function cedulasConHorarioVigente(CarbonInterface $fecha): array
+    {
+        return static::query()
+            ->vigenteEn($fecha)
+            ->distinct()
+            ->pluck('ci')
+            ->map(fn (string $ci): string => trim($ci))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Hasta cuándo tuvo horario cada cédula, para quien hoy no tiene ninguno.
+     * La que nunca tuvo no aparece en el resultado.
+     *
+     * @param  list<string>  $cis
+     * @return array<string, Carbon>
+     */
+    public static function ultimoHastaPorCi(array $cis): array
+    {
+        if ($cis === []) {
+            return [];
+        }
+
+        return static::query()
+            ->whereIn('ci', $cis)
+            ->groupBy('ci')
+            ->selectRaw('ci, max(hasta) as ultimo')
+            ->pluck('ultimo', 'ci')
+            ->mapWithKeys(fn (string $ultimo, string $ci): array => [trim($ci) => Carbon::parse($ultimo)])
+            ->all();
     }
 
     /**

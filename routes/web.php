@@ -11,6 +11,7 @@ use App\Http\Controllers\EquipoController;
 use App\Http\Controllers\LicenciaController;
 use App\Http\Controllers\MarcacionController;
 use App\Http\Controllers\PersonaController;
+use App\Http\Controllers\ReporteFuncionarioController;
 use App\Http\Controllers\ReporteMarcacionController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SistemaExternoController;
@@ -209,4 +210,10 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     Route::get('reportes/marcaciones/direcciones', [ReporteMarcacionController::class, 'direcciones'])->name('reportes.marcaciones.direcciones');
     // Búsqueda JSON de funcionarios para el combo (select2) del reporte.
     Route::get('reportes/marcaciones/funcionarios', [ReporteMarcacionController::class, 'buscarFuncionarios'])->name('reportes.marcaciones.funcionarios');
+
+    // Funcionarios con contrato y sin turno ni horario vigente hoy, por
+    // dirección, unidad y tipo de contrato. Las direcciones salen del mismo
+    // combo que el reporte por dirección.
+    Route::get('reportes/funcionarios/sin-turno', [ReporteFuncionarioController::class, 'sinTurno'])->name('reportes.funcionarios.sin-turno');
+    Route::get('reportes/funcionarios/sin-turno/generar', [ReporteFuncionarioController::class, 'sinTurnoList'])->name('reportes.funcionarios.sin-turno.generar');
 });

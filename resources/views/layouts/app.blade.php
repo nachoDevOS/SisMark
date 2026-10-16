@@ -668,6 +668,7 @@
                 'reporte-sin-procesar' => request()->routeIs('reportes.marcaciones.sin-procesar*'),
                 'reporte-procesado' => request()->routeIs('reportes.marcaciones.procesado*'),
                 'reporte-direccion' => request()->routeIs('reportes.marcaciones.direccion*'),
+                'reporte-sin-turno' => request()->routeIs('reportes.funcionarios.sin-turno*'),
                 'equipos' => request()->routeIs('equipos.*'),
                 'usuarios' => request()->routeIs('usuarios.*'),
                 'roles' => request()->routeIs('roles.*'),
@@ -756,6 +757,9 @@
                     </a>
                     <a href="{{ route('reportes.marcaciones.direccion') }}" @class(['sidebar__sublink', 'activo' => $enMenu['reporte-direccion']]) title="Marcaciones por dirección"@if ($enMenu['reporte-direccion']) aria-current="page"@endif>
                         <x-heroicon-o-building-office-2 /><span class="sidebar__texto">Por dirección</span>
+                    </a>
+                    <a href="{{ route('reportes.funcionarios.sin-turno') }}" @class(['sidebar__sublink', 'activo' => $enMenu['reporte-sin-turno']]) title="Funcionarios sin turno"@if ($enMenu['reporte-sin-turno']) aria-current="page"@endif>
+                        <x-heroicon-o-calendar-days /><span class="sidebar__texto">Sin turno</span>
                     </a>
                 </div>
             </div>

@@ -344,47 +344,6 @@ class PersonaController extends Controller
     }
 
     /**
-     * Cédulas con horario vigente hoy: lo heredado del SIA y lo que generan
-     * los turnos asignados, que también deja sus días en `asignacion_horarios`.
-     * Es la lista que se le manda a Mamoré para el filtro «Turnos/Horarios».
-     *
-     * @return list<string>
-     */
-    private function cedulasConHorarioVigente(): array
-    {
-        return AsignacionHorario::query()
-            ->vigenteEn(today())
-            ->distinct()
-            ->pluck('ci')
-            ->map(fn (string $ci): string => trim($ci))
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    /**
-     * Hasta cuándo tuvo horario cada cédula, para quien hoy no tiene ninguno.
-     * La que nunca tuvo no aparece en el resultado.
-     *
-     * @param  list<string>  $cis
-     * @return array<string, Carbon>
-     */
-    private function ultimosHorarios(array $cis): array
-    {
-        if ($cis === []) {
-            return [];
-        }
-
-        return AsignacionHorario::query()
-            ->whereIn('ci', $cis)
-            ->groupBy('ci')
-            ->selectRaw('ci, max(hasta) as ultimo')
-            ->pluck('ultimo', 'ci')
-            ->mapWithKeys(fn (string $ultimo, string $ci): array => [trim($ci) => Carbon::parse($ultimo)])
-            ->all();
-    }
-
-    /**
      * Tipo de contrato (id de Mamoré: permanente, eventual…). Solo tiene
      * sentido dentro de «Con contrato»; en otra situación se ignora.
      */
@@ -457,7 +416,7 @@ class PersonaController extends Controller
 
         try {
             $respuesta = $contrato === 'con'
-                ? $mamore->people($pagina, $porPagina, $busqueda, $contrato, tipo: $tipo, conHorarioCi: $this->cedulasConHorarioVigente(), horario: $horario)
+                ? $mamore->people($pagina, $porPagina, $busqueda, $contrato, tipo: $tipo, conHorarioCi: AsignacionHorario::cedulasConHorarioVigente(today()), horario: $horario)
                 : $mamore->people($pagina, $porPagina, $busqueda, $contrato);
             $meta = $respuesta['meta'] ?? [];
             $filas = $this->normalizarMamore($respuesta['data'] ?? []);
@@ -465,7 +424,7 @@ class PersonaController extends Controller
             // Sin horario se agrega hasta cuándo tuvo uno, para distinguir a quien
             // se le venció del que nunca tuvo.
             if ($horario === 'sin') {
-                $ultimos = $this->ultimosHorarios(array_column($filas, 'ci'));
+                $ultimos = AsignacionHorario::ultimoHastaPorCi(array_column($filas, 'ci'));
 
                 $filas = array_map(fn (array $fila): array => $fila + [
                     'ultimoHorario' => $ultimos[$fila['ci']] ?? null,

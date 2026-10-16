@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\MamoreException;
+use App\Models\AsignacionHorario;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -223,6 +224,105 @@ class DirectorioMamore
     }
 
     /**
+     * Una página de los funcionarios con contrato que hoy no tienen turno ni
+     * horario vigente, acotada opcionalmente por dirección, unidad y tipo de
+     * contrato.
+     *
+     * El cruce lo hace Mamoré: se le manda la lista de cédulas que en SisMark
+     * tienen horario hoy y devuelve a quien no está en ella. Sin fechas, la
+     * dirección y la unidad son las del contrato firmado de hoy.
+     *
+     * @return array{filas: list<array<string, mixed>>, total: int}
+     *
+     * @throws MamoreException
+     */
+    public function sinTurno(?int $direccion, ?int $unidad, ?int $tipo, int $pagina = 1, int $porPagina = self::POR_PAGINA): array
+    {
+        $respuesta = $this->mamore->people(
+            page: $pagina,
+            limit: $porPagina,
+            contrato: 'con',
+            direccion: $direccion,
+            unidad: $unidad,
+            tipo: $tipo,
+            conHorarioCi: AsignacionHorario::cedulasConHorarioVigente(today()),
+            horario: 'sin',
+        );
+
+        $filas = $this->normalizar($respuesta['data'] ?? []);
+
+        return [
+            'filas' => $this->ordenarPorApellido($filas),
+            'total' => (int) ($respuesta['meta']['total'] ?? count($filas)),
+        ];
+    }
+
+    /**
+     * Orden alfabético por «Apellidos Nombres», sin distinguir mayúsculas ni
+     * tildes. Mamoré ya ordena por apellido paterno y materno, pero no por
+     * nombre: dos «MOLINA GUZMAN» podían salir al revés.
+     *
+     * @param  list<array<string, mixed>>  $filas
+     * @return list<array<string, mixed>>
+     */
+    private function ordenarPorApellido(array $filas): array
+    {
+        return collect($filas)
+            ->sortBy(fn (array $fila): string => Str::lower(Str::ascii($fila['nombreFormal'] ?: $fila['nombre'])))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Todos los funcionarios sin turno del filtro, para el imprimible.
+     *
+     * Recorre la paginación de la API hasta {@see self::PAGINAS_MAXIMAS}; si
+     * hubiera más, `total` dice cuántos quedaron afuera de la hoja.
+     *
+     * @return array{filas: list<array<string, mixed>>, total: int}
+     *
+     * @throws MamoreException
+     */
+    public function todosSinTurno(?int $direccion, ?int $unidad, ?int $tipo): array
+    {
+        $filas = [];
+        $total = 0;
+
+        for ($pagina = 1; $pagina <= self::PAGINAS_MAXIMAS; $pagina++) {
+            $resultado = $this->sinTurno($direccion, $unidad, $tipo, $pagina);
+            $filas = array_merge($filas, $resultado['filas']);
+            $total = $resultado['total'];
+
+            if (count($resultado['filas']) < self::POR_PAGINA || count($filas) >= $total) {
+                break;
+            }
+        }
+
+        return ['filas' => $this->ordenarPorApellido($filas), 'total' => $total];
+    }
+
+    /**
+     * Tipos de contrato que tiene hoy alguien (permanente, eventual…), para el
+     * combo del reporte de funcionarios sin turno.
+     *
+     * @return list<array{id: int, nombre: string}>
+     *
+     * @throws MamoreException
+     */
+    public function tiposDeContrato(): array
+    {
+        $respuesta = $this->mamore->people(1, 1, contrato: 'con');
+
+        return collect($respuesta['meta']['tipos_contrato'] ?? [])
+            ->map(fn (array $tipo): array => [
+                'id' => (int) $tipo['id'],
+                'nombre' => Str::ucfirst((string) $tipo['nombre']),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
      * Ficha de un funcionario por su cédula. `null` si Mamoré no lo tiene.
      *
      * @return array<string, mixed>|null
@@ -302,6 +402,18 @@ class DirectorioMamore
             'direccion' => $contrato === null ? null : trim((string) (
                 $contrato['direccion_administrativa']['sigla']
                 ?? $contrato['direccion_administrativa']['nombre']
+                ?? ''
+            )),
+            // Los nombres completos, para el reporte de funcionarios sin turno:
+            // la sigla sola no la reconoce quien no es de la dirección.
+            'direccionNombre' => $contrato === null ? null : trim((string) (
+                $contrato['direccion_administrativa']['nombre']
+                ?? $contrato['direccion_administrativa']['sigla']
+                ?? ''
+            )),
+            'unidadNombre' => $contrato === null ? null : trim((string) (
+                $contrato['unidad_administrativa']['nombre']
+                ?? $contrato['unidad_administrativa']['sigla']
                 ?? ''
             )),
             // `has_contract` lo informa la API; null si no vino en la respuesta.
