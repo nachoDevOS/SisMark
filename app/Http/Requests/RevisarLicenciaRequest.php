@@ -15,23 +15,24 @@ use Illuminate\Foundation\Http\FormRequest;
 class RevisarLicenciaRequest extends FormRequest
 {
     /**
-     * Además del permiso, se exige que la licencia siga «Pendiente».
+     * Además del permiso, se exige que la licencia esté en un estado que se
+     * pueda resolver: aprobar, solo lo «Pendiente»; rechazar, lo «Pendiente» y
+     * también lo «Aprobado».
      *
      * Esa condición no puede vivir en la policy: el `Gate::before` de
      * `AppServiceProvider` le concede todo al rol Administrador sin llegar a
      * ejecutarla, y el Administrador es justamente quien resuelve las solicitudes.
      *
-     * Lo ya resuelto no se revierte desde la ficha: una licencia aprobada
-     * descuenta la ausencia en el cálculo de asistencia, y darla vuelta después
-     * cambiaría hacia atrás reportes que Recursos Humanos ya firmó. Si hubo un
-     * error, la baja lógica es el camino.
+     * Rechazar una aprobada cambia hacia atrás el cálculo de asistencia: esos
+     * días dejan de estar justificados. Por eso exige motivo, como cualquier
+     * rechazo. Lo rechazado no vuelve atrás: ni se aprueba ni se elimina.
      */
     public function authorize(): bool
     {
         $licencia = $this->route('licencia');
 
         return $licencia instanceof Licencia
-            && $licencia->esPendiente
+            && ($licencia->esPendiente || ($this->rechaza() && $licencia->esAprobada))
             && ($this->user()?->can('approve', $licencia) ?? false);
     }
 

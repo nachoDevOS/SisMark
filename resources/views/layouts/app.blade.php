@@ -395,6 +395,11 @@
         .modal-bajada { margin: 0 0 1rem; color: var(--muted); font-size: .8125rem; line-height: 1.45; }
         .modal-acciones { display: flex; gap: .6rem; justify-content: flex-end; margin-top: 1.25rem; flex-wrap: wrap; }
         .modal-acciones form { margin: 0; }
+        /* Ficha corta dentro de un modal: etiqueta a la izquierda, dato a la derecha. */
+        .modal-resumen { display: grid; grid-template-columns: auto 1fr; gap: .35rem .9rem;
+            margin: 0 0 1rem; font-size: .8125rem; }
+        .modal-resumen dt { color: var(--muted); }
+        .modal-resumen dd { margin: 0; font-weight: 600; }
         /* Horarios vigentes dentro del modal de licencia: la caja no crece con
            quien tiene muchos, la tabla se desplaza sola. */
         .modal-licencia__horarios { max-height: 13rem; overflow-y: auto; margin-bottom: 1rem; }

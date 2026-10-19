@@ -79,7 +79,7 @@ class RegistroLicencia
      * Anota las licencias y devuelve el conteo por resultado.
      *
      * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignacionesPorCi  horarios a licenciar, agrupados por carnet
-     * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int, estado?: string, origen?: string, tipo: string}  $datos
+     * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int, origen?: string, tipo: string}  $datos
      * @return array{creadas: int, existentes: int, fueraDeVigencia: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}
      */
     public function anotar(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array $datos): array
@@ -108,11 +108,10 @@ class RegistroLicencia
             // `Licencia::insert()` no dispara el modelo, así que el default de la
             // columna no se aplica y hay que escribir el estado a mano.
             //
-            // «Aprobado» por defecto: lo que anota Recursos Humanos desde el
-            // sistema surte efecto en el acto, como siempre. «Pendiente» lo pide
-            // explícitamente la API cuando la licencia la solicita el propio
-            // funcionario desde Mamoré y todavía nadie la revisó.
-            'estado' => $datos['estado'] ?? 'Aprobado',
+            // «Pendiente» siempre: venga de Recursos Humanos desde SisMark o
+            // del propio funcionario desde Mamoré, la licencia no justifica
+            // nada hasta que alguien la apruebe desde su ficha.
+            'estado' => Licencia::PENDIENTE,
             // Por dónde entró. «propio» por defecto: es lo que corresponde a la
             // pantalla de Recursos Humanos, que es quien más usa este servicio.
             'origen' => $datos['origen'] ?? Licencia::ORIGEN_PROPIO,
@@ -370,6 +369,11 @@ class RegistroLicencia
 
         if ($partes !== [] && $conteo['funcionarios'] > 1) {
             $partes[0] .= " para {$conteo['funcionarios']} funcionario(s)";
+        }
+
+        // Todo nace pendiente: que quien anota sepa que todavía no cuenta.
+        if ($partes !== []) {
+            $partes[0] .= ', pendiente(s) de aprobación';
         }
 
         if ($conteo['diasSinHorario'] !== []) {

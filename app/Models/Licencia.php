@@ -39,9 +39,8 @@ class Licencia extends Model
 
     /**
      * Estado de aprobación. Solo «Pendiente» espera una decisión: es el estado
-     * con el que nacen las solicitudes que hace el propio funcionario desde
-     * Mamoré. Lo que carga Recursos Humanos acá nace «Aprobado» y surte efecto
-     * en el acto, como siempre.
+     * con el que nace toda licencia nueva, la pida el propio funcionario desde
+     * Mamoré o la cargue Recursos Humanos acá. Recién aprobada surte efecto.
      */
     public const PENDIENTE = 'Pendiente';
 
@@ -693,6 +692,14 @@ class Licencia extends Model
     }
 
     /**
+     * ¿Está aprobada? Es lo único resuelto que todavía se puede rechazar.
+     */
+    public function getEsAprobadaAttribute(): bool
+    {
+        return $this->estado === self::APROBADO;
+    }
+
+    /**
      * ¿La rechazó Recursos Humanos?
      */
     public function getEsRechazadaAttribute(): bool
@@ -745,8 +752,8 @@ class Licencia extends Model
     }
 
     /**
-     * ¿Espera una decisión? Es lo único sobre lo que se puede aprobar o
-     * rechazar: lo ya resuelto no se revierte desde la ficha.
+     * ¿Espera una decisión? Es lo único que se puede aprobar. Rechazar se puede
+     * también lo aprobado; lo rechazado ya no se toca.
      */
     public function getEsPendienteAttribute(): bool
     {

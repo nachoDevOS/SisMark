@@ -155,3 +155,11 @@ test('el botón de la pantalla Licenciar se traba y dice «Guardando…» mientr
         ->assertSee('x-on:submit="guardando = true"', false)
         ->assertSee('Guardando…');
 });
+
+test('lo que se anota desde SisMark nace pendiente y no justifica hasta aprobarse', function (): void {
+    $conteo = anotarEl19('08:00', '12:00');
+
+    expect(Licencia::where('ci', '111')->pluck('estado')->all())->toBe([Licencia::PENDIENTE])
+        ->and(app(RegistroLicencia::class)->mensaje($conteo))->toContain('pendiente(s) de aprobación')
+        ->and(bloqueDel19()['licencias'])->toBe([]);
+});

@@ -351,6 +351,7 @@ baja de otro contrato en la misma terna se informa como `omitidos`.
 
 ```
 Funcionario en Mamoré  →  POST /api/v1/.../licencias  →  estado «Pendiente»
+RRHH en SisMark        →  «Licenciar» o modal de ficha →  estado «Pendiente»
                                                               │
 RRHH en SisMark  →  ficha de la solicitud  →  Aprobar ──────► surte efecto
                                            └─ Rechazar (exige motivo, que el

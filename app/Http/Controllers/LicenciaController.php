@@ -164,19 +164,29 @@ class LicenciaController extends Controller
     /**
      * Deja la solicitud en el estado decidido, en una sola consulta.
      *
-     * Solo toca los días que siguen «Pendiente»: si otro usuario resolvió la
-     * misma solicitud mientras esta pantalla estaba abierta, su decisión no se
-     * pisa —se informa que no quedaba nada por resolver—.
+     * Solo toca los días que todavía admiten esa decisión —lo «Pendiente», y
+     * al rechazar también lo «Aprobado»—: si otro usuario ya los rechazó
+     * mientras esta pantalla estaba abierta, su decisión no se pisa —se informa
+     * que no quedaba nada por resolver—.
      */
     private function resolver(RevisarLicenciaRequest $request, Licencia $licencia, string $estado): RedirectResponse
     {
+        // Resuelta desde el modal de la ficha, se vuelve ahí con la solapa de
+        // licencias abierta: `back()` pierde el ancla y abriría otra solapa.
+        $volver = $request->boolean('desde_ficha')
+            ? fn (): RedirectResponse => redirect($this->fichaDelFuncionario($licencia))
+            : fn (): RedirectResponse => back();
+
         if ($estado === Licencia::APROBADO && ($exceso = $this->excesoAlAprobar($licencia)) !== null) {
-            return back()->with('error', $exceso);
+            return $volver()->with('error', $exceso);
         }
 
+        // Aprobar toca lo pendiente; rechazar, también lo ya aprobado.
         $afectados = Licencia::query()
             ->deLaSolicitud($licencia)
-            ->pendientes()
+            ->whereIn('estado', $estado === Licencia::RECHAZADO
+                ? [Licencia::PENDIENTE, Licencia::APROBADO]
+                : [Licencia::PENDIENTE])
             ->update([
                 'estado' => $estado,
                 'observacion' => $request->validated('observacion'),
@@ -185,7 +195,7 @@ class LicenciaController extends Controller
             ]);
 
         if ($afectados === 0) {
-            return back()->with('error', 'Esta solicitud ya había sido resuelta por otro usuario.');
+            return $volver()->with('error', 'Esta solicitud ya había sido resuelta por otro usuario.');
         }
 
         $verbo = $estado === Licencia::APROBADO ? 'aprobó' : 'rechazó';
@@ -197,7 +207,7 @@ class LicenciaController extends Controller
         // comprobar cómo quedaron los días.
         return $estado === Licencia::RECHAZADO
             ? redirect($this->fichaDelFuncionario($licencia))->with('estado', $mensaje)
-            : back()->with('estado', $mensaje);
+            : $volver()->with('estado', $mensaje);
     }
 
     /**

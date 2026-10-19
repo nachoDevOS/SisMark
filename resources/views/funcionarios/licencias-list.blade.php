@@ -137,6 +137,104 @@
                         @endif
                     </td>
                     <td class="acciones">
+                        {{-- Resolver sin salir de la ficha. El modal repite lo que
+                             hay que mirar antes de decidir —el saldo del tope ya
+                             está arriba de la tabla— y usa las mismas rutas que la
+                             pantalla de la solicitud, con sus mismos controles. --}}
+                        {{-- Lo aprobado todavía se puede rechazar —con motivo, y sin
+                             vuelta atrás—; lo rechazado ya no se toca. --}}
+                        @if ($licencia->esPendiente || $licencia->esAprobada)
+                            @can('approve', $licencia)
+                                @php($soloRechazo = $licencia->esAprobada)
+                                <div x-data="{ abierto: false, accion: @js($soloRechazo ? 'rechazar' : 'aprobar'), enviando: false }" style="display: contents;">
+                                    @if ($soloRechazo)
+                                        <button type="button" class="btn-icon btn-icon--peligro" title="Rechazar licencia aprobada" aria-label="Rechazar licencia aprobada"
+                                                x-on:click="abierto = true"><x-heroicon-o-no-symbol /></button>
+                                    @else
+                                        <button type="button" class="btn-icon" title="Aprobar o rechazar" aria-label="Aprobar o rechazar"
+                                                x-on:click="abierto = true; accion = 'aprobar'"><x-heroicon-o-clipboard-document-check /></button>
+                                    @endif
+
+                                    <div class="modal-fondo" x-show="abierto" x-cloak
+                                         x-on:click.self="if (! enviando) abierto = false"
+                                         x-on:keydown.escape.window="if (! enviando) abierto = false">
+                                        <div class="modal-caja modal-caja--ancha" style="text-align: left;">
+                                            @if ($soloRechazo)
+                                                <h2>Rechazar licencia aprobada</h2>
+                                                <p class="modal-bajada">
+                                                    Los días de esta solicitud dejan de estar justificados en el cálculo
+                                                    de asistencia y dejan de contar para el tope de permisos.
+                                                    <strong>No se puede revertir</strong>: una vez rechazada no se aprueba
+                                                    ni se elimina.
+                                                </p>
+                                            @else
+                                                <h2>Resolver solicitud</h2>
+                                                <p class="modal-bajada">
+                                                    La decisión alcanza a todos los días pendientes de la solicitud.
+                                                    Aprobar justifica la ausencia en el cálculo de asistencia. Rechazar
+                                                    no se revierte.
+                                                </p>
+                                            @endif
+
+                                            <dl class="modal-resumen">
+                                                <dt>Periodo</dt>
+                                                <dd>{{ $desde?->format('d/m/Y') }}@unless ($unSoloDia) al {{ $hasta?->format('d/m/Y') }}@endunless · {{ $dias }} día(s)</dd>
+                                                <dt>Alcance</dt>
+                                                <dd>{{ $licencia->tCompleto ? 'Horario completo' : ($licencia->lEntra?->format('H:i').' – '.$licencia->lSale?->format('H:i')) }}</dd>
+                                                <dt>Tipo</dt>
+                                                <dd>{{ $licencia->tipo_etiqueta }} · {{ $licencia->goceHaberes ? 'con goce' : 'sin goce' }} de haberes</dd>
+                                                <dt>Motivo</dt>
+                                                <dd>
+                                                    {{ $licencia->motivo ?: '—' }}
+                                                    @if ($licencia->adjunto)
+                                                        <a href="{{ route('licencias.respaldo', $licencia) }}" target="_blank" rel="noopener"
+                                                           class="respaldo"><x-heroicon-o-paper-clip />Respaldo</a>
+                                                    @endif
+                                                </dd>
+                                            </dl>
+
+                                            {{-- Cada botón lleva su ruta (`formaction`) y fija en el
+                                                 mismo clic si el motivo es obligatorio: así la
+                                                 validación del navegador ya lo ve al enviar. --}}
+                                            <form method="POST" action="{{ route($soloRechazo ? 'licencias.rechazar' : 'licencias.aprobar', $licencia) }}"
+                                                  x-on:submit="enviando = true">
+                                                @csrf
+                                                @method('PATCH')
+                                                {{-- Vuelve a esta ficha, en la solapa de licencias. --}}
+                                                <input type="hidden" name="desde_ficha" value="1">
+
+                                                <div class="campo">
+                                                    <label>
+                                                        <span x-show="accion === 'aprobar'">Observación</span>
+                                                        <span x-show="accion === 'rechazar'" x-cloak>Motivo del rechazo <span class="req">*</span></span>
+                                                    </label>
+                                                    <textarea name="observacion" rows="2" maxlength="500" x-ref="observacion" @required($soloRechazo)
+                                                              x-bind:placeholder="accion === 'rechazar' ? 'Por ejemplo: falta el certificado médico.' : 'Opcional.'"></textarea>
+                                                </div>
+
+                                                <div class="modal-acciones">
+                                                    <button type="button" class="btn btn--gris" x-on:click="abierto = false" :disabled="enviando">
+                                                        <x-heroicon-o-x-mark />Cancelar
+                                                    </button>
+                                                    <button type="submit" class="btn btn--peligro" formaction="{{ route('licencias.rechazar', $licencia) }}"
+                                                            x-on:click="accion = 'rechazar'; $refs.observacion.required = true" :disabled="enviando">
+                                                        <span class="btn__contenido" x-show="! (enviando && accion === 'rechazar')"><x-heroicon-o-no-symbol />Rechazar</span>
+                                                        <span class="btn__contenido" x-show="enviando && accion === 'rechazar'" x-cloak><span class="spinner-anillo"></span>Rechazando…</span>
+                                                    </button>
+                                                    @unless ($soloRechazo)
+                                                        <button type="submit" class="btn" formaction="{{ route('licencias.aprobar', $licencia) }}"
+                                                                x-on:click="accion = 'aprobar'; $refs.observacion.required = false" :disabled="enviando">
+                                                            <span class="btn__contenido" x-show="! (enviando && accion === 'aprobar')"><x-heroicon-o-check />Aprobar</span>
+                                                            <span class="btn__contenido" x-show="enviando && accion === 'aprobar'" x-cloak><span class="spinner-anillo"></span>Aprobando…</span>
+                                                        </button>
+                                                    @endunless
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endcan
+                        @endif
                         @can('view', $licencia)
                             <a href="{{ route('licencias.show', $licencia) }}" class="btn-icon btn-icon--gris"
                                title="Ver solicitud" aria-label="Ver solicitud"><x-heroicon-o-eye /></a>

@@ -147,7 +147,6 @@ class SolicitudLicenciaController extends Controller
             'usuario' => mb_substr((string) ($datos['solicitante'] ?? $ci), 0, 50),
             // Sin `registerUser_id`: quien pide no tiene usuario en SisMark.
             'usuarioId' => null,
-            'estado' => Licencia::PENDIENTE,
             'origen' => Licencia::ORIGEN_MAMORE,
             // Desde Mamoré el tipo lo da el alcance: el horario completo es una
             // licencia institucional; por horas, un permiso personal, que es
