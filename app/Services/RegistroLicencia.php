@@ -28,10 +28,19 @@ use Illuminate\Support\Str;
  * pidió y cómo terminó. Por eso el pedido nuevo siempre es una fila nueva, y el
  * índice único incluye `solicitud`.
  *
+ * Con los contratos de cada funcionario, solo se licencian los días que algún
+ * contrato cubre —firmado o ya concluido—: quien se fue el 15 no recibe licencia
+ * del 16 en adelante aunque el rango llegue a fin de mes. Los días que quedan
+ * afuera se cuentan y se informan.
+ *
  * El código de horario del SIA (`idHorario`) no se escribe: el horario va por la FK.
+ *
+ * @phpstan-import-type Tramo from ContratosFuncionario
  */
 class RegistroLicencia
 {
+    public function __construct(private ContratosFuncionario $contratos) {}
+
     /**
      * Tope de días del rango, para que un error de tipeo en las fechas no genere
      * miles de filas.
@@ -78,13 +87,18 @@ class RegistroLicencia
     /**
      * Anota las licencias y devuelve el conteo por resultado.
      *
+     * `$contratos` son los tramos de contrato de cada carnet en el rango; con
+     * ellos se saltean los días sin contrato. En `null` —no se conocen— se
+     * licencia todo el rango.
+     *
      * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignacionesPorCi  horarios a licenciar, agrupados por carnet
+     * @param  array<string, list<Tramo>>|null  $contratos
      * @param  array{tCompleto: bool, goceHaberes: bool, motivo: string, lEntra: ?string, lSale: ?string, adjunto?: ?string, adjuntoNombre?: ?string, usuario: string, usuarioId: ?int, origen?: string, tipo: string}  $datos
-     * @return array{creadas: int, existentes: int, fueraDeVigencia: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}
+     * @return array{creadas: int, existentes: int, fueraDeVigencia: int, fueraDeContrato: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}
      */
-    public function anotar(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array $datos): array
+    public function anotar(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array $datos, ?array $contratos = null): array
     {
-        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
+        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'fueraDeContrato' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
 
         if ($asignacionesPorCi->isEmpty()) {
             return $conteo;
@@ -120,7 +134,7 @@ class RegistroLicencia
             'tipo' => $datos['tipo'],
         ];
 
-        $candidatos = $this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo);
+        $candidatos = $this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo, $contratos);
 
         if ($candidatos === []) {
             return $conteo;
@@ -188,15 +202,16 @@ class RegistroLicencia
      * cualquier licencia del día.
      *
      * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignacionesPorCi
+     * @param  array<string, list<Tramo>>|null  $contratos  los mismos de {@see anotar()}
      * @return array<string, list<string>> fechas `Y-m-d` por carnet
      */
-    public function fechasNuevas(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, ?string $lEntra = null, ?string $lSale = null): array
+    public function fechasNuevas(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, ?string $lEntra = null, ?string $lSale = null, ?array $contratos = null): array
     {
-        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
+        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'fueraDeContrato' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
         $ocupados = $this->ocupados($asignacionesPorCi->keys()->all(), $desde, $hasta);
         $fechas = [];
 
-        foreach ($this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo) as $clave => $candidato) {
+        foreach ($this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo, $contratos) as $clave => $candidato) {
             if (! self::choca($ocupados->get($clave, []), false, $lEntra, $lSale)) {
                 $fechas[$candidato['ci']][$candidato['fecha']] = true;
             }
@@ -226,10 +241,11 @@ class RegistroLicencia
      * clave natural: dos asignaciones al mismo horario y día son una sola licencia.
      *
      * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignacionesPorCi
-     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}  $conteo
+     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, fueraDeContrato: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}  $conteo
+     * @param  array<string, list<Tramo>>|null  $contratos
      * @return array<string, array{ci: string, fecha: string, horario_id: int}>
      */
-    private function candidatos(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array &$conteo): array
+    private function candidatos(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, array &$conteo, ?array $contratos = null): array
     {
         $candidatos = [];
         $fin = $hasta->copy()->startOfDay();
@@ -239,6 +255,8 @@ class RegistroLicencia
 
             while ($fecha->lessThanOrEqualTo($fin)) {
                 $tieneHorario = false;
+                $enContrato = $contratos === null || $this->contratos->cubierto($contratos[(string) $ci] ?? [], $fecha);
+                $fueraDeContrato = false;
 
                 foreach ($asignaciones as $asignacion) {
                     $horario = $asignacion->horario;
@@ -254,6 +272,14 @@ class RegistroLicencia
                     }
 
                     $tieneHorario = true;
+
+                    // Tenía horario, pero ese día ya no —o todavía no— tenía
+                    // contrato: no hay jornada que licenciar.
+                    if (! $enContrato) {
+                        $fueraDeContrato = true;
+
+                        continue;
+                    }
 
                     if (! self::dentroDeVigencia($asignacion, $fecha)) {
                         $conteo['fueraDeVigencia']++;
@@ -272,6 +298,10 @@ class RegistroLicencia
                 // nada que licenciar. Se anota para poder decir por qué.
                 if (! $tieneHorario) {
                     $conteo['diasSinHorario'][] = $fecha->toDateString();
+                }
+
+                if ($fueraDeContrato) {
+                    $conteo['fueraDeContrato']++;
                 }
 
                 $fecha->addDay();
@@ -359,7 +389,7 @@ class RegistroLicencia
     /**
      * Arma el mensaje de resultado a partir del conteo.
      *
-     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}  $conteo
+     * @param  array{creadas: int, existentes: int, fueraDeVigencia: int, fueraDeContrato: int, sinHorario: int, diasSinHorario: list<string>, funcionarios: int}  $conteo
      */
     public function mensaje(array $conteo): string
     {
@@ -391,6 +421,10 @@ class RegistroLicencia
 
         if ($conteo['existentes'] > 0) {
             $partes[] = "{$conteo['existentes']} se pisan con una licencia ya anotada en ese horario";
+        }
+
+        if ($conteo['fueraDeContrato'] > 0) {
+            $partes[] = "{$conteo['fueraDeContrato']} día(s) fuera del contrato no se anotaron";
         }
 
         if ($conteo['fueraDeVigencia'] > 0) {

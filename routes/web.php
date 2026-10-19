@@ -146,6 +146,8 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     Route::get('licencias/ajax/list', [LicenciaController::class, 'list'])->name('licencias.list');
     // Búsqueda JSON de funcionarios para el combo de la pantalla «Licenciar».
     Route::get('licencias/ajax/funcionarios', [LicenciaController::class, 'buscarFuncionarios'])->name('licencias.funcionarios');
+    // Si los ya elegidos tuvieron contrato en las fechas, al cambiarlas.
+    Route::get('licencias/ajax/contratos', [LicenciaController::class, 'contratos'])->name('licencias.contratos');
     // Saldo de permisos por horas contra el tope mensual, en vivo mientras se
     // arma la licencia de un funcionario.
     Route::get('licencias/ajax/saldo', [LicenciaController::class, 'saldo'])->name('licencias.saldo');

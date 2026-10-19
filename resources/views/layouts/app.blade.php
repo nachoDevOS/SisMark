@@ -399,6 +399,22 @@
         .modal-bajada { margin: 0 0 1rem; color: var(--muted); font-size: .8125rem; line-height: 1.45; }
         .modal-acciones { display: flex; gap: .6rem; justify-content: flex-end; margin-top: 1.25rem; flex-wrap: wrap; }
         .modal-acciones form { margin: 0; }
+        /* ===== «¿Cuándo?» de la pantalla Licenciar: el atajo elegido manda ===== */
+        .cuando-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; }
+        .cuando-opcion { display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+            padding: .7rem .8rem; border: 1px solid var(--border); border-radius: .6rem; background: #fff;
+            font: inherit; font-size: .875rem; font-weight: 600; color: var(--fg); cursor: pointer;
+            transition: border-color .15s, background .15s, color .15s; }
+        .cuando-opcion svg { width: 1.1rem; height: 1.1rem; color: var(--muted); }
+        .cuando-opcion:hover { border-color: var(--verde); }
+        .cuando-opcion--activa { border-color: var(--verde); background: #f0fdf4; color: var(--verde-osc);
+            box-shadow: 0 0 0 3px rgba(22,163,74,.12); }
+        .cuando-opcion--activa svg { color: var(--verde); }
+        .cuando-resumen { display: flex; align-items: flex-start; gap: .5rem; margin: .85rem 0 0;
+            font-size: .8125rem; color: #14532d; }
+        .cuando-resumen svg { width: 1.05rem; height: 1.05rem; flex-shrink: 0; color: var(--verde); margin-top: .1rem; }
+        input[type="date"][readonly] { background: var(--bg); color: var(--muted); }
+
         /* ===== Resolución en lote del listado de licencias ===== */
         .lote-celda { width: 2.25rem; text-align: center; }
         .lote-celda input { width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--verde); }

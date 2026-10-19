@@ -8,6 +8,7 @@ use App\Http\Requests\RevisarLicenciaRequest;
 use App\Http\Requests\StoreLicenciaRequest;
 use App\Models\AsignacionHorario;
 use App\Models\Licencia;
+use App\Services\ContratosFuncionario;
 use App\Services\DirectorioMamore;
 use App\Services\ProcesadorAsistencia;
 use App\Services\RegistroLicencia;
@@ -443,8 +444,15 @@ class LicenciaController extends Controller
         // El CI vino por la URL y Mamoré no lo tiene: no hay a quién licenciar.
         $ciDesconocido = $ci !== '' && $persona === null && $errorMamore === null;
 
+        // Las fechas van primero y deciden a quién se puede elegir. Al elegir un
+        // funcionario la página se recarga con `?ci=`, y las fechas viajan con
+        // él para no perderlas.
+        $desde = $this->fechaDelPedido($request, 'desde') ?? now()->toDateString();
+        $hasta = $this->fechaDelPedido($request, 'hasta') ?? $desde;
+
         return view('licencias.create', compact(
-            'persona', 'ci', 'asignaciones', 'incluirVencidos', 'vencidos', 'elegidos', 'errorMamore', 'ciDesconocido'
+            'persona', 'ci', 'asignaciones', 'incluirVencidos', 'vencidos', 'elegidos', 'errorMamore', 'ciDesconocido',
+            'desde', 'hasta',
         ));
     }
 
@@ -452,6 +460,9 @@ class LicenciaController extends Controller
      * Búsqueda de funcionarios por CI o nombre para el combo de la pantalla
      * «Licenciar», contra la API de Mamoré. Devuelve hasta 20 coincidencias como
      * JSON, o un 502 con el motivo si la API no responde.
+     *
+     * Con `desde`/`hasta` solo trae a quien tuvo contrato en esas fechas, con
+     * la vigencia de ese contrato para mostrarla en la lista.
      */
     public function buscarFuncionarios(Request $request, DirectorioMamore $directorio): JsonResponse
     {
@@ -463,8 +474,11 @@ class LicenciaController extends Controller
             return response()->json([]);
         }
 
+        $desde = $this->fechaDelPedido($request, 'desde');
+        $hasta = $this->fechaDelPedido($request, 'hasta') ?? $desde;
+
         try {
-            $funcionarios = $directorio->buscar($q);
+            $funcionarios = $directorio->buscar($q, desde: $desde, hasta: $hasta);
         } catch (MamoreException $e) {
             return response()->json(['error' => $e->getMessage()], 502);
         }
@@ -472,7 +486,74 @@ class LicenciaController extends Controller
         return response()->json($funcionarios->map(fn (array $persona): array => [
             'id' => $persona['ci'],
             'texto' => $directorio->etiqueta($persona),
+            // Con fechas en el pedido es el contrato de ese período.
+            'contrato' => $persona['contratoDesde'] === null ? null : self::vigencia(
+                Carbon::parse($persona['contratoDesde'])->format('d/m/Y'),
+                $persona['contratoHasta'] === null ? null : Carbon::parse($persona['contratoHasta'])->format('d/m/Y'),
+            ),
         ])->values());
+    }
+
+    /**
+     * Contrato de cada funcionario elegido en las fechas del pedido, para la
+     * pantalla «Licenciar»: al cambiar las fechas con alguien ya elegido, se
+     * revisa si sigue teniendo contrato.
+     *
+     * Por cédula, el texto de la vigencia o `null` si no tuvo contrato esos días.
+     * Con Mamoré sin configurar responde `configurado: false` y no afirma nada.
+     */
+    public function contratos(Request $request, ContratosFuncionario $contratos): JsonResponse
+    {
+        $this->authorize('create', Licencia::class);
+
+        $datos = $request->validate([
+            'cis' => ['required', 'array', 'max:500'],
+            'cis.*' => ['string', 'max:20'],
+            'desde' => ['required', 'date'],
+            'hasta' => ['required', 'date', 'after_or_equal:desde'],
+        ]);
+
+        try {
+            $tramos = $contratos->tramosDeVarios(
+                array_values(array_map(trim(...), $datos['cis'])),
+                Carbon::parse($datos['desde']),
+                Carbon::parse($datos['hasta']),
+            );
+        } catch (MamoreException $e) {
+            return response()->json(['error' => 'No se pudieron revisar los contratos: '.$e->getMessage()], 502);
+        }
+
+        if ($tramos === null) {
+            return response()->json(['configurado' => false, 'contratos' => (object) []]);
+        }
+
+        return response()->json([
+            'configurado' => true,
+            'contratos' => array_map(fn (array $delCi): ?string => $delCi === []
+                ? null
+                : implode(' · ', array_map(fn (array $tramo): string => self::vigencia(
+                    $tramo['desde']->format('d/m/Y'),
+                    $tramo['hasta']?->format('d/m/Y'),
+                ), $delCi)), $tramos),
+        ]);
+    }
+
+    /**
+     * «Contrato del 05/01/2026 al 30/11/2026», o «… en adelante» sin fin.
+     */
+    private static function vigencia(string $desde, ?string $hasta): string
+    {
+        return 'Contrato del '.$desde.($hasta === null ? ' en adelante' : ' al '.$hasta);
+    }
+
+    /**
+     * Una fecha `Y-m-d` de la consulta, o `null` si no vino o no es una fecha.
+     */
+    private function fechaDelPedido(Request $request, string $campo): ?string
+    {
+        $valor = trim((string) $request->query($campo, ''));
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor) === 1 && strtotime($valor) !== false ? $valor : null;
     }
 
     /**
@@ -659,6 +740,7 @@ class LicenciaController extends Controller
         RespaldoDocumento $respaldos,
         DirectorioMamore $directorio,
         TopePermisos $tope,
+        ContratosFuncionario $contratosFuncionario,
     ): RedirectResponse {
         $datos = $request->validated();
 
@@ -694,6 +776,34 @@ class LicenciaController extends Controller
                     : 'Los funcionarios elegidos no pertenecen a esa dirección, o no tienen contrato firmado en el rango.');
         }
 
+        // Los contratos de cada uno en el rango, en una sola consulta. Sirven
+        // para dos cosas: frenar a quien no tuvo contrato ningún día, y
+        // licenciar solo los días que el contrato cubre —quien se fue el 15 no
+        // recibe licencia del 16 en adelante—. Con Mamoré sin configurar vuelve
+        // `null`: no se sabe, y no se frena ni se recorta nada.
+        try {
+            $contratos = $contratosFuncionario->tramosDeVarios($cis, $desde, $hasta);
+        } catch (MamoreException $e) {
+            return back()
+                ->withInput()
+                ->with('error', 'No se pudieron revisar los contratos en Mamoré: '.$e->getMessage());
+        }
+
+        // Uno o varios funcionarios: cada uno tiene que haber tenido contrato
+        // —firmado o ya concluido— en algún día de las fechas. La pantalla ya lo
+        // filtra al buscar; acá se vuelve a controlar, porque el pedido puede
+        // venir armado con otras fechas. Por dirección ya lo resuelve Mamoré.
+        $sinContrato = $contratos === null || $modo === 'direccion'
+            ? []
+            : array_values(array_filter($cis, fn (string $ci): bool => ($contratos[$ci] ?? []) === []));
+
+        if ($sinContrato !== []) {
+            return back()
+                ->withInput()
+                ->with('error', 'Sin contrato entre el '.$desde->format('d/m/Y').' y el '.$hasta->format('d/m/Y')
+                    .': CI '.implode(', ', $sinContrato).'. Quitalos o cambiá las fechas.');
+        }
+
         $asignacionesPorCi = $this->horariosDelRango($cis, $desde, $hasta, $elegidas);
 
         if ($asignacionesPorCi->isEmpty()) {
@@ -707,7 +817,7 @@ class LicenciaController extends Controller
         // a medias dejaría a Recursos Humanos adivinando a quién le faltó.
         if ($datos['tipo'] === Licencia::TIPO_PERSONAL && ! $datos['tCompleto']) {
             $excesos = $tope->excesos(
-                $registro->fechasNuevas($asignacionesPorCi, $desde, $hasta, $datos['lEntra'], $datos['lSale']),
+                $registro->fechasNuevas($asignacionesPorCi, $desde, $hasta, $datos['lEntra'], $datos['lSale'], $contratos),
                 (string) $datos['lEntra'],
                 (string) $datos['lSale'],
             );
@@ -738,7 +848,7 @@ class LicenciaController extends Controller
             'usuario' => (string) ($request->user()?->name ?? ''),
             'usuarioId' => $request->user()?->id,
             'tipo' => $datos['tipo'],
-        ]);
+        ], $contratos);
 
         if ($conteo['creadas'] === 0) {
             return back()

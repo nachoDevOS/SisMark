@@ -108,15 +108,20 @@ class SolicitudLicenciaController extends Controller
             ], 422);
         }
 
+        // Los contratos que manda Mamoré, si los manda: con ellos se cuenta el
+        // tope por contrato y se licencian solo los días que el contrato cubre.
+        // Sin ellos no se recorta nada.
+        $contratos = $request->has('contratos') ? [$ci => ContratosFuncionario::delPedido($datos['contratos'] ?? [])] : null;
+
         // Tope mensual de permisos por horas: si este pedido lo pasa, no se
         // anota nada. Va antes de subir el respaldo, para no dejar un archivo
         // huérfano.
         if (! $datos['tCompleto']) {
             $excesos = $tope->excesos(
-                $registro->fechasNuevas($asignaciones, $desde, $hasta, $datos['lEntra'], $datos['lSale']),
+                $registro->fechasNuevas($asignaciones, $desde, $hasta, $datos['lEntra'], $datos['lSale'], $contratos),
                 (string) $datos['lEntra'],
                 (string) $datos['lSale'],
-                $request->has('contratos') ? [$ci => ContratosFuncionario::delPedido($datos['contratos'] ?? [])] : null,
+                $contratos,
             );
 
             if ($excesos !== []) {
@@ -152,7 +157,7 @@ class SolicitudLicenciaController extends Controller
             // licencia institucional; por horas, un permiso personal, que es
             // el único que cuenta contra el tope.
             'tipo' => $datos['tCompleto'] ? Licencia::TIPO_INSTITUCIONAL : Licencia::TIPO_PERSONAL,
-        ]);
+        ], $contratos);
 
         if ($conteo['creadas'] === 0) {
             return response()->json([

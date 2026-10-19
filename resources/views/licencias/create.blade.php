@@ -51,10 +51,21 @@
               completo: {{ old('tCompleto', 1) ? 'true' : 'false' }},
               porHorario: {{ old('asignaciones') !== null ? 'true' : 'false' }},
               elegidos: @js($elegidos),
-              {{-- El rango vive en Alpine además de en los inputs: el catálogo de
-                   direcciones y el personal se piden para esas fechas. --}}
-              desde: @js(old('desde', now()->toDateString())),
-              hasta: @js(old('hasta', now()->toDateString())),
+              {{-- Las fechas van primero: deciden a quién se puede licenciar. El
+                   buscador, la lista de la dirección y la revisión de los ya
+                   elegidos traen solo a quien tuvo contrato esos días. --}}
+              desde: @js(old('desde', $desde)),
+              hasta: @js(old('hasta', $hasta)),
+              hoy: @js(now()->toDateString()),
+              manana: @js(now()->addDay()->toDateString()),
+              cuando: 'hoy',
+              {{-- Contrato de cada elegido en las fechas: texto de la vigencia, o
+                   `null` si no tuvo. Una cédula ausente es «todavía no se sabe». --}}
+              contratos: {},
+              revisandoContratos: false,
+              errorContratos: '',
+              pedidoContratos: 0,
+              timerFechas: null,
               {{-- Alcance «por dirección». --}}
               direccion: @js((string) old('direccion', '')),
               unidad: @js((string) old('unidad', '')),
@@ -84,6 +95,15 @@
               timerSaldo: null,
               pedidoSaldo: 0,
               init() {
+                  this.cuando = this.desde === this.hasta
+                      ? (this.desde === this.hoy ? 'hoy' : (this.desde === this.manana ? 'manana' : 'dia'))
+                      : 'rango';
+                  {{-- Con «Hoy», «Mañana» o «Un día» el rango es de un solo día. --}}
+                  this.$watch('desde', (desde) => { if (this.cuando !== 'rango') { this.hasta = desde; } });
+                  this.$watch('desde', () => this.fechasCambiaron());
+                  this.$watch('hasta', () => this.fechasCambiaron());
+                  this.$watch('modo', () => this.revisarContratos());
+                  this.revisarContratos();
                   {{-- Si el envío volvió por un error de validación con la dirección
                        ya elegida, se rearma sola: si no, el combo aparece vacío y
                        parece que se perdió la selección. --}}
@@ -268,11 +288,68 @@
                       this.cargandoFuncionarios = false;
                   }
               },
-              {{-- El rango cambia a quién alcanza y con qué contrato, así que el
-                   catálogo y la lista se vuelven a pedir. --}}
-              rangoCambio() {
-                  if (this.modo !== 'direccion') { return; }
-                  this.cargarDirecciones();
+              elegirCuando(opcion) {
+                  this.cuando = opcion;
+                  if (opcion === 'hoy') { this.desde = this.hoy; this.hasta = this.hoy; }
+                  if (opcion === 'manana') { this.desde = this.manana; this.hasta = this.manana; }
+                  if (opcion === 'dia') { this.hasta = this.desde; }
+              },
+              get diasDelRango() {
+                  if (! this.desde || ! this.hasta || this.hasta < this.desde) { return 0; }
+                  return Math.round((new Date(this.hasta) - new Date(this.desde)) / 86400000) + 1;
+              },
+              fecha(iso) {
+                  return iso ? iso.split('-').reverse().join('/') : '—';
+              },
+              {{-- Cambiar las fechas cambia a quién se puede licenciar: la lista de
+                   la dirección se vuelve a pedir, lo buscado se descarta y los ya
+                   elegidos se revisan. Con un respiro, para no pedir mientras se
+                   tipea la fecha. --}}
+              fechasCambiaron() {
+                  clearTimeout(this.timerFechas);
+                  this.timerFechas = setTimeout(() => {
+                      if (! this.desde || ! this.hasta || this.hasta < this.desde) { return; }
+                      this.cerrar();
+                      if (this.modo === 'direccion') { this.cargarDirecciones(); }
+                      this.revisarContratos();
+                  }, 400);
+              },
+              get cisElegidos() {
+                  if (this.modo === 'uno') { return this.ci ? [this.ci] : []; }
+                  if (this.modo === 'varios') { return this.elegidos.map((e) => e.id); }
+                  return [];
+              },
+              async revisarContratos() {
+                  const cis = this.cisElegidos;
+                  if (cis.length === 0 || ! this.desde || ! this.hasta || this.hasta < this.desde) {
+                      this.pedidoContratos++;
+                      this.revisandoContratos = false;
+                      return;
+                  }
+                  const pedido = ++this.pedidoContratos;
+                  this.revisandoContratos = true;
+                  this.errorContratos = '';
+                  const params = new URLSearchParams({ desde: this.desde, hasta: this.hasta });
+                  cis.forEach((ci) => params.append('cis[]', ci));
+                  try {
+                      const resp = await fetch(`{{ route('licencias.contratos') }}?${params}`, { headers: { 'Accept': 'application/json' } });
+                      const cuerpo = await resp.json().catch(() => null);
+                      if (pedido !== this.pedidoContratos) { return; }
+                      if (resp.ok && cuerpo) {
+                          {{-- Sin Mamoré configurado no se afirma nada: no se marca a nadie. --}}
+                          this.contratos = cuerpo.configurado ? cuerpo.contratos : {};
+                      } else {
+                          this.errorContratos = (cuerpo && (cuerpo.error || cuerpo.message)) || 'No se pudieron revisar los contratos.';
+                      }
+                  } catch (e) {
+                      if (pedido === this.pedidoContratos) { this.errorContratos = 'No se pudieron revisar los contratos.'; }
+                  } finally {
+                      if (pedido === this.pedidoContratos) { this.revisandoContratos = false; }
+                  }
+              },
+              {{-- Los elegidos que no tuvieron contrato en las fechas. --}}
+              get sinContrato() {
+                  return this.cisElegidos.filter((ci) => ci in this.contratos && this.contratos[ci] === null);
               },
               q: '',
               abierto: false,
@@ -289,7 +366,8 @@
                       this.abierto = true;
                       this.errorApi = '';
                       try {
-                          const resp = await fetch(`{{ route('licencias.funcionarios') }}?q=${encodeURIComponent(texto)}`, { headers: { 'Accept': 'application/json' } });
+                          const params = new URLSearchParams({ q: texto, desde: this.desde, hasta: this.hasta });
+                          const resp = await fetch(`{{ route('licencias.funcionarios') }}?${params}`, { headers: { 'Accept': 'application/json' } });
                           const cuerpo = await resp.json().catch(() => null);
                           if (resp.ok) {
                               this.resultados = cuerpo ?? [];
@@ -307,10 +385,17 @@
               },
               cerrar() { this.abierto = false; this.resultados = []; this.errorApi = ''; this.q = ''; },
               {{-- Un funcionario: se recarga con ?ci= para traer sus horarios del servidor. --}}
-              elegirUno(item) { window.location = `{{ route('licencias.create') }}?ci=${encodeURIComponent(item.id)}`; },
+              elegirUno(item) {
+                  const params = new URLSearchParams({ ci: item.id, desde: this.desde, hasta: this.hasta });
+                  window.location = `{{ route('licencias.create') }}?${params}`;
+              },
               {{-- Varios: se agregan fichas del lado del cliente, sin recargar. --}}
               agregar(item) {
-                  if (! this.elegidos.some((e) => e.id === item.id)) { this.elegidos.push(item); }
+                  if (! this.elegidos.some((e) => e.id === item.id)) {
+                      this.elegidos.push(item);
+                      {{-- Vino del buscador con fechas: ya se sabe su contrato. --}}
+                      this.contratos[item.id] = item.contrato ?? null;
+                  }
                   this.cerrar();
               },
               quitar(id) { this.elegidos = this.elegidos.filter((e) => e.id !== id); },
@@ -323,8 +408,65 @@
         @csrf
         <input type="hidden" name="modo" :value="modo">
 
-        {{-- Paso 1: a quiénes alcanza la licencia. --}}
+        {{-- Paso 1: cuándo. Va primero porque decide a quién se puede licenciar:
+             solo a quien tuvo contrato —firmado o ya concluido— esos días. --}}
         <div class="card card--padded">
+            <h2 style="margin-top: 0;">¿Cuándo?</h2>
+
+            <div class="cuando-opciones" role="radiogroup" aria-label="Fechas de la licencia">
+                <button type="button" class="cuando-opcion" :class="cuando === 'hoy' && 'cuando-opcion--activa'" x-on:click="elegirCuando('hoy')">
+                    <x-heroicon-o-sun />Hoy
+                </button>
+                <button type="button" class="cuando-opcion" :class="cuando === 'manana' && 'cuando-opcion--activa'" x-on:click="elegirCuando('manana')">
+                    <x-heroicon-o-arrow-right-circle />Mañana
+                </button>
+                <button type="button" class="cuando-opcion" :class="cuando === 'dia' && 'cuando-opcion--activa'" x-on:click="elegirCuando('dia')">
+                    <x-heroicon-o-calendar />Un día
+                </button>
+                <button type="button" class="cuando-opcion" :class="cuando === 'rango' && 'cuando-opcion--activa'" x-on:click="elegirCuando('rango')">
+                    <x-heroicon-o-calendar-days />Rango de fechas
+                </button>
+            </div>
+
+            <div class="toolbar" style="align-items: flex-end; margin-top: .75rem;">
+                <div class="campo" style="margin: 0;">
+                    <label for="desde">
+                        <span x-show="cuando !== 'rango'">Fecha</span>
+                        <span x-show="cuando === 'rango'" x-cloak>Desde</span>
+                        <span class="req">*</span>
+                    </label>
+                    {{-- El `value` queda además del `x-model`: si Alpine no llegara a
+                         correr, el campo igual sale con su fecha y no vacío. Con
+                         «Hoy» y «Mañana» la fecha está puesta y no se edita. --}}
+                    <input type="date" id="desde" name="desde" class="input"
+                           value="{{ old('desde', $desde) }}"
+                           x-model="desde" :readonly="cuando === 'hoy' || cuando === 'manana'" required>
+                    @error('desde') <div class="error">{{ $message }}</div> @enderror
+                </div>
+                <div class="campo" style="margin: 0;" x-show="cuando === 'rango'" x-cloak>
+                    <label for="hasta">Hasta <span class="req">*</span></label>
+                    <input type="date" id="hasta" name="hasta" class="input"
+                           value="{{ old('hasta', $hasta) }}"
+                           x-model="hasta" :min="desde" :disabled="cuando !== 'rango'" required>
+                    @error('hasta') <div class="error">{{ $message }}</div> @enderror
+                </div>
+                {{-- Fuera de «Rango» el hasta es el mismo día y viaja oculto. --}}
+                <input type="hidden" name="hasta" :value="hasta" :disabled="cuando === 'rango'">
+            </div>
+
+            <p class="cuando-resumen" x-show="diasDelRango > 0">
+                <x-heroicon-o-check-circle />
+                <span>
+                    <strong x-text="diasDelRango === 1 ? fecha(desde) : `Del ${fecha(desde)} al ${fecha(hasta)}`"></strong>
+                    <span x-text="`· ${diasDelRango} día(s) corrido(s)`"></span>.
+                    Se puede licenciar a quien tuvo contrato esos días, aunque hoy ya haya terminado.
+                </span>
+            </p>
+            <p class="error" x-show="hasta && desde && hasta < desde" x-cloak>La fecha «Hasta» no puede ser anterior a «Desde».</p>
+        </div>
+
+        {{-- Paso 2: a quiénes alcanza la licencia. --}}
+        <div class="card card--padded" style="margin-top: 1rem;">
             <h2 style="margin-top: 0;">¿A quién se licencia?</h2>
 
             <div class="toolbar" style="gap: 1.25rem; margin-bottom: .75rem;">
@@ -371,14 +513,18 @@
                         <div style="padding: .55rem .7rem; color: var(--danger);" x-text="errorApi"></div>
                     </template>
                     <template x-if="! cargando && ! errorApi && resultados.length === 0">
-                        <div style="padding: .55rem .7rem; color: var(--muted);">Sin resultados en Mamoré.</div>
+                        <div style="padding: .55rem .7rem; color: var(--muted);"
+                             x-text="`Nadie con ese nombre o CI tuvo contrato ${diasDelRango === 1 ? 'el ' + fecha(desde) : 'entre el ' + fecha(desde) + ' y el ' + fecha(hasta)}.`"></div>
                     </template>
                     <template x-for="item in resultados" :key="item.id">
-                        <button type="button" x-on:click="modo === 'uno' ? elegirUno(item) : agregar(item)" x-text="item.texto"
+                        <button type="button" x-on:click="modo === 'uno' ? elegirUno(item) : agregar(item)"
                                 style="display: block; width: 100%; text-align: left; padding: .5rem .7rem;
                                        background: none; border: 0; border-bottom: 1px solid var(--border);
                                        cursor: pointer; font: inherit;"
-                                onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'"></button>
+                                onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
+                            <span x-text="item.texto"></span>
+                            <span class="ayuda" style="display: block; margin: .1rem 0 0;" x-show="item.contrato" x-text="item.contrato"></span>
+                        </button>
                     </template>
                 </div>
             </div>
@@ -417,6 +563,14 @@
                             <dt>PIN reloj</dt>
                             <dd>{{ $persona['pinReloj'] ?: 'Sin PIN' }}</dd>
                         </div>
+                        <div>
+                            <dt>Contrato en esas fechas</dt>
+                            <dd>
+                                <span x-show="revisandoContratos" class="ayuda">Revisando…</span>
+                                <span x-show="! revisandoContratos && contratos[ci]" x-text="contratos[ci]"></span>
+                                <span x-show="! revisandoContratos && sinContrato.includes(ci)" x-cloak class="pill pill--no">Sin contrato en esas fechas</span>
+                            </dd>
+                        </div>
                     </dl>
                 @else
                     <p class="vacio" style="margin: 0; padding: 1rem;">Elegí un funcionario para ver sus horarios asignados.</p>
@@ -434,7 +588,8 @@
                                      background: var(--bg); border: 1px solid var(--border); border-radius: 9999px; font-size: .78rem;">
                             <input type="hidden" name="cis[]" :value="elegido.id" :disabled="modo !== 'varios'">
                             <span x-text="elegido.texto"></span>
-                            <button type="button" x-on:click="quitar(elegido.id)" aria-label="Quitar"
+                            <span x-show="sinContrato.includes(elegido.id)" class="pill pill--no" title="No tuvo contrato en esas fechas">Sin contrato</span>
+                            <button type="button" x-on:click="quitar(elegido.id); revisarContratos()" aria-label="Quitar"
                                     style="border: 0; background: none; cursor: pointer; color: var(--danger); font: inherit; line-height: 1;">&times;</button>
                         </span>
                     </template>
@@ -621,7 +776,7 @@
             </div>
         </div>
 
-        {{-- Paso 2: horarios del funcionario (solo cuando hay uno cargado). --}}
+        {{-- Paso 3: horarios del funcionario (solo cuando hay uno cargado). --}}
         @if ($persona)
             <div class="card card--padded" style="margin-top: 1rem;" x-show="modo === 'uno'" x-cloak>
                 <div class="cabecera" style="margin: 0 0 .75rem;">
@@ -728,7 +883,7 @@
             </div>
         @endif
 
-        {{-- Paso 3: tipo, rango, alcance del día y motivo. --}}
+        {{-- Paso 4: tipo, alcance del día y motivo. --}}
         <div class="card card--padded" style="margin-top: 1rem;">
             {{-- Qué es. Solo el permiso personal cuenta contra el tope mensual. --}}
             <div class="campo">
@@ -753,27 +908,6 @@
                     <span x-show="modo !== 'uno'" x-cloak><br>Para varios funcionarios o una dirección se anota siempre licencia institucional.</span>
                 </p>
                 @error('tipo') <div class="error">{{ $message }}</div> @enderror
-            </div>
-
-            <div class="toolbar" style="align-items: flex-end;">
-                <div class="campo">
-                    <label for="desde">Desde <span class="req">*</span></label>
-                    {{-- El rango decide quién tiene contrato en el alcance por
-                         dirección, así que al cambiarlo se vuelve a pedir. --}}
-                    {{-- El `value` queda además del `x-model`: si Alpine no llegara a
-                         correr, el campo igual sale con su fecha y no vacío. --}}
-                    <input type="date" id="desde" name="desde" class="input"
-                           value="{{ old('desde', now()->toDateString()) }}"
-                           x-model="desde" x-on:change="rangoCambio()" required>
-                    @error('desde') <div class="error">{{ $message }}</div> @enderror
-                </div>
-                <div class="campo">
-                    <label for="hasta">Hasta <span class="req">*</span></label>
-                    <input type="date" id="hasta" name="hasta" class="input"
-                           value="{{ old('hasta', now()->toDateString()) }}"
-                           x-model="hasta" x-on:change="rangoCambio()" required>
-                    @error('hasta') <div class="error">{{ $message }}</div> @enderror
-                </div>
             </div>
 
             {{-- Alcance. El permiso personal es siempre por horas; la licencia
@@ -896,12 +1030,21 @@
                 </div>
             @endif
 
+            {{-- Por qué no deja anotar, cuando es por el contrato. --}}
+            <div class="aviso aviso--error" x-show="sinContrato.length > 0" x-cloak>
+                <span x-text="sinContrato.length === 1 ? 'Este funcionario no tuvo contrato en esas fechas.' : `${sinContrato.length} funcionarios no tuvieron contrato en esas fechas.`"></span>
+                Quitalos o cambiá las fechas.
+            </div>
+            <div class="aviso aviso--error" x-show="errorContratos" x-cloak x-text="errorContratos"></div>
+
             <div class="form-acciones">
                 <button type="submit" class="btn"
                         :disabled="(modo === 'uno' && ! {{ $persona ? 'true' : 'false' }})
                                    || (modo === 'varios' && elegidos.length === 0)
                                    || (modo === 'direccion' && (! direccion || seleccionados.length === 0))
                                    || excedeTope
+                                   || sinContrato.length > 0
+                                   || revisandoContratos
                                    || guardando"
                         :title="excedeTope ? 'Supera el tope mensual de permisos' : ''">
                     <span class="btn__contenido" x-show="! guardando"><x-heroicon-o-check />Anotar licencia(s)</span>

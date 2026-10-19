@@ -44,11 +44,16 @@ class DirectorioMamore
      * trae un lote por la palabra más larga y se filtra por todas, porque la API
      * no cruza nombre + apellido.
      *
+     * Con `$desde`/`$hasta` trae solo a quien **tuvo contrato en esas fechas**
+     * —firmado o ya concluido—, y el contrato de cada uno es el de ese período.
+     * Es lo que usa la pantalla «Licenciar»: se licencia a quien trabajaba esos
+     * días, aunque hoy ya no esté.
+     *
      * @return Collection<int, array<string, mixed>>
      *
      * @throws MamoreException
      */
-    public function buscar(string $q, int $limite = 20): Collection
+    public function buscar(string $q, int $limite = 20, ?string $desde = null, ?string $hasta = null): Collection
     {
         $q = trim($q);
 
@@ -58,14 +63,16 @@ class DirectorioMamore
 
         $terminos = preg_split('/\s+/', $q, -1, PREG_SPLIT_NO_EMPTY) ?: [];
 
+        $contrato = $desde !== null || $hasta !== null ? 'con' : 'todos';
+
         if (count($terminos) <= 1) {
-            $respuesta = $this->mamore->people(1, $limite, $q);
+            $respuesta = $this->mamore->people(1, $limite, $q, $contrato, desde: $desde, hasta: $hasta);
 
             return collect($this->normalizar($respuesta['data'] ?? []));
         }
 
         $masLargo = (string) collect($terminos)->sortByDesc(fn (string $t): int => mb_strlen($t))->first();
-        $respuesta = $this->mamore->people(1, self::LOTE_MULTIPALABRA, $masLargo);
+        $respuesta = $this->mamore->people(1, self::LOTE_MULTIPALABRA, $masLargo, $contrato, desde: $desde, hasta: $hasta);
 
         return collect($this->normalizar($respuesta['data'] ?? []))
             ->filter(fn (array $fila): bool => $this->coincide($fila, $terminos))
