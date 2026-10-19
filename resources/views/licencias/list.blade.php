@@ -10,10 +10,26 @@
 {{-- Una fila por solicitud, no por día: el alta expande el rango a una fila por
      día y horario, y sin agrupar «14 al 15 de agosto» se ve como dos licencias
      distintas. El desglose día por día está en la ficha. --}}
+{{-- Datos para resolver en lote: cuántas pendientes abarca el filtro entero y
+     con qué filtro se armó esta tabla. Los lee la barra de la pantalla
+     (`licencias.index`) cada vez que la tabla se recarga. --}}
+@if ($lote)
+    <div id="lote-datos" hidden
+         data-solicitudes="{{ $lote['solicitudes'] }}"
+         data-dias="{{ $lote['dias'] }}"
+         data-filtros="{{ json_encode($lote['filtros']) }}"></div>
+@endif
+
 <div class="card">
     <table>
         <thead>
             <tr>
+                @if ($lote)
+                    <th class="lote-celda">
+                        <input type="checkbox" class="lote-pagina" aria-label="Marcar las pendientes de esta página"
+                               title="Marcar las pendientes de esta página">
+                    </th>
+                @endif
                 <th>Periodo</th>
                 <th>Funcionario</th>
                 <th>Días</th>
@@ -38,6 +54,18 @@
                     $unSoloDia = $dias <= 1;
                 @endphp
                 <tr>
+                    @if ($lote)
+                        <td class="lote-celda">
+                            {{-- Solo lo pendiente se resuelve en lote: lo demás ya
+                                 tiene su decisión. --}}
+                            @if ($licencia->esPendiente)
+                                <input type="checkbox" class="lote-check" value="{{ $licencia->id }}"
+                                       data-dias="{{ $dias }}"
+                                       data-nombre="{{ ($fichas[trim((string) $licencia->ci)]['nombre'] ?? null) ?: 'CI '.trim((string) $licencia->ci) }}"
+                                       aria-label="Marcar esta solicitud">
+                            @endif
+                        </td>
+                    @endif
                     <td>
                         {{-- Las dos fechas con el mismo peso: el «hasta» es tan
                              parte del permiso como el «desde», y en gris chico
@@ -147,7 +175,7 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="10" class="vacio">{{ $busqueda !== '' ? 'Sin licencias para la búsqueda.' : 'Aún no hay licencias registradas.' }}</td></tr>
+                <tr><td colspan="{{ $lote ? 11 : 10 }}" class="vacio">{{ $busqueda !== '' ? 'Sin licencias para la búsqueda.' : 'Aún no hay licencias registradas.' }}</td></tr>
             @endforelse
         </tbody>
     </table>

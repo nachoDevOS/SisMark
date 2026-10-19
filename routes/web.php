@@ -161,6 +161,10 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     // Resolución de las solicitudes que llegan de Mamoré en estado «Pendiente».
     // Aprobar y rechazar son rutas distintas y no un campo del formulario: así
     // un envío manipulado no puede convertir un rechazo en una aprobación.
+    // En lote, desde el listado. Van antes que las de una licencia: si no,
+    // «lote» se tomaría como el id de `{licencia}`.
+    Route::patch('licencias/lote/aprobar', [LicenciaController::class, 'aprobarLote'])->name('licencias.lote.aprobar');
+    Route::patch('licencias/lote/rechazar', [LicenciaController::class, 'rechazarLote'])->name('licencias.lote.rechazar');
     Route::patch('licencias/{licencia}/aprobar', [LicenciaController::class, 'aprobar'])->name('licencias.aprobar');
     Route::patch('licencias/{licencia}/rechazar', [LicenciaController::class, 'rechazar'])->name('licencias.rechazar');
     // `show` es la ficha de la solicitud completa (todos sus días), que es el

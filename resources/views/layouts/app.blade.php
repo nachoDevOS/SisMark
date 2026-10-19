@@ -395,6 +395,47 @@
         .modal-bajada { margin: 0 0 1rem; color: var(--muted); font-size: .8125rem; line-height: 1.45; }
         .modal-acciones { display: flex; gap: .6rem; justify-content: flex-end; margin-top: 1.25rem; flex-wrap: wrap; }
         .modal-acciones form { margin: 0; }
+        /* ===== Resolución en lote del listado de licencias ===== */
+        .lote-celda { width: 2.25rem; text-align: center; }
+        .lote-celda input { width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--verde); }
+        tr:has(.lote-check:checked) td { background: #f0fdf4; }
+        .lote-aviso { display: flex; align-items: center; gap: .6rem; margin-bottom: .75rem;
+            padding: .65rem .9rem; border-radius: .55rem; font-size: .8125rem;
+            background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+        .lote-aviso svg { width: 1.15rem; height: 1.15rem; flex-shrink: 0; }
+        .lote-aviso--todas { background: #f0fdf4; border-color: #bbf7d0; color: #14532d; }
+        .lote-aviso__enlace { background: none; border: 0; padding: 0 0 0 .25rem; cursor: pointer;
+            font: inherit; font-weight: 700; color: inherit; text-decoration: underline; }
+        .lote-barra { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); z-index: 40;
+            display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; justify-content: space-between;
+            width: min(44rem, calc(100vw - 2rem)); padding: .75rem .9rem .75rem 1rem;
+            background: #0f2f2b; color: #fff; border-radius: .85rem;
+            box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 0 0 1px rgba(255,255,255,.06) inset; }
+        .lote-barra--entra { transition: opacity .2s ease, transform .2s ease; }
+        .lote-barra--oculta { opacity: 0; transform: translate(-50%, 1rem); }
+        .lote-barra__cuenta { display: flex; align-items: center; gap: .7rem; }
+        .lote-barra__cuenta strong { display: block; font-size: .875rem; }
+        .lote-barra__cuenta small { color: rgba(255,255,255,.7); font-size: .75rem; }
+        .lote-barra__numero { display: inline-flex; align-items: center; justify-content: center;
+            min-width: 2.2rem; height: 2.2rem; padding: 0 .5rem; border-radius: 999px;
+            background: var(--verde); font-weight: 800; font-size: 1rem; }
+        .lote-barra__acciones { display: flex; align-items: center; gap: .5rem; }
+        .lote-barra__limpiar { background: none; border: 0; color: rgba(255,255,255,.75); cursor: pointer;
+            font: inherit; font-size: .8125rem; padding: .25rem .5rem; }
+        .lote-barra__limpiar:hover { color: #fff; text-decoration: underline; }
+        .lote-modal__icono { display: inline-flex; align-items: center; justify-content: center;
+            width: 3rem; height: 3rem; border-radius: 50%; margin-bottom: .6rem;
+            background: #dcfce7; color: var(--verde); }
+        .lote-modal__icono svg { width: 1.5rem; height: 1.5rem; }
+        .lote-modal__icono--rechazo { background: #fee2e2; color: var(--danger); }
+        .lote-modal__lista { max-height: 11rem; overflow-y: auto; margin-bottom: 1rem;
+            padding: .6rem .8rem; border: 1px solid var(--border); border-radius: .55rem;
+            background: var(--bg); font-size: .8125rem; }
+        .lote-modal__lista p { margin: 0; }
+        .lote-modal__lista ul { margin: 0; padding-left: 1.1rem; }
+        .lote-modal__lista li + li { margin-top: .2rem; }
+        .lote-modal__mas { list-style: none; margin-left: -1.1rem; color: var(--muted); font-style: italic; }
+
         /* Ficha corta dentro de un modal: etiqueta a la izquierda, dato a la derecha. */
         .modal-resumen { display: grid; grid-template-columns: auto 1fr; gap: .35rem .9rem;
             margin: 0 0 1rem; font-size: .8125rem; }

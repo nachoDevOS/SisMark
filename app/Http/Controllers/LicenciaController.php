@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\MamoreException;
+use App\Http\Requests\ResolverLoteLicenciasRequest;
 use App\Http\Requests\RevisarLicenciaRequest;
 use App\Http\Requests\StoreLicenciaRequest;
 use App\Models\AsignacionHorario;
@@ -71,15 +72,7 @@ class LicenciaController extends Controller
         // Va en dos pasos —primero qué solicitudes entran, después la fila que
         // abre cada una—; ver la migración `create_licencias_table`.
         $licencias = Licencia::paginarPorSolicitud(
-            Licencia::query()
-                ->when($busqueda !== '', fn (Builder $query) => $query->buscar($busqueda))
-                ->when($estado !== '', fn (Builder $query) => $query->where('estado', $estado))
-                ->when($tipo !== '', fn (Builder $query) => $query->where('tipo', $tipo))
-                // Entra la solicitud con algún día dentro del rango; la fila que
-                // la abre y el resumen siguen mostrándola entera. Sin `desde` o
-                // sin `hasta`, ese extremo queda abierto.
-                ->when($desde !== '', fn (Builder $query) => $query->where('fecha', '>=', $desde))
-                ->when($hasta !== '', fn (Builder $query) => $query->where('fecha', '<=', $hasta)),
+            $this->filtrarListado(Licencia::query(), $busqueda, $estado, $tipo, $desde, $hasta),
             $porPagina,
         )->withQueryString();
 
@@ -91,7 +84,41 @@ class LicenciaController extends Controller
         // está ahí, de la base local (App\Services\ResolutorNombres).
         $fichas = $resolutor->fichasPorCi($licencias->pluck('ci'));
 
-        return view('licencias.list', compact('licencias', 'fichas', 'resumen', 'busqueda'));
+        // Para resolver en lote: cuántas solicitudes pendientes —y cuántos
+        // días— abarca el filtro entero, no solo esta página. Es lo que ofrece
+        // «marcar todas las que coinciden». Sin el permiso no se calcula.
+        $lote = null;
+
+        if ($request->user()?->can('Approve:Licencia')) {
+            $pendientes = $this->filtrarListado(Licencia::query()->pendientes(), $busqueda, '', $tipo, $desde, $hasta);
+            $lote = [
+                'solicitudes' => (int) (clone $pendientes)
+                    ->selectRaw('COUNT(DISTINCT '.Licencia::CLAVE_AGRUPADORA.') as total')
+                    ->value('total'),
+                'dias' => (clone $pendientes)->count(),
+                'filtros' => ['q' => $busqueda, 'estado' => $estado, 'tipo' => $tipo, 'desde' => $desde, 'hasta' => $hasta],
+            ];
+        }
+
+        return view('licencias.list', compact('licencias', 'fichas', 'resumen', 'busqueda', 'lote'));
+    }
+
+    /**
+     * Los filtros del listado sobre una consulta. Los comparten la tabla y la
+     * resolución en lote: «todas las que coinciden» tiene que alcanzar
+     * exactamente a lo que la tabla dice que coincide.
+     */
+    private function filtrarListado(Builder $query, string $busqueda, string $estado, string $tipo, string $desde, string $hasta): Builder
+    {
+        return $query
+            ->when($busqueda !== '', fn (Builder $query) => $query->buscar($busqueda))
+            ->when($estado !== '', fn (Builder $query) => $query->where('estado', $estado))
+            ->when($tipo !== '', fn (Builder $query) => $query->where('tipo', $tipo))
+            // Entra la solicitud con algún día dentro del rango; la fila que
+            // la abre y el resumen siguen mostrándola entera. Sin `desde` o
+            // sin `hasta`, ese extremo queda abierto.
+            ->when($desde !== '', fn (Builder $query) => $query->where('fecha', '>=', $desde))
+            ->when($hasta !== '', fn (Builder $query) => $query->where('fecha', '<=', $hasta));
     }
 
     /**
@@ -182,17 +209,13 @@ class LicenciaController extends Controller
         }
 
         // Aprobar toca lo pendiente; rechazar, también lo ya aprobado.
-        $afectados = Licencia::query()
-            ->deLaSolicitud($licencia)
-            ->whereIn('estado', $estado === Licencia::RECHAZADO
-                ? [Licencia::PENDIENTE, Licencia::APROBADO]
-                : [Licencia::PENDIENTE])
-            ->update([
-                'estado' => $estado,
-                'observacion' => $request->validated('observacion'),
-                'revisadoPor_id' => $request->user()?->id,
-                'revisadoEn' => now(),
-            ]);
+        $afectados = $this->marcar(
+            $licencia,
+            $estado,
+            $request->validated('observacion'),
+            $request->user()?->id,
+            $estado === Licencia::RECHAZADO ? [Licencia::PENDIENTE, Licencia::APROBADO] : [Licencia::PENDIENTE],
+        );
 
         if ($afectados === 0) {
             return $volver()->with('error', 'Esta solicitud ya había sido resuelta por otro usuario.');
@@ -208,6 +231,119 @@ class LicenciaController extends Controller
         return $estado === Licencia::RECHAZADO
             ? redirect($this->fichaDelFuncionario($licencia))->with('estado', $mensaje)
             : $volver()->with('estado', $mensaje);
+    }
+
+    /**
+     * Pasa al estado decidido los días de la solicitud que todavía están en
+     * alguno de `$desde`, con el autor y la fecha de la revisión. Devuelve
+     * cuántos días cambió.
+     *
+     * @param  list<string>  $desde
+     */
+    private function marcar(Licencia $licencia, string $estado, ?string $observacion, ?int $revisor, array $desde): int
+    {
+        return Licencia::query()
+            ->deLaSolicitud($licencia)
+            ->whereIn('estado', $desde)
+            ->update([
+                'estado' => $estado,
+                'observacion' => $observacion,
+                'revisadoPor_id' => $revisor,
+                'revisadoEn' => now(),
+            ]);
+    }
+
+    /**
+     * Aprueba en lote las solicitudes pendientes marcadas en el listado.
+     */
+    public function aprobarLote(ResolverLoteLicenciasRequest $request): RedirectResponse
+    {
+        return $this->resolverLote($request, Licencia::APROBADO);
+    }
+
+    /**
+     * Rechaza en lote las solicitudes pendientes marcadas en el listado, todas
+     * con el mismo motivo.
+     */
+    public function rechazarLote(ResolverLoteLicenciasRequest $request): RedirectResponse
+    {
+        return $this->resolverLote($request, Licencia::RECHAZADO);
+    }
+
+    /**
+     * Resuelve de una vez varias solicitudes **pendientes**: las marcadas en la
+     * página, o todas las que coinciden con el filtro —que se vuelve a aplicar
+     * acá, sin confiar en lo que mandó la pantalla—.
+     *
+     * Cada solicitud queda como si se hubiera resuelto de a una: mismo autor,
+     * misma fecha, misma nota. Al aprobar, cada una pasa por el control del tope
+     * de permisos: la que lo pasaría queda pendiente y se avisa, sin frenar al
+     * resto. Van en orden de fecha, así cada control ya cuenta lo aprobado antes
+     * dentro del mismo lote.
+     *
+     * Sin transacción a propósito: el control del tope puede consultar los
+     * contratos en Mamoré, y una llamada HTTP no va dentro de una transacción.
+     * Cada solicitud se resuelve en una sola consulta, así que nunca queda una
+     * a medias.
+     */
+    private function resolverLote(ResolverLoteLicenciasRequest $request, string $estado): RedirectResponse
+    {
+        $filtros = [
+            'q' => trim((string) $request->validated('q')),
+            'estado' => (string) $request->validated('estado'),
+            'tipo' => (string) $request->validated('tipo'),
+            'desde' => (string) $request->validated('desde'),
+            'hasta' => (string) $request->validated('hasta'),
+        ];
+
+        $pendientes = Licencia::query()->pendientes();
+        $alcance = $request->boolean('todas')
+            ? $this->filtrarListado($pendientes, $filtros['q'], '', $filtros['tipo'], $filtros['desde'], $filtros['hasta'])
+            : $pendientes->whereIn('id', $request->validated('solicitudes'));
+
+        $solicitudes = $alcance
+            ->orderBy('fecha')
+            ->orderBy('id')
+            ->get()
+            ->unique(fn (Licencia $licencia): string => $licencia->clave_agrupadora)
+            ->values();
+
+        $resueltas = 0;
+        $dias = 0;
+        $topadas = [];
+
+        foreach ($solicitudes as $licencia) {
+            if ($estado === Licencia::APROBADO && $this->excesoAlAprobar($licencia) !== null) {
+                $topadas[] = trim((string) $licencia->ci);
+
+                continue;
+            }
+
+            $afectados = $this->marcar($licencia, $estado, $request->validated('observacion'), $request->user()?->id, [Licencia::PENDIENTE]);
+
+            if ($afectados > 0) {
+                $resueltas++;
+                $dias += $afectados;
+            }
+        }
+
+        $volver = redirect()->route('licencias.index', array_filter($filtros, fn (string $valor): bool => $valor !== ''));
+
+        if ($resueltas === 0 && $topadas === []) {
+            return $volver->with('error', 'No quedaba nada pendiente en lo marcado: otro usuario ya lo había resuelto.');
+        }
+
+        $verbo = $estado === Licencia::APROBADO ? 'aprobaron' : 'rechazaron';
+        $volver->with('estado', "Se {$verbo} {$resueltas} solicitud(es) ({$dias} día(s)).");
+
+        // Las que pasan el tope quedan pendientes: se nombran para revisarlas
+        // de a una, con el saldo a la vista en su ficha.
+        if ($topadas !== []) {
+            $volver->with('error', count($topadas).' solicitud(es) quedaron pendientes porque pasan el tope mensual de permisos: CI '
+                .implode(', ', array_unique($topadas)).'.');
+        }
+
+        return $volver;
     }
 
     /**
