@@ -37,7 +37,7 @@ class ResolverLoteLicenciasRequest extends FormRequest
             'todas' => ['boolean'],
             // Las filas marcadas: el id de la fila que abre cada solicitud. Sin
             // «todas», al menos una; con «todas» se ignoran y manda el filtro.
-            'solicitudes' => [Rule::excludeIf(fn (): bool => $this->boolean('todas')), 'required', 'array', 'min:1', 'max:100'],
+            'solicitudes' => [Rule::excludeIf(fn (): bool => $this->boolean('todas')), 'required', 'array', 'min:1', 'max:1000'],
             'solicitudes.*' => ['integer'],
             // El filtro con el que se armó la tabla: con «todas» define el
             // alcance, y en los dos casos es a dónde se vuelve.

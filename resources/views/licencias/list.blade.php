@@ -59,9 +59,20 @@
                             {{-- Solo lo pendiente se resuelve en lote: lo demás ya
                                  tiene su decisión. --}}
                             @if ($licencia->esPendiente)
+                                {{-- Lo que el modal de confirmación muestra de cada
+                                     una, así se revisa sin volver a la tabla. --}}
                                 <input type="checkbox" class="lote-check" value="{{ $licencia->id }}"
                                        data-dias="{{ $dias }}"
-                                       data-nombre="{{ ($fichas[trim((string) $licencia->ci)]['nombre'] ?? null) ?: 'CI '.trim((string) $licencia->ci) }}"
+                                       data-nombre="{{ ($fichas[trim((string) $licencia->ci)]['nombre'] ?? null) ?: 'Sin persona' }}"
+                                       data-ci="{{ trim((string) $licencia->ci) }}"
+                                       data-periodo="{{ $desde?->format('d/m/Y') }}{{ $unSoloDia ? '' : ' al '.$hasta?->format('d/m/Y') }}"
+                                       data-alcance="{{ $licencia->tCompleto ? 'Horario completo' : ($licencia->lEntra?->format('H:i') ?? '—').' – '.($licencia->lSale?->format('H:i') ?? '—') }}"
+                                       data-completo="{{ $licencia->tCompleto ? 1 : 0 }}"
+                                       data-goce="{{ $licencia->goceHaberes ? 1 : 0 }}"
+                                       data-tipo="{{ $licencia->tipo_etiqueta }}"
+                                       data-tipo-pill="{{ $licencia->tipo_pill }}"
+                                       data-personal="{{ $licencia->tipo === \App\Models\Licencia::TIPO_PERSONAL ? 1 : 0 }}"
+                                       data-motivo="{{ $licencia->motivo }}"
                                        aria-label="Marcar esta solicitud">
                             @endif
                         </td>

@@ -70,7 +70,10 @@
          vive lo que sobrevive a cada recarga: lo marcado, la barra de abajo y el
          modal de confirmación. El `change` de las casillas sube hasta este
          contenedor, así no hace falta inicializar nada en el HTML inyectado. --}}
-    <div x-data="loteLicencias" x-on:licencias-cargadas.window="reiniciar()" x-on:change="cambio($event)">
+    {{-- Con el modal abierto la página de atrás no se mueve: la rueda queda
+         para la lista del modal. --}}
+    <div x-data="loteLicencias" x-on:licencias-cargadas.window="reiniciar($event.detail.conservar)" x-on:change="cambio($event)"
+         x-effect="document.documentElement.style.overflow = accion ? 'hidden' : ''">
         @can('Approve:Licencia')
             <div class="lote-aviso" x-show="paginaCompleta && ! todas && datos.solicitudes > enPagina" x-cloak x-transition.opacity>
                 <x-heroicon-o-information-circle />
@@ -123,35 +126,117 @@
             <div class="modal-fondo" x-show="accion" x-cloak
                  x-on:click.self="if (! enviando) accion = null"
                  x-on:keydown.escape.window="if (! enviando) accion = null">
-                <div class="modal-caja modal-caja--ancha">
-                    <div class="lote-modal__icono" :class="accion === 'rechazar' ? 'lote-modal__icono--rechazo' : ''">
-                        <template x-if="accion === 'aprobar'"><span><x-heroicon-o-check-badge /></span></template>
-                        <template x-if="accion === 'rechazar'"><span><x-heroicon-o-no-symbol /></span></template>
+                <div class="modal-caja lote-modal">
+                    <div class="lote-modal__cabeza">
+                        <div class="lote-modal__icono" :class="accion === 'rechazar' ? 'lote-modal__icono--rechazo' : ''">
+                            <span x-show="accion === 'aprobar'"><x-heroicon-o-check-badge /></span>
+                            <span x-show="accion === 'rechazar'"><x-heroicon-o-no-symbol /></span>
+                        </div>
+                        <div>
+                            <h2 x-text="`${accion === 'aprobar' ? 'Aprobar' : 'Rechazar'} ${cantidad} ${cantidad === 1 ? 'solicitud' : 'solicitudes'}`"></h2>
+                            <p class="lote-modal__sub">
+                                <span x-text="`${dias} día(s) en total`"></span>
+                                <span x-show="! todas" x-text="`· ${resumen.personas} ${resumen.personas === 1 ? 'funcionario' : 'funcionarios'}`"></span>
+                            </p>
+                        </div>
                     </div>
-                    <h2 x-text="`${accion === 'aprobar' ? 'Aprobar' : 'Rechazar'} ${cantidad} ${cantidad === 1 ? 'solicitud' : 'solicitudes'}`"></h2>
-                    <p class="modal-bajada">
-                        <span x-text="`${dias} día(s) en total.`"></span>
-                        <span x-show="accion === 'aprobar'">
-                            Quedan justificados en el cálculo de asistencia. Las que pasen el tope mensual de
-                            permisos quedan pendientes y se avisa cuáles.
-                        </span>
-                        <span x-show="accion === 'rechazar'">
-                            Dejan de contar y <strong>no se puede revertir</strong>: lo rechazado no se aprueba ni se elimina.
-                        </span>
-                    </p>
 
-                    <div class="lote-modal__lista">
-                        <template x-if="todas">
-                            <p>Todas las solicitudes pendientes que coinciden con el filtro, también las de otras páginas.</p>
-                        </template>
-                        <template x-if="! todas">
-                            <ul>
-                                <template x-for="nombre in nombres.slice(0, 8)" :key="nombre">
-                                    <li x-text="nombre"></li>
+                    {{-- De un vistazo: cómo se reparte lo marcado. --}}
+                    <div class="lote-modal__resumen" x-show="! todas">
+                        <span class="pill pill--info" x-show="resumen.completo" x-text="`${resumen.completo} de horario completo`"></span>
+                        <span class="pill pill--neutro" x-show="resumen.porHoras" x-text="`${resumen.porHoras} por horas`"></span>
+                        <span class="pill pill--ok" x-show="resumen.conGoce" x-text="`${resumen.conGoce} con goce`"></span>
+                        <span class="pill pill--no" x-show="resumen.sinGoce" x-text="`${resumen.sinGoce} sin goce`"></span>
+                        <span class="pill pill--advertencia" x-show="resumen.personalesPorHoras"
+                              x-text="`${resumen.personalesPorHoras} contra el tope de permisos`"></span>
+                    </div>
+
+                    {{-- Qué pasa exactamente al confirmar. --}}
+                    <ul class="lote-modal__efectos" x-show="accion === 'aprobar'">
+                        <li>
+                            <x-heroicon-o-calendar-days />
+                            <span>Cada día queda <strong>justificado</strong> en la asistencia procesada —reporte,
+                            Excel y perfil del funcionario en Mamoré— con su alcance: el <strong>horario completo</strong>
+                            cubre la jornada entera; el permiso <strong>por horas</strong>, solo ese tramo.</span>
+                        </li>
+                        <li>
+                            <x-heroicon-o-scale />
+                            <span>Los <strong>permisos personales por horas</strong> se controlan uno por uno contra el
+                            tope mensual: el que lo pase queda <strong>pendiente</strong> y se avisa su CI; el resto se aprueba igual.</span>
+                        </li>
+                        <li>
+                            <x-heroicon-o-user-circle />
+                            <span>Queda registrado quién aprobó y cuándo, en cada solicitud.</span>
+                        </li>
+                    </ul>
+                    <ul class="lote-modal__efectos lote-modal__efectos--rechazo" x-show="accion === 'rechazar'">
+                        <li>
+                            <x-heroicon-o-calendar-days />
+                            <span>Los días <strong>dejan de estar justificados</strong> y no cuentan para el tope de permisos.</span>
+                        </li>
+                        <li>
+                            <x-heroicon-o-chat-bubble-left-ellipsis />
+                            <span>El motivo es el mismo para todas, y cada funcionario lo lee en su perfil de Mamoré.</span>
+                        </li>
+                        <li>
+                            <x-heroicon-o-lock-closed />
+                            <span><strong>No se puede revertir</strong>: lo rechazado no se aprueba ni se elimina.</span>
+                        </li>
+                    </ul>
+
+                    <div class="lote-aviso lote-aviso--todas" x-show="todas">
+                        <x-heroicon-o-information-circle />
+                        <span>
+                            Van <strong>todas</strong> las <strong x-text="datos.solicitudes"></strong> pendientes del filtro,
+                            también las de otras páginas. Abajo están las que se ven; si quitás una, se envían
+                            solo las de esta lista.
+                        </span>
+                    </div>
+
+                    {{-- El detalle de lo marcado, con la ✕ para sacar una sin
+                         cerrar el modal. --}}
+                    <div class="lote-modal__tabla">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Funcionario</th>
+                                    <th>Fecha</th>
+                                    <th>Alcance</th>
+                                    <th>Haberes</th>
+                                    <th>Tipo</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="item in lista" :key="item.id">
+                                    <tr>
+                                        <td>
+                                            <strong x-text="item.nombre"></strong>
+                                            <div class="ayuda" x-text="`CI ${item.ci}`"></div>
+                                        </td>
+                                        <td>
+                                            <span x-text="item.periodo"></span>
+                                            <div class="ayuda" x-text="`${item.dias} día(s)`"></div>
+                                        </td>
+                                        <td><span class="pill" :class="item.completo ? 'pill--info' : 'pill--neutro'" x-text="item.alcance"></span></td>
+                                        <td><span class="pill" :class="item.goce ? 'pill--ok' : 'pill--no'" x-text="item.goce ? 'Con goce' : 'Sin goce'"></span></td>
+                                        <td>
+                                            <span class="pill" :class="item.tipoPill" x-text="item.tipo"></span>
+                                            <div class="ayuda lote-modal__motivo" x-text="item.motivo" :title="item.motivo"></div>
+                                        </td>
+                                        <td>
+                                            <button type="button" class="lote-modal__quitar" x-on:click="quitar(item.id)" :disabled="enviando"
+                                                    title="Quitar de la selección" aria-label="Quitar de la selección">
+                                                <x-heroicon-o-x-mark />
+                                            </button>
+                                        </td>
+                                    </tr>
                                 </template>
-                                <li x-show="nombres.length > 8" class="lote-modal__mas" x-text="`y ${nombres.length - 8} más`"></li>
-                            </ul>
-                        </template>
+                                <tr x-show="todas && datos.solicitudes > lista.length">
+                                    <td colspan="6" class="lote-modal__mas" x-text="`y ${datos.solicitudes - lista.length} más de otras páginas`"></td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
 
                     <form method="POST" x-ref="formulario" x-on:submit="enviando = true"
@@ -201,7 +286,7 @@
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('loteLicencias', () => ({
-                {{-- id de la fila que abre la solicitud → días y nombre. --}}
+                {{-- id de la fila que abre la solicitud → lo que se muestra de ella. --}}
                 marcadas: {},
                 todas: false,
                 datos: { solicitudes: 0, dias: 0, filtros: {} },
@@ -218,23 +303,44 @@
                         ? this.datos.dias
                         : Object.values(this.marcadas).reduce((total, m) => total + m.dias, 0);
                 },
-                get nombres() {
-                    return [...new Set(Object.values(this.marcadas).map((m) => m.nombre))];
+                get lista() {
+                    return Object.values(this.marcadas);
+                },
+                get resumen() {
+                    const lista = this.lista;
+                    const cuenta = (condicion) => lista.filter(condicion).length;
+                    return {
+                        personas: new Set(lista.map((m) => m.ci)).size,
+                        completo: cuenta((m) => m.completo),
+                        porHoras: cuenta((m) => ! m.completo),
+                        conGoce: cuenta((m) => m.goce),
+                        sinGoce: cuenta((m) => ! m.goce),
+                        personalesPorHoras: cuenta((m) => m.personal && ! m.completo),
+                    };
                 },
 
                 casillas() {
                     return [...document.querySelectorAll('#div-results .lote-check')];
                 },
 
-                {{-- Cada recarga de la tabla (filtro, página) arranca de cero: lo
-                     marcado era de otra vista. --}}
-                reiniciar() {
+                {{-- Al pasar de página lo marcado se conserva y la página nueva
+                     muestra tildado lo que ya estaba. Con otro filtro arranca de
+                     cero: lo marcado era de otra búsqueda. --}}
+                reiniciar(conservar = false) {
                     const datos = document.getElementById('lote-datos');
                     this.datos = datos
                         ? { solicitudes: +datos.dataset.solicitudes, dias: +datos.dataset.dias, filtros: JSON.parse(datos.dataset.filtros) }
                         : { solicitudes: 0, dias: 0, filtros: {} };
-                    this.marcadas = {};
-                    this.todas = false;
+
+                    if (! conservar) {
+                        this.marcadas = {};
+                        this.todas = false;
+                    }
+
+                    for (const c of this.casillas()) {
+                        c.checked = this.todas || c.value in this.marcadas;
+                    }
+
                     this.sincronizar();
                 },
 
@@ -242,12 +348,10 @@
                     const casilla = evento.target;
 
                     if (casilla.classList.contains('lote-pagina')) {
-                        this.todas = false;
+                        this.salirDeTodas();
                         for (const c of this.casillas()) { c.checked = casilla.checked; this.anotar(c); }
                     } else if (casilla.classList.contains('lote-check')) {
-                        {{-- Desmarcar una con «todas» activo vuelve a la selección
-                             de la página, menos esa. --}}
-                        this.todas = false;
+                        this.salirDeTodas();
                         this.anotar(casilla);
                     } else {
                         return;
@@ -256,9 +360,44 @@
                     this.sincronizar();
                 },
 
+                {{-- Tocar una casilla con «todas» activo vuelve a una selección
+                     explícita: lo que ya estaba marcado más lo tildado en esta
+                     página. Las de otras páginas que solo entraban por «todas» no
+                     se pueden nombrar, así que quedan afuera. --}}
+                salirDeTodas() {
+                    if (! this.todas) { return; }
+                    this.todas = false;
+                    for (const c of this.casillas()) { this.anotar(c); }
+                },
+
+                {{-- Sacar una desde el modal: se destilda también en la tabla si
+                     está a la vista, y sin nada marcado el modal se cierra. --}}
+                quitar(id) {
+                    this.salirDeTodas();
+                    delete this.marcadas[id];
+                    const casilla = this.casillas().find((c) => c.value === String(id));
+                    if (casilla) { casilla.checked = false; }
+                    this.sincronizar();
+                    if (this.cantidad === 0) { this.accion = null; }
+                },
+
                 anotar(casilla) {
+                    const d = casilla.dataset;
                     if (casilla.checked) {
-                        this.marcadas[casilla.value] = { dias: +casilla.dataset.dias, nombre: casilla.dataset.nombre };
+                        this.marcadas[casilla.value] = {
+                            id: casilla.value,
+                            dias: +d.dias,
+                            nombre: d.nombre,
+                            ci: d.ci,
+                            periodo: d.periodo,
+                            alcance: d.alcance,
+                            completo: d.completo === '1',
+                            goce: d.goce === '1',
+                            tipo: d.tipo,
+                            tipoPill: d.tipoPill,
+                            personal: d.personal === '1',
+                            motivo: d.motivo,
+                        };
                     } else {
                         delete this.marcadas[casilla.value];
                     }
@@ -310,7 +449,7 @@
             const dateHasta = document.getElementById('f-hasta');
             const aplicados = { desde: dateDesde.value, hasta: dateHasta.value, estado: selEstado.value, tipo: selTipo.value };
 
-            async function cargar(page = 1) {
+            async function cargar(page = 1, conservarSeleccion = false) {
                 const params = new URLSearchParams({
                     q: inputBuscar.value,
                     desde: aplicados.desde,
@@ -329,8 +468,8 @@
                 } catch (e) {
                     resultados.innerHTML = '<div class="aviso aviso--error">No se pudo cargar el listado. Reintentá.</div>';
                 }
-                // La selección en lote se arma de nuevo con la tabla recién llegada.
-                window.dispatchEvent(new CustomEvent('licencias-cargadas'));
+                // La selección en lote se vuelve a pintar sobre la tabla recién llegada.
+                window.dispatchEvent(new CustomEvent('licencias-cargadas', { detail: { conservar: conservarSeleccion } }));
             }
 
             // Paginación: los enlaces del parcial se inyectan dinámicamente, se
@@ -340,7 +479,8 @@
                 if (!enlace) { return; }
                 e.preventDefault();
                 const page = new URL(enlace.href).searchParams.get('page') || 1;
-                cargar(page);
+                // Cambiar de página no es cambiar de búsqueda: lo marcado sigue.
+                cargar(page, true);
             });
 
             selPaginate.addEventListener('change', () => cargar(1));

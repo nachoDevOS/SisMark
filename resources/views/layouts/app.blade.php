@@ -388,7 +388,11 @@
            sale de la ventana y los botones del pie siguen al alcance. */
         .modal-caja { background: var(--card); border-radius: .625rem; width: 100%; max-width: 24rem;
             padding: 1.25rem; box-shadow: 0 20px 45px rgba(0,0,0,.28); text-align: left;
-            max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+            max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto;
+            overscroll-behavior: contain; }
+        /* Al llegar al final de una lista dentro de un modal, la rueda no sigue
+           de largo a la página de atrás. */
+        .modal-caja * { overscroll-behavior: contain; }
         .modal-caja h2 { font-size: 1rem; margin: 0 0 1rem; }
         .modal-caja--ancha { max-width: 30rem; }
         .modal-caja--ancha h2 { margin-bottom: .25rem; }
@@ -423,18 +427,34 @@
         .lote-barra__limpiar { background: none; border: 0; color: rgba(255,255,255,.75); cursor: pointer;
             font: inherit; font-size: .8125rem; padding: .25rem .5rem; }
         .lote-barra__limpiar:hover { color: #fff; text-decoration: underline; }
-        .lote-modal__icono { display: inline-flex; align-items: center; justify-content: center;
-            width: 3rem; height: 3rem; border-radius: 50%; margin-bottom: .6rem;
-            background: #dcfce7; color: var(--verde); }
-        .lote-modal__icono svg { width: 1.5rem; height: 1.5rem; }
+        .lote-modal { max-width: 54rem; }
+        .lote-modal__cabeza { display: flex; align-items: center; gap: .85rem; margin-bottom: .85rem; }
+        .lote-modal__cabeza h2 { margin: 0; }
+        .lote-modal__sub { margin: .15rem 0 0; color: var(--muted); font-size: .8125rem; }
+        .lote-modal__icono { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+            width: 2.9rem; height: 2.9rem; border-radius: 50%; background: #dcfce7; color: var(--verde); }
+        .lote-modal__icono svg { width: 1.45rem; height: 1.45rem; }
         .lote-modal__icono--rechazo { background: #fee2e2; color: var(--danger); }
-        .lote-modal__lista { max-height: 11rem; overflow-y: auto; margin-bottom: 1rem;
-            padding: .6rem .8rem; border: 1px solid var(--border); border-radius: .55rem;
-            background: var(--bg); font-size: .8125rem; }
-        .lote-modal__lista p { margin: 0; }
-        .lote-modal__lista ul { margin: 0; padding-left: 1.1rem; }
-        .lote-modal__lista li + li { margin-top: .2rem; }
-        .lote-modal__mas { list-style: none; margin-left: -1.1rem; color: var(--muted); font-style: italic; }
+        .lote-modal__resumen { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .85rem; }
+        .lote-modal__efectos { list-style: none; margin: 0 0 .9rem; padding: .7rem .85rem;
+            display: grid; gap: .5rem; border-radius: .6rem; font-size: .8125rem; line-height: 1.45;
+            background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
+        .lote-modal__efectos--rechazo { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+        .lote-modal__efectos li { display: flex; gap: .55rem; align-items: flex-start; }
+        .lote-modal__efectos svg { width: 1.05rem; height: 1.05rem; flex-shrink: 0; margin-top: .1rem; }
+        .lote-modal__tabla { max-height: 16rem; overflow: auto; margin-bottom: 1rem;
+            border: 1px solid var(--border); border-radius: .6rem; }
+        .lote-modal__tabla table { margin: 0; font-size: .78rem; }
+        .lote-modal__tabla thead th { position: sticky; top: 0; z-index: 1; }
+        .lote-modal__tabla td { vertical-align: top; }
+        .lote-modal__tabla .pill { white-space: nowrap; }
+        .lote-modal__motivo { max-width: 11rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .lote-modal__quitar { display: inline-flex; align-items: center; justify-content: center;
+            width: 1.7rem; height: 1.7rem; border-radius: 50%; border: 1px solid var(--border);
+            background: #fff; color: var(--muted); cursor: pointer; }
+        .lote-modal__quitar svg { width: .9rem; height: .9rem; }
+        .lote-modal__quitar:hover { background: #fee2e2; border-color: #fecaca; color: var(--danger); }
+        .lote-modal__mas { color: var(--muted); font-style: italic; text-align: center; }
 
         /* Ficha corta dentro de un modal: etiqueta a la izquierda, dato a la derecha. */
         .modal-resumen { display: grid; grid-template-columns: auto 1fr; gap: .35rem .9rem;
