@@ -19,8 +19,11 @@ use Illuminate\Support\Str;
  * más de 400 personas, así que la existencia se consulta de una sola vez y las
  * altas van con `insert()` por bloques, en vez de una consulta por fila.
  *
- * Un día con una licencia vigente no se vuelve a licenciar: se informa y se
- * saltea. Lo **rechazado** y lo **dado de baja** no ocupan el día —se puede
+ * Un día y horario se puede licenciar más de una vez **mientras los tramos no se
+ * pisen**: 08:00–12:00 y 12:00–16:00 conviven, igual que 08:00–09:00 y
+ * 14:00–16:00. Lo que choca —un tramo que se superpone, o cualquier cosa contra
+ * una licencia de horario completo— se informa y se saltea. Lo **rechazado** y
+ * lo **dado de baja** no ocupan el día —se puede
  * volver a pedir— y **nunca se reescriben**: quedan como historial de qué se
  * pidió y cómo terminó. Por eso el pedido nuevo siempre es una fila nueva, y el
  * índice único incluye `solicitud`.
@@ -139,9 +142,9 @@ class RegistroLicencia
         $alcanzados = [];
 
         foreach ($candidatos as $clave => $candidato) {
-            // Un día ya licenciado no se pisa: o está justificado, o ya hay un
-            // pedido esperando decisión.
-            if ($ocupados->has($clave)) {
+            // Un tramo ya licenciado no se pisa: o está justificado, o ya hay
+            // un pedido esperando decisión. Otro tramo del mismo día sí entra.
+            if (self::choca($ocupados->get($clave, []), $completo, $datos['lEntra'] ?? null, $datos['lSale'] ?? null)) {
                 $conteo['existentes']++;
 
                 continue;
@@ -178,20 +181,24 @@ class RegistroLicencia
 
     /**
      * Los días que {@see anotar()} crearía para cada carnet: los que tienen horario
-     * en el rango y todavía no están ocupados. Es lo que se mide contra el tope
-     * mensual de permisos ({@see TopePermisos}) antes de anotar.
+     * en el rango y donde el tramo pedido no choca con lo ya licenciado. Es lo
+     * que se mide contra el tope mensual de permisos ({@see TopePermisos}) antes
+     * de anotar.
+     *
+     * Sin horas, el pedido se toma como de horario completo: choca con
+     * cualquier licencia del día.
      *
      * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignacionesPorCi
      * @return array<string, list<string>> fechas `Y-m-d` por carnet
      */
-    public function fechasNuevas(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta): array
+    public function fechasNuevas(Collection $asignacionesPorCi, Carbon $desde, Carbon $hasta, ?string $lEntra = null, ?string $lSale = null): array
     {
         $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
         $ocupados = $this->ocupados($asignacionesPorCi->keys()->all(), $desde, $hasta);
         $fechas = [];
 
         foreach ($this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo) as $clave => $candidato) {
-            if (! $ocupados->has($clave)) {
+            if (! self::choca($ocupados->get($clave, []), false, $lEntra, $lSale)) {
                 $fechas[$candidato['ci']][$candidato['fecha']] = true;
             }
         }
@@ -276,8 +283,8 @@ class RegistroLicencia
     }
 
     /**
-     * Días que ya están ocupados para esos funcionarios dentro del rango,
-     * indexados por la clave natural.
+     * Tramos ya licenciados para esos funcionarios dentro del rango, agrupados
+     * por la clave natural: un mismo día y horario puede tener varios.
      *
      * Solo cuenta lo que **de verdad ocupa** el día: lo vigente y sin rechazar.
      *
@@ -290,7 +297,7 @@ class RegistroLicencia
      * cómo terminó, y el funcionario las ve en su perfil.
      *
      * @param  list<string>  $cis
-     * @return Collection<string, Licencia>
+     * @return Collection<string, list<array{completo: bool, entra: ?string, sale: ?string}>>
      */
     private function ocupados(array $cis, Carbon $desde, Carbon $hasta): Collection
     {
@@ -298,12 +305,56 @@ class RegistroLicencia
             ->whereIn('ci', $cis)
             ->where('estado', '!=', Licencia::RECHAZADO)
             ->whereBetween('fecha', [$desde->toDateString(), $hasta->toDateString()])
-            ->get(['id', 'ci', 'fecha', 'horario_id'])
-            ->keyBy(fn (Licencia $licencia): string => self::clave(
+            ->get(['id', 'ci', 'fecha', 'horario_id', 'tCompleto', 'lEntra', 'lSale'])
+            ->groupBy(fn (Licencia $licencia): string => self::clave(
                 trim((string) $licencia->ci),
                 $licencia->fecha->toDateString(),
                 (int) $licencia->horario_id,
-            ));
+            ))
+            ->map(fn (Collection $licencias): array => $licencias
+                ->map(fn (Licencia $licencia): array => [
+                    'completo' => (bool) $licencia->tCompleto,
+                    'entra' => $licencia->lEntra?->format('H:i'),
+                    'sale' => $licencia->lSale?->format('H:i'),
+                ])
+                ->values()
+                ->all());
+    }
+
+    /**
+     * ¿El tramo pedido se pisa con lo ya licenciado ese día y horario?
+     *
+     * Choca si alguno de los dos es de horario completo —o no tiene horas, que
+     * es lo mismo: no se sabe qué tramo ocupa— o si los tramos se superponen.
+     * Tocarse en el borde no es pisarse: 08:00–12:00 y 12:00–16:00 conviven.
+     *
+     * @param  list<array{completo: bool, entra: ?string, sale: ?string}>  $existentes
+     */
+    private static function choca(array $existentes, bool $completo, ?string $lEntra, ?string $lSale): bool
+    {
+        if ($existentes === []) {
+            return false;
+        }
+
+        $entra = substr(trim((string) $lEntra), 0, 5);
+        $sale = substr(trim((string) $lSale), 0, 5);
+
+        if ($completo || $entra === '' || $sale === '') {
+            return true;
+        }
+
+        foreach ($existentes as $existente) {
+            if ($existente['completo'] || $existente['entra'] === null || $existente['sale'] === null) {
+                return true;
+            }
+
+            // «HH:MM» se compara bien como texto.
+            if ($entra < $existente['sale'] && $existente['entra'] < $sale) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -335,7 +386,7 @@ class RegistroLicencia
         }
 
         if ($conteo['existentes'] > 0) {
-            $partes[] = "{$conteo['existentes']} ya existían";
+            $partes[] = "{$conteo['existentes']} se pisan con una licencia ya anotada en ese horario";
         }
 
         if ($conteo['fueraDeVigencia'] > 0) {

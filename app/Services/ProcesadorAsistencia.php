@@ -30,13 +30,15 @@ use Illuminate\Support\Collection;
  *    viaja aparte, como dato.
  * 4. **Licencia parcial**: si tapa el borde del horario no se exige marcar ahí. Si
  *    deja un hueco (empieza después de `hEntrada`), la marca es obligatoria y su
- *    ausencia es abandono.
+ *    ausencia es abandono. Varias licencias parciales del mismo horario se
+ *    suman: los tramos pegados se unen (08:00–12:00 + 12:00–16:00 cubre el
+ *    horario entero), y el hueco que queda entre dos se trabaja.
  *
  * Todas las horas se manejan en **segundos desde medianoche**: las columnas de
  * `horarios` y `asistencias` guardan la hora sobre la fecha base 1899-12-30, así
  * que el día calendario de esas columnas no significa nada.
  *
- * @phpstan-type Bloque array{horario: Horario, entrada: ?int, salida: ?int, entradaExigida: bool, salidaExigida: bool, atraso: int, anticipo: int, permanencia: ?int, licenciado: int, computado: int, esperado: int, estado: string, licencia: ?Licencia, avisos: list<string>}
+ * @phpstan-type Bloque array{horario: Horario, entrada: ?int, salida: ?int, entradaExigida: bool, salidaExigida: bool, atraso: int, anticipo: int, permanencia: ?int, licenciado: int, computado: int, esperado: int, estado: string, licencia: ?Licencia, licencias: list<Licencia>, avisos: list<string>}
  * @phpstan-type Dia array{fecha: Carbon, estado: string, motivo: ?string, bloques: list<Bloque>, marcas: list<int>, marcasUsadas: int, atraso: int, anticipo: int, computado: int, esperado: int}
  */
 class ProcesadorAsistencia
@@ -352,6 +354,7 @@ class ProcesadorAsistencia
                 fn (Horario $horario): array => $this->bloque($horario, $completa, 0, self::LICENCIA, [], [
                     'entradaExigida' => false,
                     'salidaExigida' => false,
+                    'licencias' => [$completa],
                 ]),
                 $horarios,
             );
@@ -391,7 +394,11 @@ class ProcesadorAsistencia
             $bloques[] = $this->evaluarHorario(
                 $horario,
                 $ventanas[$indice],
-                $licencias->first(fn (Licencia $licencia): bool => $licencia->horario_id === null || $licencia->horario_id === $horario->id),
+                $licencias
+                    ->filter(fn (Licencia $licencia): bool => $licencia->horario_id === null || $licencia->horario_id === $horario->id)
+                    ->sortBy(fn (Licencia $licencia): int => $this->segundos($licencia->lEntra) ?? 0)
+                    ->values()
+                    ->all(),
                 $delDia,
                 $horario->siguienteDia ? $delDiaSiguiente : $delDia,
                 $usadas,
@@ -454,6 +461,7 @@ class ProcesadorAsistencia
      * Evalúa un horario contra las marcas del día.
      *
      * @param  array{eMin: int, eMax: int, sMin: int, sMax: int, avisos: list<string>}  $ventana
+     * @param  list<Licencia>  $licencias  las del horario, por hora de inicio
      * @param  list<int>  $marcasEntrada
      * @param  list<int>  $marcasSalida
      * @param  list<int>  $usadas  marcas ya consumidas por otro horario (por referencia)
@@ -462,11 +470,12 @@ class ProcesadorAsistencia
     private function evaluarHorario(
         Horario $horario,
         array $ventana,
-        ?Licencia $licencia,
+        array $licencias,
         array $marcasEntrada,
         array $marcasSalida,
         array &$usadas,
     ): array {
+        $licencia = $licencias[0] ?? null;
         $hEntrada = $this->segundos($horario->hEntrada) ?? 0;
         $hSalida = $this->segundos($horario->hSalida) ?? 0;
         $hTolerancia = $this->segundos($horario->hTolerancia) ?? $hEntrada;
@@ -475,18 +484,8 @@ class ProcesadorAsistencia
         $avisos = array_merge($ventana['avisos'], $this->revisarHorario($horario, $hEntrada, $hSalida, $hTolerancia, $sTolerancia, $ventana));
 
         if ($ventana['eMin'] > $ventana['eMax'] || $ventana['sMin'] > $ventana['sMax']) {
-            return $this->bloque($horario, $licencia, $esperado, self::HORARIO_INVALIDO, $avisos);
+            return $this->bloque($horario, $licencia, $esperado, self::HORARIO_INVALIDO, $avisos, ['licencias' => $licencias]);
         }
-
-        // Tramo licenciado recortado al horario. Fuera de él quedan uno o dos
-        // tramos de trabajo, y solo esos exigen marca.
-        [$licEntra, $licSale] = $this->tramoLicencia($licencia, $hEntrada, $hSalida + ($horario->siguienteDia ? 86400 : 0));
-        $conLicencia = $licEntra !== null && $licSale !== null;
-        $entradaExigida = ! $conLicencia || $licEntra > $hEntrada;
-        $salidaExigida = ! $conLicencia || $licSale < $hSalida + ($horario->siguienteDia ? 86400 : 0);
-
-        $entrada = $entradaExigida ? $this->primeraMarca($marcasEntrada, $ventana['eMin'], $ventana['eMax'], $usadas) : null;
-        $salida = $salidaExigida ? $this->ultimaMarca($marcasSalida, $ventana['sMin'], $ventana['sMax'], $usadas) : null;
 
         // En el horario nocturno la salida es del día siguiente: para las cuentas
         // se corre un día entero, así la resta con la entrada da positivo. Las
@@ -494,6 +493,19 @@ class ProcesadorAsistencia
         $cruce = $horario->siguienteDia ? 86400 : 0;
         $finHorario = $hSalida + $cruce;
         $toleranciaSalida = $sTolerancia + $cruce;
+
+        // Tramos licenciados recortados al horario y unidos. Fuera de ellos
+        // quedan los tramos de trabajo; los bordes del horario que no tapa
+        // ninguna licencia exigen marca.
+        $tramos = $this->tramosLicencia($licencias, $hEntrada, $finHorario);
+        $conLicencia = $tramos !== [];
+        $licEntra = $conLicencia ? $tramos[0][0] : null;
+        $licSale = $conLicencia ? $tramos[array_key_last($tramos)][1] : null;
+        $entradaExigida = ! $conLicencia || $licEntra > $hEntrada;
+        $salidaExigida = ! $conLicencia || $licSale < $finHorario;
+
+        $entrada = $entradaExigida ? $this->primeraMarca($marcasEntrada, $ventana['eMin'], $ventana['eMax'], $usadas) : null;
+        $salida = $salidaExigida ? $this->ultimaMarca($marcasSalida, $ventana['sMin'], $ventana['sMax'], $usadas) : null;
         $salidaReal = $salida === null ? null : $salida + $cruce;
 
         // El atraso se cuenta en **minutos completos** desde la hora nominal de
@@ -520,9 +532,16 @@ class ProcesadorAsistencia
         $inicio = $entrada === null ? null : ($enTolerancia ? $hEntrada : min($hEntrada + $atraso, $finHorario));
         $fin = $salidaReal === null ? null : ($salidaReal >= $toleranciaSalida ? $finHorario : max($salidaReal, $hEntrada));
 
-        $licenciado = $conLicencia ? $licSale - $licEntra : 0;
+        $licenciado = array_sum(array_map(fn (array $tramo): int => $tramo[1] - $tramo[0], $tramos));
+        $huecos = $this->huecosEntreLicencias($tramos);
+        [$enHuecos, $huecosSinMarca] = $this->trabajadoEnHuecos(
+            $huecos,
+            ($entradaExigida && $entrada !== null) || ($salidaExigida && $salida !== null),
+            $marcasEntrada,
+            $usadas,
+        );
         $trabajado = $conLicencia
-            ? $this->trabajadoConLicencia($inicio, $fin, $licEntra, $licSale, $entradaExigida, $salidaExigida)
+            ? $this->trabajadoConLicencia($inicio, $fin, $licEntra, $licSale, $entradaExigida, $salidaExigida) + $enHuecos
             : ($inicio === null || $fin === null ? 0 : max(0, $fin - $inicio));
 
         $estado = $this->estadoBloque(
@@ -536,9 +555,12 @@ class ProcesadorAsistencia
             $ventana,
             $usadas,
             $avisos,
+            $huecosSinMarca,
+            count($huecos),
         );
 
         return $this->bloque($horario, $licencia, $esperado, $estado, $avisos, [
+            'licencias' => $licencias,
             'entrada' => $entrada,
             'salida' => $salida,
             'entradaExigida' => $entradaExigida,
@@ -552,10 +574,70 @@ class ProcesadorAsistencia
     }
 
     /**
-     * Suma de los tramos de trabajo que la licencia parcial deja libres: el
-     * previo (`hEntrada` → inicio de la licencia) y el posterior (fin de la
-     * licencia → `hSalida`). Cada uno solo se acredita si hay marca del lado que
-     * lo cierra.
+     * Huecos de trabajo que quedan entre dos licencias del mismo horario
+     * (08:00–09:00 y 14:00–16:00 dejan 09:00–14:00).
+     *
+     * @param  list<array{0: int, 1: int}>  $tramos  ya unidos y ordenados
+     * @return list<array{0: int, 1: int}>
+     */
+    private function huecosEntreLicencias(array $tramos): array
+    {
+        $huecos = [];
+
+        for ($i = 1; $i < count($tramos); $i++) {
+            $huecos[] = [$tramos[$i - 1][1], $tramos[$i][0]];
+        }
+
+        return $huecos;
+    }
+
+    /**
+     * Horas de los huecos entre licencias que se acreditan, y cuántos quedaron
+     * sin acreditar.
+     *
+     * Si el funcionario marcó en algún borde del horario, su presencia está
+     * probada y los huecos se acreditan, igual que el resto del tiempo entre su
+     * entrada y su salida. Si las licencias tapan los dos bordes no hay marca que
+     * exigir ahí: cada hueco se acredita solo si tiene alguna marca adentro
+     * —volvió y marcó—.
+     *
+     * @param  list<array{0: int, 1: int}>  $huecos
+     * @param  list<int>  $marcas
+     * @param  list<int>  $usadas
+     * @return array{0: int, 1: int}
+     */
+    private function trabajadoEnHuecos(array $huecos, bool $presente, array $marcas, array &$usadas): array
+    {
+        $trabajado = 0;
+        $sinMarca = 0;
+
+        foreach ($huecos as [$desde, $hasta]) {
+            if (! $presente) {
+                $adentro = array_values(array_filter(
+                    $marcas,
+                    fn (int $marca): bool => $marca >= $desde && $marca <= $hasta && ! in_array($marca, $usadas, true),
+                ));
+
+                if ($adentro === []) {
+                    $sinMarca++;
+
+                    continue;
+                }
+
+                array_push($usadas, ...$adentro);
+            }
+
+            $trabajado += $hasta - $desde;
+        }
+
+        return [$trabajado, $sinMarca];
+    }
+
+    /**
+     * Suma de los tramos de trabajo que la licencia parcial deja libres en los
+     * bordes: el previo (`hEntrada` → inicio de la primera licencia) y el
+     * posterior (fin de la última licencia → `hSalida`). Cada uno solo se
+     * acredita si hay marca del lado que lo cierra.
      */
     private function trabajadoConLicencia(?int $inicio, ?int $fin, int $licEntra, int $licSale, bool $entradaExigida, bool $salidaExigida): int
     {
@@ -596,11 +678,21 @@ class ProcesadorAsistencia
         array $ventana,
         array $usadas,
         array &$avisos,
+        int $huecosSinMarca = 0,
+        int $huecos = 0,
     ): string {
         $sinEntrada = $entradaExigida && $entrada === null;
         $sinSalida = $salidaExigida && $salida === null;
 
         if (! $sinEntrada && ! $sinSalida) {
+            // Licencias que tapan los dos bordes: lo que se controla es el
+            // tiempo que quedaba entre ellas.
+            if ($huecosSinMarca > 0) {
+                $avisos[] = 'No marcó en el tiempo que quedaba entre las licencias.';
+
+                return $huecosSinMarca === $huecos ? self::FALTA : self::ABANDONO;
+            }
+
             return $atraso > 0 ? self::ATRASO : self::CUMPLE;
         }
 
@@ -689,6 +781,44 @@ class ProcesadorAsistencia
         }
 
         return $hSalida >= $hEntrada ? $hSalida - $hEntrada : 86400 - $hEntrada + $hSalida;
+    }
+
+    /**
+     * Tramos licenciados del horario, recortados con {@see tramoLicencia()} y
+     * unidos: los que se pisan o se tocan quedan en uno solo, así 08:00–12:00 y
+     * 12:00–16:00 cubren el horario entero. Ordenados por inicio.
+     *
+     * @param  list<Licencia>  $licencias
+     * @return list<array{0: int, 1: int}>
+     */
+    private function tramosLicencia(array $licencias, int $hEntrada, int $hSalida): array
+    {
+        $tramos = [];
+
+        foreach ($licencias as $licencia) {
+            [$entra, $sale] = $this->tramoLicencia($licencia, $hEntrada, $hSalida);
+
+            if ($entra !== null && $sale !== null) {
+                $tramos[] = [$entra, $sale];
+            }
+        }
+
+        usort($tramos, fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        $unidos = [];
+
+        foreach ($tramos as $tramo) {
+            $ultimo = array_key_last($unidos);
+
+            if ($ultimo !== null && $tramo[0] <= $unidos[$ultimo][1]) {
+                $unidos[$ultimo][1] = max($unidos[$ultimo][1], $tramo[1]);
+
+                continue;
+            }
+
+            $unidos[] = $tramo;
+        }
+
+        return $unidos;
     }
 
     /**
@@ -828,6 +958,7 @@ class ProcesadorAsistencia
             'esperado' => $esperado,
             'estado' => $estado,
             'licencia' => $licencia,
+            'licencias' => $licencia === null ? [] : [$licencia],
             'avisos' => $avisos,
         ], $datos);
     }

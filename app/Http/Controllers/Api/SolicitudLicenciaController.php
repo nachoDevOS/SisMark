@@ -113,7 +113,7 @@ class SolicitudLicenciaController extends Controller
         // huérfano.
         if (! $datos['tCompleto']) {
             $excesos = $tope->excesos(
-                $registro->fechasNuevas($asignaciones, $desde, $hasta),
+                $registro->fechasNuevas($asignaciones, $desde, $hasta, $datos['lEntra'], $datos['lSale']),
                 (string) $datos['lEntra'],
                 (string) $datos['lSale'],
                 $request->has('contratos') ? [$ci => ContratosFuncionario::delPedido($datos['contratos'] ?? [])] : null,

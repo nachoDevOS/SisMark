@@ -363,13 +363,12 @@ class LicenciaController extends Controller
 
         $ci = trim($datos['ci']);
         $asignaciones = $this->horariosDelRango([$ci], $desde, $hasta, array_map('intval', $datos['asignaciones'] ?? []));
-        $fechas = $registro->fechasNuevas($asignaciones, $desde, $hasta)[$ci] ?? [];
+        $lEntra = $datos['lEntra'] ?? null;
+        $lSale = $datos['lSale'] ?? null;
+        $fechas = $registro->fechasNuevas($asignaciones, $desde, $hasta, $lEntra, $lSale)[$ci] ?? [];
 
         // Salida y entrada invertidas no son un pedido: se muestra solo lo usado,
         // y la validación del formulario avisa al guardar.
-        $lEntra = $datos['lEntra'] ?? null;
-        $lSale = $datos['lSale'] ?? null;
-
         if ($lEntra !== null && $lSale !== null && $lSale <= $lEntra) {
             $lEntra = $lSale = null;
         }
@@ -562,7 +561,7 @@ class LicenciaController extends Controller
         // a medias dejaría a Recursos Humanos adivinando a quién le faltó.
         if ($datos['tipo'] === Licencia::TIPO_PERSONAL && ! $datos['tCompleto']) {
             $excesos = $tope->excesos(
-                $registro->fechasNuevas($asignacionesPorCi, $desde, $hasta),
+                $registro->fechasNuevas($asignacionesPorCi, $desde, $hasta, $datos['lEntra'], $datos['lSale']),
                 (string) $datos['lEntra'],
                 (string) $datos['lSale'],
             );

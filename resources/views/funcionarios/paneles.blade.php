@@ -68,6 +68,8 @@
                     <option value="{{ \App\Models\Asistencia::TIPO_USB }}" @selected($tipo === \App\Models\Asistencia::TIPO_USB)>A</option>
                     <option value="{{ \App\Models\Asistencia::TIPO_MANUAL }}" @selected($tipo === \App\Models\Asistencia::TIPO_MANUAL)>M</option>
                 </select>
+                {{-- Los filtros recién se aplican con este botón. --}}
+                <button type="button" id="m-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
                 {{-- Alta manual para este funcionario. Solo si está en la base
                      local: el CI se valida contra `personas`, así que desde una
                      ficha que solo existe en Mamoré la carga rebotaría. --}}
@@ -110,6 +112,8 @@
                         <input type="month" id="l-mes" value="{{ now()->format('Y-m') }}"
                                aria-label="Mes y año de las licencias">
                     </label>
+                    {{-- Los filtros recién se aplican con este botón. --}}
+                    <button type="button" id="l-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
                     {{-- Alta acotada a este funcionario; la pantalla «Licenciar»
                          queda para los feriados y las altas en lote. --}}
                     <x-modal-licencia :ci="$ci" :origen="$origen ?? ''" />
@@ -142,6 +146,8 @@
                         <option value="vigentes">Solo vigentes</option>
                         <option value="vencidas">Solo vencidas</option>
                     </select>
+                    {{-- Los filtros recién se aplican con este botón. --}}
+                    <button type="button" id="t-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
 
                     <x-modal-turno-asignado :ci="$ci" :origen="$origen ?? ''" />
                 </div>
@@ -171,6 +177,8 @@
                         <input type="month" id="p-mes" value="{{ now()->format('Y-m') }}"
                                max="{{ now()->format('Y-m') }}" aria-label="Mes y año de la asistencia">
                     </label>
+                    {{-- Los filtros recién se aplican con este botón. --}}
+                    <button type="button" id="p-buscar" class="btn"><x-heroicon-o-magnifying-glass />Buscar</button>
                 </div>
             </div>
 
@@ -210,7 +218,8 @@
                     tipo: document.getElementById('m-tipo').value,
                     por_pagina: document.getElementById('m-paginate').value,
                 }),
-                controles: ['m-desde', 'm-hasta', 'm-tipo', 'm-paginate'],
+                controles: ['m-paginate'],
+                buscar: 'm-buscar',
             },
             @if ($verLicencias)
             licencias: {
@@ -220,7 +229,8 @@
                     mes: document.getElementById('l-mes').value,
                     por_pagina: document.getElementById('l-paginate').value,
                 }),
-                controles: ['l-mes', 'l-paginate'],
+                controles: ['l-paginate'],
+                buscar: 'l-buscar',
             },
             @endif
             @if ($verHorarios)
@@ -232,7 +242,8 @@
                     por_pagina: document.getElementById('t-paginate').value,
                     origen: @json($origen ?? ''),
                 }),
-                controles: ['t-situacion', 't-paginate'],
+                controles: ['t-paginate'],
+                buscar: 't-buscar',
             },
             @endif
             @if ($verReportes)
@@ -249,7 +260,8 @@
                     // ficha ya la muestra completa, unos centímetros más arriba.
                     encabezado: 0,
                 }),
-                controles: ['p-mes'],
+                controles: [],
+                buscar: 'p-buscar',
             },
             @endif
         };
@@ -287,6 +299,14 @@
 
             for (const id of panel.controles) {
                 document.getElementById(id).addEventListener('change', () => {
+                    if (nombre === 'marcaciones') { sincronizarReporte(); }
+                    cargar(nombre, 1);
+                });
+            }
+
+            // Los filtros que no están en `controles` esperan el botón «Buscar».
+            if (panel.buscar) {
+                document.getElementById(panel.buscar).addEventListener('click', () => {
                     if (nombre === 'marcaciones') { sincronizarReporte(); }
                     cargar(nombre, 1);
                 });

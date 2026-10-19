@@ -384,8 +384,11 @@
         /* ===== Modal (rango de fechas para descargar, etc.) ===== */
         .modal-fondo { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50;
             display: flex; align-items: center; justify-content: center; padding: 1rem; }
+        /* Tope de alto con scroll propio: en pantallas bajas el modal no se
+           sale de la ventana y los botones del pie siguen al alcance. */
         .modal-caja { background: var(--card); border-radius: .625rem; width: 100%; max-width: 24rem;
-            padding: 1.25rem; box-shadow: 0 20px 45px rgba(0,0,0,.28); text-align: left; }
+            padding: 1.25rem; box-shadow: 0 20px 45px rgba(0,0,0,.28); text-align: left;
+            max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
         .modal-caja h2 { font-size: 1rem; margin: 0 0 1rem; }
         .modal-caja--ancha { max-width: 30rem; }
         .modal-caja--ancha h2 { margin-bottom: .25rem; }

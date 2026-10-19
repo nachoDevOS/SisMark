@@ -314,7 +314,11 @@
                   this.cerrar();
               },
               quitar(id) { this.elegidos = this.elegidos.filter((e) => e.id !== id); },
+              {{-- Traba el botón mientras viaja el pedido: un segundo clic
+                   anotaría las licencias dos veces. --}}
+              guardando: false,
           }"
+          x-on:submit="guardando = true"
           x-on:click.outside="abierto = false">
         @csrf
         <input type="hidden" name="modo" :value="modo">
@@ -897,9 +901,11 @@
                         :disabled="(modo === 'uno' && ! {{ $persona ? 'true' : 'false' }})
                                    || (modo === 'varios' && elegidos.length === 0)
                                    || (modo === 'direccion' && (! direccion || seleccionados.length === 0))
-                                   || excedeTope"
+                                   || excedeTope
+                                   || guardando"
                         :title="excedeTope ? 'Supera el tope mensual de permisos' : ''">
-                    <x-heroicon-o-check />Anotar licencia(s)
+                    <span class="btn__contenido" x-show="! guardando"><x-heroicon-o-check />Anotar licencia(s)</span>
+                    <span class="btn__contenido" x-show="guardando" x-cloak><span class="spinner-anillo"></span>Guardando…</span>
                 </button>
                 <a href="{{ route('licencias.index') }}" class="btn btn--gris"><x-heroicon-o-x-mark />Cancelar</a>
             </div>

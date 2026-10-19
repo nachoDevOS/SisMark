@@ -236,6 +236,8 @@ class ExcelMarcacionesProcesadas
 
         foreach ($dia['bloques'] as $indice => $bloque) {
             $licencia = $bloque['licencia'];
+            // Puede haber más de una licencia parcial en el mismo horario.
+            $licencias = collect($bloque['licencias']);
 
             $this->escribirFilaTexto($hoja, $fila, [
                 $indice === 0 ? $fecha : '',
@@ -246,11 +248,11 @@ class ExcelMarcacionesProcesadas
                 $bloque['atraso'] > 0 ? ProcesadorAsistencia::desvio($bloque['atraso']) : '',
                 $bloque['estado'] === ProcesadorAsistencia::ABANDONO ? 'ABANDONO' : '',
                 ProcesadorAsistencia::FALTAS[$bloque['estado']] ?? '',
-                $licencia?->lEntra?->format('H:i') ?? '',
-                $licencia?->lSale?->format('H:i') ?? '',
+                $licencias->map(fn ($l) => $l->lEntra?->format('H:i'))->filter()->implode(' / '),
+                $licencias->map(fn ($l) => $l->lSale?->format('H:i'))->filter()->implode(' / '),
                 $licencia === null ? '' : ($licencia->tCompleto ? 'Sí' : 'No'),
                 $licencia === null ? '' : ($licencia->goceHaberes ? 'Sí' : 'No'),
-                (string) ($licencia?->motivo ?? ''),
+                $licencias->pluck('motivo')->filter()->unique()->implode(' · '),
             ]);
 
             // Abandono y Falta van en negrita, como en el imprimible.

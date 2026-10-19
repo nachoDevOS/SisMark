@@ -93,6 +93,8 @@
                         @foreach ($dia['bloques'] as $indice => $bloque)
                             @php
                                 $licencia = $bloque['licencia'];
+                                // Puede haber más de una licencia parcial en el mismo horario.
+                                $licencias = collect($bloque['licencias']);
                                 $falta = P::FALTAS[$bloque['estado']] ?? '';
                             @endphp
                             <tr>
@@ -119,11 +121,11 @@
                                 <td style="color: #92400e; font-weight: 600;">{{ $bloque['atraso'] > 0 ? P::desvio($bloque['atraso']) : '' }}</td>
                                 <td style="color: #991b1b; font-weight: 700;">{{ $bloque['estado'] === P::ABANDONO ? 'ABANDONO' : '' }}</td>
                                 <td style="color: #991b1b; font-weight: 700;">{{ $falta }}</td>
-                                <td>{{ $licencia?->lEntra?->format('H:i') ?? '' }}</td>
-                                <td>{{ $licencia?->lSale?->format('H:i') ?? '' }}</td>
+                                <td>{{ $licencias->map(fn ($l) => $l->lEntra?->format('H:i'))->filter()->implode(' / ') }}</td>
+                                <td>{{ $licencias->map(fn ($l) => $l->lSale?->format('H:i'))->filter()->implode(' / ') }}</td>
                                 <td>{{ $licencia === null ? '' : ($licencia->tCompleto ? 'Sí' : 'No') }}</td>
                                 <td>{{ $licencia === null ? '' : ($licencia->goceHaberes ? 'Sí' : 'No') }}</td>
-                                <td>{{ $licencia?->motivo ?? '' }}</td>
+                                <td>{{ $licencias->pluck('motivo')->filter()->unique()->implode(' · ') }}</td>
                             </tr>
                         @endforeach
                     @endif

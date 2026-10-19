@@ -27,6 +27,7 @@
     <div x-data="{
              abierto: {{ $abierto }},
              cargado: false,
+             guardando: false,
              tipo: @js($tipoInicial),
              {{-- El personal es siempre por horas; el institucional arranca en
                   horario completo y puede pasar a por horas. --}}
@@ -74,7 +75,10 @@
 
                 {{-- `multipart/form-data`: el formulario sube el respaldo que
                      justifica la licencia. Sin esto el archivo no viaja. --}}
-                <form method="POST" action="{{ route('licencias.store') }}" enctype="multipart/form-data">
+                {{-- `guardando` traba el botón mientras viaja el pedido: un
+                     segundo clic anotaría la licencia dos veces. --}}
+                <form method="POST" action="{{ route('licencias.store') }}" enctype="multipart/form-data"
+                      x-on:submit="guardando = true">
                     @csrf
                     <input type="hidden" name="_form" value="licencia">
                     <input type="hidden" name="modo" value="uno">
@@ -173,10 +177,13 @@
                     </div>
 
                     <div class="modal-acciones">
-                        <button type="button" class="btn btn--gris" x-on:click="abierto = false">
+                        <button type="button" class="btn btn--gris" x-on:click="abierto = false" :disabled="guardando">
                             <x-heroicon-o-x-mark />Cancelar
                         </button>
-                        <button type="submit" class="btn"><x-heroicon-o-check />Anotar licencia</button>
+                        <button type="submit" class="btn" :disabled="guardando">
+                            <span class="btn__contenido" x-show="! guardando"><x-heroicon-o-check />Anotar licencia</span>
+                            <span class="btn__contenido" x-show="guardando" x-cloak><span class="spinner-anillo"></span>Guardando…</span>
+                        </button>
                     </div>
                 </form>
             </div>

@@ -40,3 +40,20 @@ test('la fuente local de funcionarios se llama SIA y lista la base local', funct
         ->assertOk()
         ->assertSee('7633685');
 });
+
+test('en la ficha, cada solapa aplica sus filtros con su botón Buscar', function (): void {
+    $persona = Persona::factory()->create(['ci' => '7633685']);
+
+    $respuesta = $this->actingAs(superAdmin())
+        ->get(route('funcionarios.show', $persona))
+        ->assertOk()
+        ->assertSeeInOrder(['id="m-tipo"', 'id="m-buscar"'], false)
+        ->assertSeeInOrder(['id="l-mes"', 'id="l-buscar"'], false)
+        ->assertSeeInOrder(['id="t-situacion"', 'id="t-buscar"'], false)
+        ->assertSeeInOrder(['id="p-mes"', 'id="p-buscar"'], false);
+
+    // Al cambiar solo recarga «Mostrar N registros»; el resto espera el botón.
+    foreach (["controles: ['m-paginate']", "controles: ['l-paginate']", "controles: ['t-paginate']", 'controles: []'] as $controles) {
+        $respuesta->assertSee($controles, false);
+    }
+});
