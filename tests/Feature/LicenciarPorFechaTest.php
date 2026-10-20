@@ -201,5 +201,5 @@ test('en la lista de la dirección no se puede marcar a quien no tiene turno', f
     $this->get(route('licencias.create'))
         ->assertOk()
         ->assertSee('this.funcionarios.filter((p) => ! p.sinTurno)', false)
-        ->assertSee(":disabled=\"modo !== 'direccion' || persona.sinTurno\"", false);
+        ->assertSee(":disabled=\"! ['direccion', 'todos'].includes(modo) || persona.sinTurno\"", false);
 });

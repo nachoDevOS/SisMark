@@ -221,25 +221,38 @@ class RegistroLicencia
     }
 
     /**
-     * Los carnets que tienen turno que licenciar en el rango: algún horario
-     * asignado cuyo día de la semana cae en el rango y dentro de su vigencia.
-     * Sin eso, {@see anotar()} no genera ninguna fila para ellos.
+     * Los turnos que cada carnet tiene para licenciar en el rango, como
+     * «08:00–16:00»: los horarios asignados cuyo día de la semana cae en el
+     * rango y dentro de su vigencia. Quien no aparece no tiene turno, y
+     * {@see anotar()} no genera ninguna fila para él.
      *
-     * No mira contratos ni licencias ya anotadas: responde solo si hay turno.
+     * No mira contratos ni licencias ya anotadas: responde solo qué turno hay.
      *
      * @param  list<string>  $cis
-     * @return list<string>
+     * @return array<string, list<string>>
      */
-    public function conTurno(array $cis, Carbon $desde, Carbon $hasta): array
+    public function turnos(array $cis, Carbon $desde, Carbon $hasta): array
     {
         if ($cis === []) {
             return [];
         }
 
+        $asignacionesPorCi = $this->horariosDelRango($cis, $desde, $hasta);
+        $horarios = $asignacionesPorCi->flatten()->pluck('horario')->filter()->keyBy('id');
         $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'fueraDeContrato' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
-        $candidatos = $this->candidatos($this->horariosDelRango($cis, $desde, $hasta), $desde, $hasta, $conteo);
+        $turnos = [];
 
-        return array_values(array_unique(array_column($candidatos, 'ci')));
+        foreach ($this->candidatos($asignacionesPorCi, $desde, $hasta, $conteo) as $candidato) {
+            $horario = $horarios->get($candidato['horario_id']);
+            $turnos[$candidato['ci']][] = $horario->hEntrada?->format('H:i').'–'.$horario->hSalida?->format('H:i');
+        }
+
+        return array_map(function (array $delCi): array {
+            $delCi = array_values(array_unique($delCi));
+            sort($delCi);
+
+            return $delCi;
+        }, $turnos);
     }
 
     /**

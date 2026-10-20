@@ -15,12 +15,12 @@
      * a medio plantel terminaría licenciando a todos sin enterarse. `null` es «no
      * venía de un envío por dirección», que es cuando corresponde marcar a todos.
      *
-     * Solo del alcance por dirección: en «varios» los carnets de `cis` son otra
-     * lista y no tienen nada que ver con el personal de una dirección.
+     * Solo de los alcances con lista para marcar (por dirección y todos): en
+     * «varios» los carnets de `cis` son otra lista y no tienen nada que ver.
      *
      * @var list<string>|null
      */
-    $seleccionPrevia = $modoInicial === 'direccion'
+    $seleccionPrevia = in_array($modoInicial, ['direccion', 'todos'], true)
         ? array_values(array_filter(array_map(
             fn ($ci): string => trim((string) $ci),
             (array) old('cis', []),
@@ -108,6 +108,12 @@
                        ya elegida, se rearma sola: si no, el combo aparece vacío y
                        parece que se perdió la selección. --}}
                   if (this.modo === 'direccion') { this.cargarDirecciones(); }
+                  if (this.modo === 'todos') { this.verFuncionarios(); }
+                  {{-- La lista la comparten «por dirección» y «todos»: al pasar de
+                       uno a otro se vuelve a pedir la del alcance nuevo. --}}
+                  this.$watch('modo', (modo, anterior) => {
+                      if (modo === 'todos' || (anterior === 'todos' && modo === 'direccion')) { this.verFuncionarios(); }
+                  });
                   {{-- Todo lo que cambia los días o las horas del permiso recalcula
                        el saldo. Los horarios elegidos a mano avisan desde su checkbox. --}}
                   {{-- El permiso personal es solo para un funcionario: varios o por
@@ -118,9 +124,14 @@
                   });
                   {{-- El personal es siempre por horas; el institucional arranca en
                        horario completo y puede pasar a por horas. --}}
-                  this.$watch('tipo', (tipo) => { this.completo = tipo !== 'personal'; });
+                  this.$watch('tipo', (tipo) => { this.completo = tipo !== 'personal' && this.modo !== 'todos'; });
+                  {{-- Para todos es siempre por horas: el día completo es un día excepcional. --}}
+                  this.$watch('modo', (modo, anterior) => {
+                      if (modo === 'todos') { this.completo = false; }
+                      else if (anterior === 'todos' && this.tipo !== 'personal') { this.completo = true; }
+                  });
                   if (this.modo !== 'uno') { this.tipo = 'institucional'; }
-                  if (this.tipo === 'personal') { this.completo = false; }
+                  if (this.tipo === 'personal' || this.modo === 'todos') { this.completo = false; }
                   ['modo', 'tipo', 'completo', 'desde', 'hasta', 'lEntra', 'lSale', 'porHorario']
                       .forEach((campo) => this.$watch(campo, () => this.consultarSaldo()));
                   this.consultarSaldo();
@@ -221,11 +232,27 @@
               get licenciables() {
                   return this.funcionarios.filter((p) => ! p.sinTurno);
               },
+              {{-- Género elegido en la lista: '' es todos. A diferencia del
+                   buscador, acota a quién se licencia (el día de la madre, por
+                   ejemplo): lo del otro género se desmarca y se oculta. --}}
+              filtroGenero: '',
+              get marcables() {
+                  return this.licenciables.filter((p) => this.filtroGenero === '' || p.genero === this.filtroGenero);
+              },
               get todosMarcados() {
-                  return this.licenciables.length > 0 && this.seleccionados.length === this.licenciables.length;
+                  return this.marcables.length > 0 && this.seleccionados.length === this.marcables.length;
               },
               alternarTodos() {
-                  this.seleccionados = this.todosMarcados ? [] : this.licenciables.map((p) => p.ci);
+                  this.seleccionados = this.todosMarcados ? [] : this.marcables.map((p) => p.ci);
+              },
+              elegirGenero() {
+                  this.seleccionados = this.marcables.map((p) => p.ci);
+              },
+              filtroLista: '',
+              coincideConFiltro(persona) {
+                  if (this.filtroGenero !== '' && persona.genero !== this.filtroGenero) { return false; }
+                  const texto = this.filtroLista.trim().toLowerCase();
+                  return texto === '' || persona.ci.toLowerCase().includes(texto) || persona.nombre.toLowerCase().includes(texto);
               },
               async cargarDirecciones() {
                   this.cargandoDirecciones = true;
@@ -253,31 +280,37 @@
                       this.cargandoDirecciones = false;
                   }
               },
+              pedidoFuncionarios: 0,
               async verFuncionarios() {
-                  if (! this.direccion) { this.funcionarios = []; this.seleccionados = []; this.errorFuncionarios = ''; return; }
+                  const todos = this.modo === 'todos';
+                  const pedido = ++this.pedidoFuncionarios;
+                  this.filtroLista = '';
+                  if (! todos && ! this.direccion) { this.funcionarios = []; this.seleccionados = []; this.errorFuncionarios = ''; this.cargandoFuncionarios = false; return; }
+                  this.funcionarios = [];
                   this.cargandoFuncionarios = true;
                   this.errorFuncionarios = '';
                   try {
-                      const params = new URLSearchParams({
-                          direccion: this.direccion,
-                          desde: this.desde,
-                          hasta: this.hasta,
-                      });
-                      if (this.unidad) { params.set('unidad', this.unidad); }
-                      const resp = await fetch(`{{ route('licencias.direccion.funcionarios') }}?${params}`, { headers: { 'Accept': 'application/json' } });
+                      const params = new URLSearchParams({ desde: this.desde, hasta: this.hasta });
+                      if (! todos) { params.set('direccion', this.direccion); }
+                      if (! todos && this.unidad) { params.set('unidad', this.unidad); }
+                      const ruta = todos ? `{{ route('licencias.todos.funcionarios') }}` : `{{ route('licencias.direccion.funcionarios') }}`;
+                      const resp = await fetch(`${ruta}?${params}`, { headers: { 'Accept': 'application/json' } });
                       const cuerpo = await resp.json().catch(() => null);
+                      {{-- Cambiar de alcance o de fechas con un pedido en vuelo: la
+                           respuesta vieja se descarta, si no pisaría la lista nueva. --}}
+                      if (pedido !== this.pedidoFuncionarios) { return; }
                       if (resp.ok) {
                           this.funcionarios = (cuerpo && cuerpo.funcionarios) || [];
                           if (this.seleccionPrevia !== null) {
                               {{-- Vuelve de un error de validación: se respeta lo que
                                    estaba marcado, cruzado contra quién sigue en la lista. --}}
                               const previa = this.seleccionPrevia;
-                              this.seleccionados = this.licenciables.map((p) => p.ci).filter((ci) => previa.includes(ci));
+                              this.seleccionados = this.marcables.map((p) => p.ci).filter((ci) => previa.includes(ci));
                               this.seleccionPrevia = null;
                           } else {
                               {{-- Cambió la lista: se marcan todos de nuevo, porque una
                                    selección de la dirección anterior ya no significa nada. --}}
-                              this.seleccionados = this.licenciables.map((p) => p.ci);
+                              this.seleccionados = this.marcables.map((p) => p.ci);
                           }
                       } else {
                           this.funcionarios = [];
@@ -285,11 +318,12 @@
                           this.errorFuncionarios = (cuerpo && cuerpo.error) || 'No se pudo traer el personal.';
                       }
                   } catch (e) {
+                      if (pedido !== this.pedidoFuncionarios) { return; }
                       this.funcionarios = [];
                       this.seleccionados = [];
                       this.errorFuncionarios = 'No se pudo traer el personal.';
                   } finally {
-                      this.cargandoFuncionarios = false;
+                      if (pedido === this.pedidoFuncionarios) { this.cargandoFuncionarios = false; }
                   }
               },
               elegirCuando(opcion) {
@@ -315,6 +349,7 @@
                       if (! this.desde || ! this.hasta || this.hasta < this.desde) { return; }
                       this.cerrar();
                       if (this.modo === 'direccion') { this.cargarDirecciones(); }
+                      if (this.modo === 'todos') { this.verFuncionarios(); }
                       this.revisarContratos();
                   }, 400);
               },
@@ -487,6 +522,10 @@
                            x-on:change="if (direcciones.length === 0) { cargarDirecciones(); }">
                     <label for="modo-direccion" style="margin: 0;">Por dirección o unidad</label>
                 </div>
+                <div class="campo check">
+                    <input type="radio" id="modo-todos" value="todos" x-model="modo">
+                    <label for="modo-todos" style="margin: 0;">Todos los funcionarios</label>
+                </div>
             </div>
 
             @error('modo') <div class="error">{{ $message }}</div> @enderror
@@ -496,7 +535,7 @@
             @error('unidad') <div class="error">{{ $message }}</div> @enderror
 
             {{-- Combo compartido por los modos «uno» y «varios». --}}
-            <div class="campo" style="position: relative;" x-show="modo !== 'direccion'" x-cloak>
+            <div class="campo" style="position: relative;" x-show="modo === 'uno' || modo === 'varios'" x-cloak>
                 <label for="combo-funcionario">
                     <span x-show="modo === 'uno'">Empleado que requiere licencia</span>
                     <span x-show="modo === 'varios'" x-cloak>Agregar funcionarios a la lista</span>
@@ -705,17 +744,34 @@
                     así que cambia si cambiás las fechas. Se licencia solo a quien además tenga
                     horario asignado en esos días, según su propio horario.
                 </p>
+            </div>
 
-                {{-- Quiénes van a quedar licenciados. El alcance anota sin elegir
-                     uno por uno, así que se muestra la lista y no solo un número. --}}
-                <div x-show="direccion" x-cloak style="margin-top: .5rem;">
+            {{-- Modo «todos»: el personal con contrato de toda la Gobernación. Solo
+                 por horas: el día completo de todos es un día excepcional. --}}
+            <div x-show="modo === 'todos'" x-cloak>
+                {{-- La selección viaja en un solo campo: con cientos de casillas el
+                     formulario se acercaría al tope de campos de PHP (`max_input_vars`). --}}
+                <input type="hidden" name="cisTodos" :value="seleccionados.join(',')" :disabled="modo !== 'todos'">
+                <p class="ayuda" style="margin-top: 0;">
+                    Se licencia por horas a todo el personal con contrato y turno asignado esos días,
+                    sin importar a qué hora sea su turno: el reporte procesado decide después a quién le
+                    afecta. Para el día completo de todo el personal usá
+                    <a href="{{ route('dias-excepcionales.index') }}">Días excepcionales</a>.
+                </p>
+            </div>
+
+            {{-- Quiénes van a quedar licenciados, por dirección o para todos. El
+                 alcance anota sin elegir uno por uno, así que se muestra la lista y
+                 no solo un número. --}}
+            <div x-show="(modo === 'direccion' && direccion) || modo === 'todos'" x-cloak style="margin-top: .5rem;">
                     <div x-show="cargandoFuncionarios" class="ayuda">Trayendo el personal con contrato…</div>
                     <div x-show="errorFuncionarios" class="aviso aviso--error" x-text="errorFuncionarios"></div>
 
                     <template x-if="! cargandoFuncionarios && ! errorFuncionarios && funcionarios.length === 0">
-                        <div class="aviso aviso--error">
-                            Ningún funcionario de esa dirección tiene contrato firmado dentro del rango.
-                        </div>
+                        <div class="aviso aviso--error"
+                             x-text="modo === 'todos'
+                                 ? 'Nadie tiene contrato dentro del rango.'
+                                 : 'Ningún funcionario de esa dirección tiene contrato firmado dentro del rango.'"></div>
                     </template>
 
                     <div x-show="! cargandoFuncionarios && funcionarios.length > 0">
@@ -728,6 +784,17 @@
                             <button type="button" class="btn btn--gris" style="padding: .3rem .55rem;"
                                     x-on:click="alternarTodos()"
                                     x-text="todosMarcados ? 'Desmarcar todos' : 'Marcar todos'"></button>
+                            {{-- Con cientos de filas hace falta encontrar rápido a quien
+                                 desmarcar. Solo oculta filas: lo marcado sigue viajando. --}}
+                            <select class="input" x-model="filtroGenero" x-on:change="elegirGenero()"
+                                    aria-label="Género" style="max-width: 11rem; margin-left: auto;">
+                                <option value="">Todos los géneros</option>
+                                <option value="femenino">Femenino</option>
+                                <option value="masculino">Masculino</option>
+                            </select>
+                            <input type="search" class="input" x-model="filtroLista"
+                                   placeholder="Buscar por CI o nombre…" autocomplete="off"
+                                   style="max-width: 18rem;">
                         </div>
 
                         <div x-show="seleccionados.length === 0" x-cloak class="aviso aviso--error">
@@ -754,19 +821,22 @@
                                         <th>CI</th>
                                         <th>Funcionario</th>
                                         <th>Cargo</th>
+                                        <th>Turno</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <template x-for="persona in funcionarios" :key="persona.ci">
                                         {{-- Quien no tiene turno queda apagado, para que resalten
                                              los que sí se licencian; la etiqueta roja conserva su color. --}}
-                                        <tr :style="persona.sinTurno ? 'color: var(--muted); background: var(--bg);' : ''">
+                                        <tr x-show="coincideConFiltro(persona)"
+                                            :style="persona.sinTurno ? 'color: var(--muted); background: var(--bg);' : ''">
                                             <td>
                                                 {{-- El `value` es el carnet, así que lo marcado viaja como
-                                                     `cis[]`. El servidor lo cruza contra el personal real de
-                                                     la dirección: la selección acota, nunca amplía. --}}
-                                                <input type="checkbox" name="cis[]" :value="persona.ci"
-                                                       x-model="seleccionados" :disabled="modo !== 'direccion' || persona.sinTurno"
+                                                     `cis[]` (o en `cisTodos`, para todos). El servidor lo
+                                                     cruza contra el personal real del alcance: la selección
+                                                     acota, nunca amplía. --}}
+                                                <input type="checkbox" :name="modo === 'direccion' ? 'cis[]' : null" :value="persona.ci"
+                                                       x-model="seleccionados" :disabled="! ['direccion', 'todos'].includes(modo) || persona.sinTurno"
                                                        :aria-label="`Licenciar a ${persona.nombre}`">
                                             </td>
                                             <td x-text="persona.ci"></td>
@@ -781,13 +851,14 @@
                                                 </div>
                                             </td>
                                             <td x-text="persona.cargo"></td>
+                                            {{-- El turno de esos días: sobre él se aplica la licencia. --}}
+                                            <td style="white-space: nowrap;" x-text="persona.turno || '—'"></td>
                                         </tr>
                                     </template>
                                 </tbody>
                             </table>
                         </div>
                     </div>
-                </div>
             </div>
         </div>
 
@@ -920,7 +991,7 @@
                 <p class="ayuda" style="margin-bottom: 0;">
                     <span x-show="tipo === 'personal'">Lo pide el funcionario para su uso (trámite, médico, asunto familiar). Es siempre por horas y cuenta contra el tope mensual de permisos.</span>
                     <span x-show="tipo === 'institucional'" x-cloak>La dispone la institución (feriado, actividad, capacitación, comisión). Puede ser de horario completo o por horas, y no cuenta contra el tope.</span>
-                    <span x-show="modo !== 'uno'" x-cloak><br>Para varios funcionarios o una dirección se anota siempre licencia institucional.</span>
+                    <span x-show="modo !== 'uno'" x-cloak><br>Para varios funcionarios, una dirección o todos se anota siempre licencia institucional.</span>
                 </p>
                 @error('tipo') <div class="error">{{ $message }}</div> @enderror
             </div>
@@ -934,11 +1005,11 @@
                 {{-- El alcance y los haberes van en la misma fila: son las dos
                      casillas del permiso. Sin tildar «Horario completo», es por horas. --}}
                 <div class="toolbar" style="gap: 1.5rem; align-items: center;">
-                    <div class="campo check" style="margin: 0;" x-show="tipo !== 'personal'" x-cloak>
+                    <div class="campo check" style="margin: 0;" x-show="tipo !== 'personal' && modo !== 'todos'" x-cloak>
                         <input type="checkbox" id="alcance-completo" x-model="completo">
                         <label for="alcance-completo" style="margin: 0;">Horario completo</label>
                     </div>
-                    <span class="pill pill--info" x-show="tipo === 'personal'">Por horas</span>
+                    <span class="pill pill--info" x-show="tipo === 'personal' || modo === 'todos'">Por horas</span>
                     <div class="campo check" style="margin: 0;">
                         <input type="checkbox" id="goceHaberes" name="goceHaberes" value="1" @checked(old('goceHaberes', 1))>
                         <label for="goceHaberes" style="margin: 0;">Con goce de haberes</label>
@@ -947,9 +1018,13 @@
                 <p class="ayuda" style="margin: .35rem 0 0;" x-show="tipo === 'personal'">
                     El permiso personal no puede ser de horario completo y cuenta contra el tope mensual de permisos.
                 </p>
-                <p class="ayuda" style="margin: .35rem 0 0;" x-show="tipo !== 'personal'" x-cloak>
+                <p class="ayuda" style="margin: .35rem 0 0;" x-show="tipo !== 'personal' && modo !== 'todos'" x-cloak>
                     Si no marcará en todo el día, dejá «Horario completo». Si llegará tarde o se irá
                     temprano, destildalo y cargá desde qué hora hasta qué hora.
+                </p>
+                <p class="ayuda" style="margin: .35rem 0 0;" x-show="modo === 'todos'" x-cloak>
+                    Para todo el personal es siempre por horas: cargá desde qué hora hasta qué hora. El día
+                    completo de todos se carga en <a href="{{ route('dias-excepcionales.index') }}">Días excepcionales</a>.
                 </p>
                 @error('tCompleto') <div class="error">{{ $message }}</div> @enderror
             </div>
@@ -1057,6 +1132,7 @@
                         :disabled="(modo === 'uno' && ! {{ $persona ? 'true' : 'false' }})
                                    || (modo === 'varios' && elegidos.length === 0)
                                    || (modo === 'direccion' && (! direccion || seleccionados.length === 0))
+                                   || (modo === 'todos' && (cargandoFuncionarios || seleccionados.length === 0))
                                    || excedeTope
                                    || sinContrato.length > 0
                                    || revisandoContratos

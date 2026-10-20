@@ -190,9 +190,49 @@ class DirectorioMamore
         ?int $unidad = null,
         bool $soloConContrato = false,
     ): Collection {
+        return $this->recorrer($direccion, $desde, $hasta, $unidad, $soloConContrato, self::PAGINAS_MAXIMAS);
+    }
+
+    /**
+     * Tope de páginas para el personal de toda la Gobernación: hoy son unos 900
+     * con contrato firmado, más los concluidos del rango. 30 páginas de 100 dan
+     * margen sin dejar abierto un recorrido sin fin.
+     */
+    private const PAGINAS_MAXIMAS_TODOS = 30;
+
+    /**
+     * El personal con contrato —firmado o concluido— que tocó el rango, de toda
+     * la Gobernación, ya normalizado. Es el alcance «todos» de la pantalla de
+     * licenciar.
+     *
+     * @return Collection<int, array<string, mixed>>
+     *
+     * @throws MamoreException
+     */
+    public function conContrato(string $desde, string $hasta): Collection
+    {
+        return $this->recorrer(null, $desde, $hasta, null, true, self::PAGINAS_MAXIMAS_TODOS);
+    }
+
+    /**
+     * Recorre la paginación de `people` hasta agotarla o llegar al tope de
+     * páginas. Sin `$direccion` no acota por dirección.
+     *
+     * @return Collection<int, array<string, mixed>>
+     *
+     * @throws MamoreException
+     */
+    private function recorrer(
+        ?int $direccion,
+        string $desde,
+        string $hasta,
+        ?int $unidad,
+        bool $soloConContrato,
+        int $paginasMaximas,
+    ): Collection {
         $personas = collect();
 
-        for ($pagina = 1; $pagina <= self::PAGINAS_MAXIMAS; $pagina++) {
+        for ($pagina = 1; $pagina <= $paginasMaximas; $pagina++) {
             $respuesta = $this->mamore->people(
                 page: $pagina,
                 limit: self::POR_PAGINA,
@@ -397,6 +437,8 @@ class DirectorioMamore
             // Cédula con su extensión, tal como Mamoré la arma («7633685 SC»).
             'ciCompleto' => trim((string) ($persona['full_ci'] ?? '')) ?: null,
             'profesion' => trim((string) ($persona['profession'] ?? '')),
+            // «femenino» o «masculino», como lo guarda Mamoré; `null` si no lo tiene.
+            'genero' => in_array($persona['gender'] ?? null, ['femenino', 'masculino'], true) ? $persona['gender'] : null,
             // En Mamoré el PIN del reloj es la misma cédula.
             'pinReloj' => $ci,
             'nacimiento' => $nacimiento?->format('d/m/Y'),

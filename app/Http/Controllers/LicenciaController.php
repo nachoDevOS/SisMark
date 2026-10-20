@@ -724,18 +724,56 @@ class LicenciaController extends Controller
             return response()->json(['error' => 'No se pudo traer el personal: '.$e->getMessage()], 502);
         }
 
-        $conTurno = array_flip($registro->conTurno(
+        return $this->listaParaMarcar($personas, $registro, $desde, $hasta);
+    }
+
+    /**
+     * El personal con contrato de **toda la Gobernación** en las fechas, para
+     * el alcance «todos»: la misma lista que por dirección, con `sinTurno`.
+     */
+    public function funcionariosConContrato(Request $request, DirectorioMamore $directorio, RegistroLicencia $registro): JsonResponse
+    {
+        $this->authorize('create', Licencia::class);
+
+        if (! $directorio->configurado()) {
+            return response()->json(['error' => 'La API de Mamoré no está configurada.'], 503);
+        }
+
+        $desde = $this->fechaDelPedido($request, 'desde') ?? now()->toDateString();
+        $hasta = $this->fechaDelPedido($request, 'hasta') ?? $desde;
+
+        try {
+            $personas = $directorio->conContrato($desde, $hasta);
+        } catch (MamoreException $e) {
+            return response()->json(['error' => 'No se pudo traer el personal: '.$e->getMessage()], 502);
+        }
+
+        return $this->listaParaMarcar($personas, $registro, $desde, $hasta);
+    }
+
+    /**
+     * La lista que la pantalla muestra para marcar a quién se licencia: el
+     * turno de cada uno esos días («08:00–16:00»), `sinTurno` en quien no
+     * tiene, y el género, para acotar la lista (el día de la madre, por ejemplo).
+     *
+     * @param  Collection<int, array<string, mixed>>  $personas
+     */
+    private function listaParaMarcar(Collection $personas, RegistroLicencia $registro, string $desde, string $hasta): JsonResponse
+    {
+        $turnos = $registro->turnos(
             $personas->pluck('ci')->map(fn (string $ci): string => trim($ci))->all(),
             Carbon::parse($desde)->startOfDay(),
             Carbon::parse($hasta)->startOfDay(),
-        ));
+        );
 
         return response()->json([
             'funcionarios' => $personas->map(fn (array $persona): array => [
                 'ci' => $persona['ci'],
                 'nombre' => $persona['nombreFormal'] ?: $persona['nombre'],
                 'cargo' => $persona['cargo'] ?: '—',
-                'sinTurno' => ! isset($conTurno[trim($persona['ci'])]),
+                'genero' => $persona['genero'],
+                'turno' => implode(' · ', $turnos[trim($persona['ci'])] ?? []),
+                'sinTurno' => ! isset($turnos[trim($persona['ci'])]),
             ])->values(),
         ]);
     }
@@ -765,6 +803,9 @@ class LicenciaController extends Controller
             $cis = match ($modo) {
                 'uno' => [trim((string) $datos['ci'])],
                 'varios' => array_map(trim(...), $datos['cis']),
+                // El personal con contrato de toda la Gobernación, acotado a los
+                // marcados en la pantalla.
+                'todos' => $this->acotarALaSeleccion($directorio->conContrato($desde->toDateString(), $hasta->toDateString()), $datos),
                 // La dirección se resuelve a carnets antes de tocar los horarios:
                 // quién la integra lo sabe Mamoré, y acá solo se licencia a quien
                 // además tenga horario asignado en el rango.
@@ -773,10 +814,10 @@ class LicenciaController extends Controller
         } catch (MamoreException $e) {
             return back()
                 ->withInput()
-                ->with('error', 'No se pudo traer el personal de la dirección desde Mamoré: '.$e->getMessage());
+                ->with('error', ($modo === 'todos' ? 'No se pudo traer el personal desde Mamoré: ' : 'No se pudo traer el personal de la dirección desde Mamoré: ').$e->getMessage());
         }
 
-        // Una dirección sin nadie con contrato no llega siquiera a buscar horarios:
+        // Un alcance sin nadie con contrato no llega siquiera a buscar horarios:
         // con la lista vacía, `horariosDelRango` no acota por carnet y licenciaría
         // a toda la Gobernación.
         if ($modo === 'direccion' && $cis === []) {
@@ -785,6 +826,12 @@ class LicenciaController extends Controller
                 ->with('error', ($datos['cis'] ?? []) === []
                     ? 'Ningún funcionario de esa dirección tiene contrato firmado dentro del rango.'
                     : 'Los funcionarios elegidos no pertenecen a esa dirección, o no tienen contrato firmado en el rango.');
+        }
+
+        if ($modo === 'todos' && $cis === []) {
+            return back()
+                ->withInput()
+                ->with('error', 'Ninguno de los funcionarios elegidos tiene contrato dentro del rango.');
         }
 
         // Los contratos de cada uno en el rango, en una sola consulta. Sirven
@@ -803,8 +850,9 @@ class LicenciaController extends Controller
         // Uno o varios funcionarios: cada uno tiene que haber tenido contrato
         // —firmado o ya concluido— en algún día de las fechas. La pantalla ya lo
         // filtra al buscar; acá se vuelve a controlar, porque el pedido puede
-        // venir armado con otras fechas. Por dirección ya lo resuelve Mamoré.
-        $sinContrato = $contratos === null || $modo === 'direccion'
+        // venir armado con otras fechas. Por dirección y para todos ya lo
+        // resuelve Mamoré.
+        $sinContrato = $contratos === null || in_array($modo, ['direccion', 'todos'], true)
             ? []
             : array_values(array_filter($cis, fn (string $ci): bool => ($contratos[$ci] ?? []) === []));
 
@@ -921,14 +969,27 @@ class LicenciaController extends Controller
      */
     private function cisDeLaDireccion(DirectorioMamore $directorio, array $datos, Carbon $desde, Carbon $hasta): array
     {
-        $deLaDireccion = $directorio
-            ->porDireccion(
-                (int) $datos['direccion'],
-                $desde->toDateString(),
-                $hasta->toDateString(),
-                isset($datos['unidad']) ? ((int) $datos['unidad'] ?: null) : null,
-                soloConContrato: true,
-            )
+        return $this->acotarALaSeleccion($directorio->porDireccion(
+            (int) $datos['direccion'],
+            $desde->toDateString(),
+            $hasta->toDateString(),
+            isset($datos['unidad']) ? ((int) $datos['unidad'] ?: null) : null,
+            soloConContrato: true,
+        ), $datos);
+    }
+
+    /**
+     * Los carnets del alcance que Mamoré resolvió, cruzados con los marcados en
+     * la pantalla (`cis`). Sin `cis` entra el alcance entero; con ellos, solo
+     * los que además están en el alcance.
+     *
+     * @param  Collection<int, array<string, mixed>>  $personas
+     * @param  array<string, mixed>  $datos
+     * @return list<string>
+     */
+    private function acotarALaSeleccion(Collection $personas, array $datos): array
+    {
+        $delAlcance = $personas
             ->pluck('ci')
             ->map(fn (string $ci): string => trim($ci))
             ->filter()
@@ -941,8 +1002,8 @@ class LicenciaController extends Controller
             ->unique();
 
         return $elegidos->isEmpty()
-            ? $deLaDireccion->all()
-            : $deLaDireccion->intersect($elegidos)->values()->all();
+            ? $delAlcance->all()
+            : $delAlcance->intersect($elegidos)->values()->all();
     }
 
     /**
@@ -956,9 +1017,11 @@ class LicenciaController extends Controller
             return 'Los horarios elegidos no pertenecen a ese funcionario.';
         }
 
-        return $modo === 'direccion'
-            ? 'Ningún funcionario con contrato de esa dirección tiene horarios asignados dentro de ese rango de fechas.'
-            : 'El funcionario no tiene ningún horario asignado dentro de ese rango de fechas.';
+        return match ($modo) {
+            'direccion' => 'Ningún funcionario con contrato de esa dirección tiene horarios asignados dentro de ese rango de fechas.',
+            'todos' => 'Ninguno de los funcionarios elegidos tiene horarios asignados dentro de ese rango de fechas.',
+            default => 'El funcionario no tiene ningún horario asignado dentro de ese rango de fechas.',
+        };
     }
 
     /**

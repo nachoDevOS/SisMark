@@ -157,6 +157,8 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     // reportes, que quien anota licencias no tiene por qué tener.
     Route::get('licencias/ajax/direcciones', [LicenciaController::class, 'direcciones'])->name('licencias.direcciones');
     Route::get('licencias/ajax/direccion-funcionarios', [LicenciaController::class, 'funcionariosDeDireccion'])->name('licencias.direccion.funcionarios');
+    // Alcance «todos»: el personal con contrato de toda la Gobernación.
+    Route::get('licencias/ajax/todos-funcionarios', [LicenciaController::class, 'funcionariosConContrato'])->name('licencias.todos.funcionarios');
     // Respaldo de la licencia (certificado, memorándum). Va contra el bucket
     // con un enlace firmado de vida corta: el archivo nunca es público.
     Route::get('licencias/{licencia}/respaldo', [LicenciaController::class, 'respaldo'])->name('licencias.respaldo');

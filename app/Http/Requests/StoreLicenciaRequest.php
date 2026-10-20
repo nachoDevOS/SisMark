@@ -21,14 +21,14 @@ class StoreLicenciaRequest extends FormRequest
     /**
      * Alcances posibles del alta.
      *
-     * Ya no existe «todos»: alcanzaba a cualquiera que tuviera un horario asignado
-     * en el rango, sin mirar si seguía contratado, y no había forma de acotarlo a
-     * una parte de la Gobernación. Lo reemplaza «direccion», que parte del
-     * personal con contrato firmado de esa dirección o unidad.
+     * «todos» parte del personal con contrato de toda la Gobernación en el
+     * rango —no de quien tenga un horario cargado, como el «todos» viejo— y es
+     * solo por horas: el día completo de todo el personal es un día
+     * excepcional, que no necesita una licencia por persona ni aprobarlas.
      *
      * @var list<string>
      */
-    public const MODOS = ['uno', 'varios', 'direccion'];
+    public const MODOS = ['uno', 'varios', 'direccion', 'todos'];
 
     public function authorize(): bool
     {
@@ -88,6 +88,15 @@ class StoreLicenciaRequest extends FormRequest
             'tCompleto' => $this->boolean('tCompleto'),
             'goceHaberes' => $this->boolean('goceHaberes'),
         ]);
+
+        // «todos» manda los marcados en un solo campo separado por comas: con
+        // cientos de casillas, una por campo se acercaría al tope de PHP
+        // (`max_input_vars`). Acá se vuelve la lista `cis` de los demás alcances.
+        if ($this->input('modo') === 'todos' && is_string($this->input('cisTodos'))) {
+            $this->merge([
+                'cis' => array_values(array_filter(array_map(trim(...), explode(',', $this->input('cisTodos'))))),
+            ]);
+        }
     }
 
     /**
@@ -119,6 +128,11 @@ class StoreLicenciaRequest extends FormRequest
             // una dirección solo se anota licencia institucional.
             if ($this->input('tipo') === Licencia::TIPO_PERSONAL && $this->input('modo') !== 'uno') {
                 $validator->errors()->add('tipo', 'El permiso personal es para un funcionario. Para varios o una dirección, elegí «Licencia institucional».');
+            }
+
+            // El día completo de todo el personal se carga como día excepcional.
+            if ($this->input('modo') === 'todos' && $this->boolean('tCompleto')) {
+                $validator->errors()->add('tCompleto', 'Para todo el personal la licencia es por horas. Si es el día completo, cargalo en «Días excepcionales».');
             }
         });
     }
