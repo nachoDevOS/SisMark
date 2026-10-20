@@ -690,8 +690,12 @@ class LicenciaController extends Controller
      *
      * La lista es informativa; quién termina licenciado lo vuelve a resolver el
      * `store` contra Mamoré, así que un envío manipulado no puede ampliarla.
+     *
+     * Cada uno viaja con `sinTurno`: tener contrato no alcanza, el alta solo
+     * licencia a quien además tenga turno asignado esos días, y conviene verlo
+     * antes de guardar y no enterarse por el conteo del resultado.
      */
-    public function funcionariosDeDireccion(Request $request, DirectorioMamore $directorio): JsonResponse
+    public function funcionariosDeDireccion(Request $request, DirectorioMamore $directorio, RegistroLicencia $registro): JsonResponse
     {
         $this->authorize('create', Licencia::class);
 
@@ -705,8 +709,8 @@ class LicenciaController extends Controller
             return response()->json(['error' => 'La API de Mamoré no está configurada.'], 503);
         }
 
-        $desde = (string) $request->query('desde', '') ?: now()->toDateString();
-        $hasta = (string) $request->query('hasta', '') ?: $desde;
+        $desde = $this->fechaDelPedido($request, 'desde') ?? now()->toDateString();
+        $hasta = $this->fechaDelPedido($request, 'hasta') ?? $desde;
 
         try {
             $personas = $directorio->porDireccion(
@@ -720,11 +724,18 @@ class LicenciaController extends Controller
             return response()->json(['error' => 'No se pudo traer el personal: '.$e->getMessage()], 502);
         }
 
+        $conTurno = array_flip($registro->conTurno(
+            $personas->pluck('ci')->map(fn (string $ci): string => trim($ci))->all(),
+            Carbon::parse($desde)->startOfDay(),
+            Carbon::parse($hasta)->startOfDay(),
+        ));
+
         return response()->json([
             'funcionarios' => $personas->map(fn (array $persona): array => [
                 'ci' => $persona['ci'],
                 'nombre' => $persona['nombreFormal'] ?: $persona['nombre'],
                 'cargo' => $persona['cargo'] ?: '—',
+                'sinTurno' => ! isset($conTurno[trim($persona['ci'])]),
             ])->values(),
         ]);
     }

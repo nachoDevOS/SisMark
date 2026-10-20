@@ -217,11 +217,15 @@
                   this.abiertoUnidad = false;
                   this.verFuncionarios();
               },
+              {{-- Sin turno esos días no hay jornada que licenciar: no se puede marcar. --}}
+              get licenciables() {
+                  return this.funcionarios.filter((p) => ! p.sinTurno);
+              },
               get todosMarcados() {
-                  return this.funcionarios.length > 0 && this.seleccionados.length === this.funcionarios.length;
+                  return this.licenciables.length > 0 && this.seleccionados.length === this.licenciables.length;
               },
               alternarTodos() {
-                  this.seleccionados = this.todosMarcados ? [] : this.funcionarios.map((p) => p.ci);
+                  this.seleccionados = this.todosMarcados ? [] : this.licenciables.map((p) => p.ci);
               },
               async cargarDirecciones() {
                   this.cargandoDirecciones = true;
@@ -268,12 +272,12 @@
                               {{-- Vuelve de un error de validación: se respeta lo que
                                    estaba marcado, cruzado contra quién sigue en la lista. --}}
                               const previa = this.seleccionPrevia;
-                              this.seleccionados = this.funcionarios.map((p) => p.ci).filter((ci) => previa.includes(ci));
+                              this.seleccionados = this.licenciables.map((p) => p.ci).filter((ci) => previa.includes(ci));
                               this.seleccionPrevia = null;
                           } else {
                               {{-- Cambió la lista: se marcan todos de nuevo, porque una
                                    selección de la dirección anterior ya no significa nada. --}}
-                              this.seleccionados = this.funcionarios.map((p) => p.ci);
+                              this.seleccionados = this.licenciables.map((p) => p.ci);
                           }
                       } else {
                           this.funcionarios = [];
@@ -754,17 +758,28 @@
                                 </thead>
                                 <tbody>
                                     <template x-for="persona in funcionarios" :key="persona.ci">
-                                        <tr>
+                                        {{-- Quien no tiene turno queda apagado, para que resalten
+                                             los que sí se licencian; la etiqueta roja conserva su color. --}}
+                                        <tr :style="persona.sinTurno ? 'color: var(--muted); background: var(--bg);' : ''">
                                             <td>
                                                 {{-- El `value` es el carnet, así que lo marcado viaja como
                                                      `cis[]`. El servidor lo cruza contra el personal real de
                                                      la dirección: la selección acota, nunca amplía. --}}
                                                 <input type="checkbox" name="cis[]" :value="persona.ci"
-                                                       x-model="seleccionados" :disabled="modo !== 'direccion'"
+                                                       x-model="seleccionados" :disabled="modo !== 'direccion' || persona.sinTurno"
                                                        :aria-label="`Licenciar a ${persona.nombre}`">
                                             </td>
                                             <td x-text="persona.ci"></td>
-                                            <td x-text="persona.nombre"></td>
+                                            <td>
+                                                <span x-text="persona.nombre"></span>
+                                                {{-- Con contrato pero sin turno esos días: al guardar
+                                                     no se le anota nada, y se avisa antes. --}}
+                                                <div x-show="persona.sinTurno" x-cloak style="margin-top: .25rem;">
+                                                    <span class="pill pill--no pill--mini" style="white-space: nowrap;">
+                                                        Sin turno asignado en estas fechas
+                                                    </span>
+                                                </div>
+                                            </td>
                                             <td x-text="persona.cargo"></td>
                                         </tr>
                                     </template>

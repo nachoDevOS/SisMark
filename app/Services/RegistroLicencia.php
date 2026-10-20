@@ -221,6 +221,28 @@ class RegistroLicencia
     }
 
     /**
+     * Los carnets que tienen turno que licenciar en el rango: algún horario
+     * asignado cuyo día de la semana cae en el rango y dentro de su vigencia.
+     * Sin eso, {@see anotar()} no genera ninguna fila para ellos.
+     *
+     * No mira contratos ni licencias ya anotadas: responde solo si hay turno.
+     *
+     * @param  list<string>  $cis
+     * @return list<string>
+     */
+    public function conTurno(array $cis, Carbon $desde, Carbon $hasta): array
+    {
+        if ($cis === []) {
+            return [];
+        }
+
+        $conteo = ['creadas' => 0, 'existentes' => 0, 'fueraDeVigencia' => 0, 'fueraDeContrato' => 0, 'sinHorario' => 0, 'diasSinHorario' => [], 'funcionarios' => 0];
+        $candidatos = $this->candidatos($this->horariosDelRango($cis, $desde, $hasta), $desde, $hasta, $conteo);
+
+        return array_values(array_unique(array_column($candidatos, 'ci')));
+    }
+
+    /**
      * Un identificador de solicitud por carnet alcanzado.
      *
      * ULID y no autoincremental: se genera en PHP antes del `insert()` masivo,

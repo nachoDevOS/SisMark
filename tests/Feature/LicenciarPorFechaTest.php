@@ -165,3 +165,41 @@ test('con turno pero fuera del contrato no se registra nada', function (): void 
 
     expect(Licencia::count())->toBe(0);
 });
+
+test('la lista de la dirección marca a quien no tiene turno en las fechas', function (): void {
+    $this->getJson(route('licencias.direccion.funcionarios', ['direccion' => 5, 'desde' => '2026-10-08', 'hasta' => '2026-10-08']))
+        ->assertOk()
+        ->assertJsonPath('funcionarios.0.ci', '111')
+        ->assertJsonPath('funcionarios.0.sinTurno', true);
+});
+
+test('la lista de la dirección no marca a quien tiene turno en las fechas', function (): void {
+    // 08/10/2026 es jueves (5 en la convención del SIA).
+    AsignacionHorario::factory()->create([
+        'ci' => '111', 'horario_id' => horario(5)->id,
+        'desde' => '2026-01-01', 'hasta' => '2026-12-31',
+    ]);
+
+    $this->getJson(route('licencias.direccion.funcionarios', ['direccion' => 5, 'desde' => '2026-10-08', 'hasta' => '2026-10-08']))
+        ->assertOk()
+        ->assertJsonPath('funcionarios.0.sinTurno', false);
+});
+
+test('un turno de otro día de la semana no cuenta como turno en las fechas', function (): void {
+    // Turno solo los lunes (2); el 08/10/2026 es jueves.
+    AsignacionHorario::factory()->create([
+        'ci' => '111', 'horario_id' => horario(2)->id,
+        'desde' => '2026-01-01', 'hasta' => '2026-12-31',
+    ]);
+
+    $this->getJson(route('licencias.direccion.funcionarios', ['direccion' => 5, 'desde' => '2026-10-08', 'hasta' => '2026-10-08']))
+        ->assertOk()
+        ->assertJsonPath('funcionarios.0.sinTurno', true);
+});
+
+test('en la lista de la dirección no se puede marcar a quien no tiene turno', function (): void {
+    $this->get(route('licencias.create'))
+        ->assertOk()
+        ->assertSee('this.funcionarios.filter((p) => ! p.sinTurno)', false)
+        ->assertSee(":disabled=\"modo !== 'direccion' || persona.sinTurno\"", false);
+});
