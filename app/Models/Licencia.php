@@ -183,6 +183,15 @@ class Licencia extends Model
     }
 
     /**
+     * Quién dio el alta, cuando la anotó un usuario de SisMark. Lo pedido desde
+     * Mamoré y lo migrado del SIA no lo tienen.
+     */
+    public function registrador(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'registerUser_id');
+    }
+
+    /**
      * Quién de Recursos Humanos resolvió la solicitud.
      */
     public function revisor(): BelongsTo

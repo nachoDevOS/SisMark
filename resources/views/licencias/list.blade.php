@@ -52,6 +52,12 @@
                     $hasta = $datos ? \Illuminate\Support\Carbon::parse($datos->hasta) : $desde;
                     $dias = $datos->dias ?? 1;
                     $unSoloDia = $dias <= 1;
+                    // Para el detalle desplegable. Lo migrado del SIA trae muchas
+                    // veces el pedido sin hora: ahí va solo la fecha, no un «00:00».
+                    $horario = $licencia->horario;
+                    $pedido = $licencia->fechaPedido ?? $licencia->created_at;
+                    $registradoPor = $licencia->registrador?->name
+                        ?: ($licencia->usuario ?: ($licencia->origen === \App\Models\Licencia::ORIGEN_MAMORE ? 'El funcionario, desde Mamoré' : null));
                 @endphp
                 <tr>
                     @if ($lote)
@@ -166,6 +172,17 @@
                         @endif
                     </td>
                     <td class="acciones">
+                        {{-- Despliega la fila de detalle que va debajo. Con un
+                             manejador en línea porque la tabla llega por fetch e
+                             `innerHTML`, que no ejecuta scripts. --}}
+                        <button type="button" class="btn-icon btn-icon--gris licencia-desplegar"
+                                title="Ver más información" aria-label="Ver más información" aria-expanded="false"
+                                onclick="const detalle = this.closest('tr').nextElementSibling;
+                                         detalle.hidden = ! detalle.hidden;
+                                         this.setAttribute('aria-expanded', String(! detalle.hidden));
+                                         this.querySelector('svg').style.transform = detalle.hidden ? '' : 'rotate(180deg)';">
+                            <x-heroicon-o-chevron-down style="transition: transform .15s;" />
+                        </button>
                         @can('view', $licencia)
                             <a href="{{ route('licencias.show', $licencia) }}" class="btn-icon btn-icon--gris"
                                title="Ver solicitud" aria-label="Ver solicitud"><x-heroicon-o-eye /></a>
@@ -183,6 +200,58 @@
                                               ? 'Se elimina la licencia del '.$desde?->format('d/m/Y').'.'
                                               : 'Se eliminan los '.$dias.' días de esta solicitud ('.$desde?->format('d/m/Y').' al '.$hasta?->format('d/m/Y').').'" />
                         @endif
+                    </td>
+                </tr>
+                {{-- Detalle de la solicitud: se despliega con el botón de la fila. --}}
+                <tr class="licencia-detalle" hidden>
+                    <td colspan="{{ $lote ? 11 : 10 }}" style="background: var(--bg);">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; padding: .25rem .5rem;">
+                            <div>
+                                <h4 style="margin: 0 0 .4rem;">Registro</h4>
+                                <dl class="datos" style="margin: 0;">
+                                    <div><dt>Registrado por</dt><dd>{{ $registradoPor ?: '—' }}</dd></div>
+                                    <div><dt>Fecha y hora del registro</dt>
+                                        <dd>{{ $pedido ? $pedido->format($pedido->format('H:i:s') === '00:00:00' ? 'd/m/Y' : 'd/m/Y H:i') : '—' }}</dd></div>
+                                    <div><dt>Origen</dt><dd>{{ $licencia->origen_etiqueta }}</dd></div>                                </dl>
+                            </div>
+                            <div>
+                                <h4 style="margin: 0 0 .4rem;">Licencia</h4>
+                                <dl class="datos" style="margin: 0;">
+                                    <div><dt>Período</dt>
+                                        <dd>{{ $desde?->format('d/m/Y') }}{{ $unSoloDia ? '' : ' al '.$hasta?->format('d/m/Y') }} · {{ $dias }} día(s)</dd></div>
+                                    <div><dt>Horario licenciado</dt>
+                                        <dd>
+                                            @if ($horario)
+                                                {{ $horario->nombreHorario }} ({{ $horario->hEntrada?->format('H:i') ?? '—' }} – {{ $horario->hSalida?->format('H:i') ?? '—' }})
+                                            @else
+                                                —
+                                            @endif
+                                        </dd></div>
+                                    <div><dt>Alcance</dt>
+                                        <dd>{{ $licencia->tCompleto ? 'Horario completo' : 'De '.($licencia->lEntra?->format('H:i') ?? '—').' a '.($licencia->lSale?->format('H:i') ?? '—') }}</dd></div>
+                                    <div><dt>Haberes</dt><dd>{{ $licencia->goceHaberes ? 'Con goce de haberes' : 'Sin goce de haberes' }}</dd></div>
+                                    <div><dt>Tipo</dt><dd>{{ $licencia->tipo_etiqueta }}</dd></div>
+                                    <div><dt>Motivo</dt><dd>{{ $licencia->motivo ?: '—' }}</dd></div>
+                                    <div><dt>Respaldo</dt>
+                                        <dd>
+                                            @if ($licencia->adjunto)
+                                                <a href="{{ route('licencias.respaldo', $licencia) }}" target="_blank" rel="noopener">{{ $licencia->adjuntoNombre ?: 'Ver respaldo' }}</a>
+                                            @else
+                                                Sin respaldo
+                                            @endif
+                                        </dd></div>
+                                </dl>
+                            </div>
+                            <div>
+                                <h4 style="margin: 0 0 .4rem;">Revisión</h4>
+                                <dl class="datos" style="margin: 0;">
+                                    <div><dt>Estado</dt><dd>{{ ($datos->estados ?? 1) > 1 ? 'Mixto (días resueltos de distinta manera)' : ($licencia->estado ?: '—') }}</dd></div>
+                                    <div><dt>Revisado por</dt><dd>{{ $licencia->revisor?->name ?? ($licencia->esPendiente ? 'Todavía sin revisar' : '—') }}</dd></div>
+                                    <div><dt>Fecha y hora de la revisión</dt><dd>{{ $licencia->revisadoEn?->format('d/m/Y H:i') ?? '—' }}</dd></div>
+                                    <div><dt>Observación</dt><dd>{{ $licencia->observacion ?: '—' }}</dd></div>
+                                </dl>
+                            </div>
+                        </div>
                     </td>
                 </tr>
             @empty

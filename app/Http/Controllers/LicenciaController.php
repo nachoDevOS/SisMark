@@ -16,6 +16,7 @@ use App\Services\ResolutorNombres;
 use App\Services\RespaldoDocumento;
 use App\Services\TopePermisos;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -80,6 +81,12 @@ class LicenciaController extends Controller
         // Hasta qué día llega cada una y cuántos días abarca. Solo de las
         // solicitudes de esta página, así que es una consulta chica por índice.
         $resumen = Licencia::resumenDe($licencias->getCollection()->map->clave_agrupadora);
+
+        // Para el detalle desplegable de cada fila: horario, quién la registró y
+        // quién la resolvió, en tres consultas para toda la página.
+        // `paginarPorSolicitud` arma una colección común: se envuelven las mismas
+        // filas en una de Eloquent para poder cargarles las relaciones.
+        (new EloquentCollection($licencias->items()))->load(['horario', 'registrador', 'revisor']);
 
         // La columna «Funcionario» (nombre y cargo) sale de Mamoré y, si el CI no
         // está ahí, de la base local (App\Services\ResolutorNombres).
