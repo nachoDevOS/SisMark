@@ -99,3 +99,69 @@ test('en un rango largo solo se licencian los días que cubre el contrato', func
     expect(Licencia::where('ci', '111')->count())->toBe(11)
         ->and(Licencia::where('ci', '111')->max('fecha'))->toStartWith('2026-10-15');
 });
+
+test('con contrato y turno asignado la licencia se registra pendiente', function (): void {
+    // 08/10/2026 es jueves (5 en la convención del SIA).
+    AsignacionHorario::factory()->create([
+        'ci' => '111', 'horario_id' => horario(5)->id,
+        'desde' => '2026-01-01', 'hasta' => '2026-12-31',
+    ]);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno', 'ci' => '111',
+        'desde' => '2026-10-08', 'hasta' => '2026-10-08',
+        'tipo' => Licencia::TIPO_INSTITUCIONAL, 'tCompleto' => 1, 'goceHaberes' => 1, 'motivo' => 'Comisión',
+    ])->assertSessionHas('estado', fn (string $mensaje): bool => str_contains($mensaje, '1 licencia(s) anotada(s)'));
+
+    $licencia = Licencia::sole();
+
+    expect($licencia->ci)->toBe('111')
+        ->and($licencia->fecha->toDateString())->toBe('2026-10-08')
+        ->and($licencia->estado)->toBe(Licencia::PENDIENTE);
+});
+
+test('con contrato pero sin turno asignado no se registra nada', function (): void {
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno', 'ci' => '111',
+        'desde' => '2026-10-08', 'hasta' => '2026-10-08',
+        'tipo' => Licencia::TIPO_INSTITUCIONAL, 'tCompleto' => 1, 'goceHaberes' => 1, 'motivo' => 'Comisión',
+    ])->assertSessionHas('error', 'El funcionario no tiene ningún horario asignado dentro de ese rango de fechas.');
+
+    expect(Licencia::count())->toBe(0);
+});
+
+test('con turno solo algunos días se registran esos y se avisa cuáles quedaron afuera', function (): void {
+    // Turno solo los lunes (2); el rango va del lunes 05/10 al miércoles 07/10.
+    AsignacionHorario::factory()->create([
+        'ci' => '111', 'horario_id' => horario(2)->id,
+        'desde' => '2026-01-01', 'hasta' => '2026-12-31',
+    ]);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno', 'ci' => '111',
+        'desde' => '2026-10-05', 'hasta' => '2026-10-07',
+        'tipo' => Licencia::TIPO_INSTITUCIONAL, 'tCompleto' => 1, 'goceHaberes' => 1, 'motivo' => 'Comisión',
+    ])->assertSessionHas('estado', fn (string $mensaje): bool => str_contains($mensaje, '1 licencia(s) anotada(s)')
+        && str_contains($mensaje, 'sin horario asignado el')
+        && str_contains($mensaje, '06/10')
+        && str_contains($mensaje, '07/10'));
+
+    expect(Licencia::pluck('fecha')->map->toDateString()->all())->toBe(['2026-10-05']);
+});
+
+test('con turno pero fuera del contrato no se registra nada', function (): void {
+    // 111 tuvo contrato hasta el 15/10: el lunes 19/10 ya no.
+    AsignacionHorario::factory()->create([
+        'ci' => '111', 'horario_id' => horario(2)->id,
+        'desde' => '2026-01-01', 'hasta' => '2026-12-31',
+    ]);
+
+    $this->post(route('licencias.store'), [
+        'modo' => 'uno', 'ci' => '111',
+        'desde' => '2026-10-19', 'hasta' => '2026-10-19',
+        'tipo' => Licencia::TIPO_INSTITUCIONAL, 'tCompleto' => 1, 'goceHaberes' => 1, 'motivo' => 'Comisión',
+    ])->assertSessionHas('error', fn (string $mensaje): bool => str_contains($mensaje, 'No se anotó ninguna licencia')
+        && str_contains($mensaje, '1 día(s) fuera del contrato no se anotaron'));
+
+    expect(Licencia::count())->toBe(0);
+});
