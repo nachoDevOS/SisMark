@@ -1,9 +1,15 @@
 # =============================================================================
-# SisMark — imagen de producción (Laravel 13 + PHP 8.3 sobre NGINX Unit)
+# SisMark — imagen de producción (Laravel 13 + PHP 8.3 sobre FrankenPHP)
 #
 # Todo en un solo Dockerfile: no hace falta docker compose. La imagen levanta
-# la aplicación completa en un único proceso (`unitd`), que sirve los estáticos
-# de `public/` y ejecuta PHP sin necesidad de nginx + php-fpm + supervisor.
+# la aplicación completa en un único proceso (`frankenphp`, que es Caddy con
+# PHP adentro), que sirve los estáticos de `public/` y ejecuta PHP sin
+# necesidad de nginx + php-fpm + supervisor.
+#
+# Hasta octubre de 2026 corría sobre NGINX Unit. Unit se archivó en octubre de
+# 2025 y su imagen quedó congelada en PHP 8.3.26, sin los parches de seguridad
+# posteriores (entre ellos los de 8.3.36: ejecución remota de código sin
+# autenticación). FrankenPHP hace lo mismo con el mismo esquema de un proceso.
 #
 # Incluye el driver de SQL Server (`pdo_sqlsrv` + msodbcsql18) para poder
 # correr los comandos `sia:migrar-*` desde el propio contenedor, que es como se
@@ -27,7 +33,16 @@
 # -----------------------------------------------------------------------------
 # Etapa 1 — Aplicación
 # -----------------------------------------------------------------------------
-FROM unit:1.34.2-php8.3
+# Versión exacta: PHP 8.3.36 sobre Debian 12 (bookworm), el mismo Debian que
+# usaba la imagen de Unit. Importa por el driver de SQL Server (msodbcsql18 sale
+# del repositorio de Microsoft para Debian 12) y por el TLS antiguo del SIA.
+# Para tomar un parche nuevo de PHP se cambia este tag y el mínimo de abajo.
+FROM dunglas/frankenphp:1.13.2-php8.3.36-bookworm
+
+# La construcción falla si el PHP de la imagen es anterior a 8.3.36: nunca se
+# despliega, por error, un PHP con las fallas críticas que corrige esa versión.
+RUN php -r 'exit(version_compare(PHP_VERSION, "8.3.36", ">=") ? 0 : 1);' \
+    || (echo "PHP $(php -r 'echo PHP_VERSION;') es anterior a 8.3.36" && exit 1)
 
 # Hora de Bolivia: los relojes biométricos guardan en hora local y el
 # procesador de asistencia compara marcas contra horarios sin zona horaria.
@@ -177,34 +192,28 @@ RUN composer dump-autoload --no-dev --optimize
 RUN rm -f public/hot public/fonts-manifest.dev.json
 
 # --- Permisos ----------------------------------------------------------------
-# Unit corre los procesos de PHP como el usuario `unit` (uid 999), así que es
-# quien tiene que poder escribir en storage y en la caché de Blade.
+# FrankenPHP corre como `www-data` (no como root: el entrypoint le baja los
+# privilegios al final), así que es quien tiene que poder escribir en storage y
+# en la caché de Blade, y en los directorios de datos de Caddy.
+#
+# Sin capacidades: el puerto 8000 no las necesita, y así arranca igual si el
+# orquestador pone `no-new-privileges`.
 RUN mkdir -p storage/framework/cache/data storage/framework/sessions \
              storage/framework/views storage/logs storage/app/public bootstrap/cache \
-    && chown -R unit:unit storage bootstrap/cache \
-    && chmod -R 775 storage bootstrap/cache
+             /data/caddy /config/caddy \
+    && chown -R www-data:www-data storage bootstrap/cache /data/caddy /config/caddy \
+    && chmod -R 775 storage bootstrap/cache \
+    && (setcap -r /usr/local/bin/frankenphp 2>/dev/null || true)
 
 # Enlace de las fotos de perfil. Se crea acá y no en el arranque porque
 # `public/` es de root y el proceso de PHP no puede escribir ahí.
 RUN ln -sf /var/www/html/storage/app/public /var/www/html/public/storage
 
-# --- Configuración de Unit ---------------------------------------------------
-# El entrypoint de la imagen aplica los .json de este directorio en el primer
-# arranque. Como Unit valida el esquema y rechaza cualquier clave que no
-# conozca —incluidas las de comentario tipo "//"—, el archivo va sin
-# anotaciones y lo que hace se explica acá:
-#
-#   listeners."*:8000".forwarded  El proxy de adelante (Traefik en Coolify)
-#       termina el HTTPS. Sin esto Unit ve la petición como http, Laravel arma
-#       las URLs en http y el navegador bloquea los AJAX de los listados por
-#       contenido mixto. Se confía solo en rangos privados, nunca en internet.
-#   routes.sismark  Lo que exista como archivo en public/ lo sirve Unit
-#       directo; el resto cae en index.php. La excepción de /index.php impide
-#       pedir el front controller como archivo estático.
-#   applications.sismark.processes  Arranca con 2 procesos y crece hasta 16:
-#       un reporte procesado o la lectura en vivo de un equipo pueden tardar, y
-#       no conviene que una consulta lenta deje la aplicación sin procesos.
-COPY docker/unit.json /docker-entrypoint.d/unit.json
+# --- Configuración del servidor ----------------------------------------------
+# docker/Caddyfile: puerto 8000, estáticos de public/ y el resto a index.php,
+# de 2 a 16 hilos de PHP y X-Forwarded-* solo desde rangos privados. Lo explica
+# el propio archivo.
+COPY docker/Caddyfile /etc/frankenphp/Caddyfile
 
 # --- Arranque ----------------------------------------------------------------
 COPY docker/entrypoint.sh /usr/local/bin/sismark-entrypoint
@@ -223,7 +232,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=180s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/up || exit 1
 
-# El entrypoint propio prepara la base y las cachés, y después le cede el
-# control al entrypoint de Unit, que es quien aplica /docker-entrypoint.d/.
+# El entrypoint propio prepara la base y las cachés, y después levanta
+# FrankenPHP como `www-data`.
 ENTRYPOINT ["sismark-entrypoint"]
-CMD ["unitd", "--no-daemon", "--control", "unix:/var/run/control.unit.sock"]
+CMD ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]

@@ -221,9 +221,17 @@ El sistema se empaqueta en **una sola imagen**, construida con el `Dockerfile`
 de la raíz. No hace falta docker compose ni instalar nada en el servidor más
 allá de Docker.
 
-La imagen corre sobre **NGINX Unit**, que en un único proceso sirve los
-estáticos de `public/` y ejecuta PHP: no hay nginx + php-fpm + supervisor que
-configurar por separado.
+La imagen corre sobre **FrankenPHP** (Caddy con PHP adentro), que en un único
+proceso sirve los estáticos de `public/` y ejecuta PHP: no hay nginx + php-fpm +
+supervisor que configurar por separado. La configuración está en
+`docker/Caddyfile`.
+
+La versión de PHP va fija en el `FROM` del `Dockerfile` (hoy **8.3.36**, sobre
+Debian 12) y la construcción falla si la imagen trae una anterior. Para tomar un
+parche nuevo de PHP se cambian el tag y ese mínimo, y se vuelve a construir.
+
+> Hasta octubre de 2026 la imagen usaba NGINX Unit. Unit se archivó en octubre
+> de 2025 y su imagen quedó en PHP 8.3.26, sin parches de seguridad.
 
 ### Las tres piezas
 
@@ -282,15 +290,15 @@ docker run -d --name sismark-devices --restart unless-stopped \
    alguna, se detiene diciendo cuál.
 2. Espera a que MySQL acepte conexiones (hasta 2 minutos).
 3. Cachea configuración, rutas y vistas.
-4. Le cede el control a NGINX Unit.
+4. Levanta FrankenPHP como `www-data` (sin privilegios de root).
 
 **No corre migraciones ni seeders.** El sistema está en producción: un redeploy
 nunca escribe en la base por su cuenta; lo que haga falta se corre a mano,
 cuando se decide (ver «Al actualizar versión»).
 
-> El paso 3 no es opcional: **Unit no le pasa el entorno del contenedor a los
-> procesos de PHP**, así que la aplicación funciona con lo que quedó en
-> `bootstrap/cache/config.php`. Por eso el arranque siempre lo regenera.
+> El paso 3 no es opcional: la aplicación funciona con lo que quedó en
+> `bootstrap/cache/config.php`, y las variables del contenedor pueden haber
+> cambiado desde la última vez. Por eso el arranque siempre lo regenera.
 
 En Coolify, la ruta de salud es `/up` y el puerto a exponer es el 8000.
 

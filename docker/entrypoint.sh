@@ -2,9 +2,8 @@
 # =============================================================================
 # Arranque del contenedor de SisMark.
 #
-# Deja la aplicación lista y después le cede el control al entrypoint de NGINX
-# Unit, que es quien aplica la configuración de /docker-entrypoint.d/ y levanta
-# `unitd`.
+# Deja la aplicación lista y después levanta FrankenPHP (docker/Caddyfile)
+# como `www-data`.
 # =============================================================================
 set -e
 
@@ -16,7 +15,7 @@ cd /var/www/html
 # listo: si no, `docker run --rm sismark php artisan key:generate --show`
 # —el comando que genera la APP_KEY— moriría por no tener APP_KEY.
 case "$1" in
-    unitd|unitd-debug) ;;
+    frankenphp) ;;
     *)
         exec "$@"
         ;;
@@ -81,7 +80,7 @@ echo "[sismark] MySQL responde."
 
 # --- 3. Permisos -------------------------------------------------------------
 # `storage` suele venir de un volumen: el dueño lo pone Docker, no la imagen.
-chown -R unit:unit storage bootstrap/cache
+chown -R www-data:www-data storage bootstrap/cache
 chmod -R 775 storage bootstrap/cache
 
 # --- Migraciones y seeders: NO se corren en el arranque ----------------------
@@ -158,13 +157,13 @@ if [ "${devices}" = "true" ]; then
     device_log=/var/www/html/storage/logs/device-service.log
 
     : > "${device_log}"
-    chown unit:unit "${device_log}"
+    chown www-data:www-data "${device_log}"
 
     echo "[sismark] Arrancando microservicio de biométricos en ${device_bind}:${device_port}…"
 
     # `su -p` conserva el entorno: el microservicio lee DEVICE_SERVICE_TOKEN y
     # sus timeouts de las variables del proceso.
-    su -p -s /bin/sh unit -c \
+    su -p -s /bin/sh www-data -c \
         "exec /opt/device-venv/bin/python -m uvicorn main:app \
              --app-dir /srv/device-service \
              --host '${device_bind}' --port '${device_port}'" \
@@ -172,7 +171,7 @@ if [ "${devices}" = "true" ]; then
 
     # Esperar a que conteste /health (no exige token) antes de seguir: sin esto,
     # el primer clic en «Probar conexión» tras un despliegue puede caer en el
-    # hueco entre que Unit acepta peticiones y uvicorn terminó de levantar, y el
+    # hueco entre que FrankenPHP acepta peticiones y uvicorn terminó de levantar, y el
     # usuario ve «no se pudo contactar al microservicio» sin que nada esté mal.
     intentos=0
     until curl -fsS "http://127.0.0.1:${device_port}/health" >/dev/null 2>&1; do
@@ -204,7 +203,7 @@ fi
 # no hay crontab del host que dispare `schedule:run`, así que el planificador
 # tiene que vivir acá adentro.
 #
-# Corre como `unit` —el mismo usuario que el PHP de Unit— para que los logs y
+# Corre como `www-data` —el mismo usuario que el PHP de FrankenPHP— para que los logs y
 # las cachés que escriba queden con el dueño correcto. Igual que el
 # microservicio, queda en segundo plano colgando del PID 1 y no se reinicia
 # solo: si se cae, se reinicia el contenedor.
@@ -216,20 +215,21 @@ if [ "${SISMARK_SCHEDULER:-true}" = "true" ]; then
     scheduler_log=/var/www/html/storage/logs/scheduler.log
 
     : > "${scheduler_log}"
-    chown unit:unit "${scheduler_log}"
+    chown www-data:www-data "${scheduler_log}"
 
     echo "[sismark] Arrancando el planificador de tareas (sincronización automática de equipos)…"
 
-    su -p -s /bin/sh unit -c \
+    su -p -s /bin/sh www-data -c \
         "exec php /var/www/html/artisan schedule:work" \
         >> "${scheduler_log}" 2>&1 &
 else
     echo "[sismark] Planificador apagado (SISMARK_SCHEDULER=false): la sincronización automática de equipos no va a correr."
 fi
 
-# Las cachés se escribieron como root: se devuelven al usuario de Unit.
-chown -R unit:unit storage bootstrap/cache
+# Las cachés se escribieron como root: se devuelven al usuario de FrankenPHP.
+chown -R www-data:www-data storage bootstrap/cache
 
-echo "[sismark] Listo. Cediendo el control a NGINX Unit."
+echo "[sismark] Listo. Levantando FrankenPHP (PHP $(php -r 'echo PHP_VERSION;'))."
 
-exec /usr/local/bin/docker-entrypoint.sh "$@"
+# Sin privilegios de root: el servidor web corre como `www-data`.
+exec setpriv --reuid=www-data --regid=www-data --init-groups "$@"

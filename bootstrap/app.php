@@ -53,13 +53,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // Los invitados van al login propio del sitio (routes/web.php).
         $middleware->redirectGuestsTo(fn () => route('login'));
 
-        // El sitio se publica detrás de un túnel local (cloudflared, ngrok):
-        // el túnel corre en la misma máquina y llega por loopback, así que
-        // solo se confía en esa IP. Sin esto Laravel no ve el
-        // `X-Forwarded-Proto: https` del túnel y arma las URLs en http, y el
-        // navegador bloquea las llamadas AJAX de los listados por contenido
-        // mixto.
-        $middleware->trustProxies(at: ['127.0.0.1', '::1']);
+        // El HTTPS lo termina quien está adelante: un túnel local (cloudflared,
+        // ngrok) en desarrollo, que llega por loopback, o Traefik en Coolify,
+        // que llega desde la red privada de Docker. Se confía solo en esos
+        // orígenes, nunca en internet. Sin esto Laravel no ve el
+        // `X-Forwarded-Proto: https` y arma las URLs en http, y el navegador
+        // bloquea las llamadas AJAX de los listados por contenido mixto.
+        //
+        // Los rangos privados son los mismos en los que confiaba NGINX Unit
+        // (su bloque `forwarded`); con FrankenPHP la decisión es de Laravel.
+        $middleware->trustProxies(at: [
+            '127.0.0.1', '::1',
+            '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) use ($esSegundoPlano): void {
         // Ojo: este callback **reemplaza** al `expectsJson()` que Laravel usa

@@ -1,0 +1,44 @@
+# =============================================================================
+# FrankenPHP (Caddy + PHP en un solo proceso) — configuración de SisMark.
+#
+# Reemplaza a docker/unit.json (NGINX Unit, archivado en octubre de 2025 y sin
+# parches). Hace lo mismo que hacía Unit:
+#
+#   - Escucha en :8000 por http: el HTTPS lo termina el proxy de adelante
+#     (Traefik en Coolify). `auto_https off` para que Caddy no intente sacar
+#     certificados por su cuenta.
+#   - Lo que exista como archivo en public/ se sirve directo; el resto cae en
+#     index.php (`php_server`).
+#   - Hilos de PHP: arranca con 2 y crece hasta 16, como los procesos de Unit:
+#     un reporte procesado o la lectura en vivo de un reloj pueden tardar, y una
+#     consulta lenta no tiene que dejar a los demás esperando.
+#   - Confía en las cabeceras X-Forwarded-* solo desde rangos privados (la red
+#     de Docker), nunca desde internet. Laravel hace lo mismo en
+#     bootstrap/app.php (`trustProxies`): es quien arma las URL en https.
+#   - Log de accesos a stdout.
+# =============================================================================
+{
+	admin off
+	auto_https off
+
+	frankenphp {
+		num_threads 2
+		max_threads 16
+	}
+
+	servers {
+		trusted_proxies static private_ranges
+		client_ip_headers X-Forwarded-For
+	}
+}
+
+:8000 {
+	root * /var/www/html/public
+	encode zstd br gzip
+
+	log {
+		output stdout
+	}
+
+	php_server
+}
