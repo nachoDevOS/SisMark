@@ -125,6 +125,13 @@ class AsignacionTurnoController extends Controller
 
         $datos = $request->validated();
         $ci = trim((string) $datos['ci']);
+        $observacion = trim((string) ($datos['observacion'] ?? ''));
+
+        // Que quede a la vista que el turno se cargó después de terminado el
+        // contrato, y no en su momento.
+        if ($request->esRegularizacion()) {
+            $observacion = trim('Regularización. '.$observacion);
+        }
 
         $this->asignador->asignar(
             $ci,
@@ -132,10 +139,12 @@ class AsignacionTurnoController extends Controller
             Carbon::parse($datos['desde']),
             Carbon::parse($datos['hasta']),
             isset($datos['contrato_id']) ? (int) $datos['contrato_id'] : null,
-            $datos['observacion'] ?? null,
+            $observacion === '' ? null : $observacion,
         );
 
-        return redirect($this->destino($request, $ci))->with('estado', 'Turno asignado correctamente.');
+        return redirect($this->destino($request, $ci))->with('estado', $request->esRegularizacion()
+            ? 'Turno regularizado correctamente.'
+            : 'Turno asignado correctamente.');
     }
 
     /**
@@ -198,8 +207,9 @@ class AsignacionTurnoController extends Controller
 
     /**
      * Lo que hay que ver antes de asignarle un turno a alguien: sus datos, sus
-     * contratos firmados vigentes (a uno de ellos se ata el turno) y los turnos
-     * que ya tiene, vigentes o por empezar.
+     * contratos firmados o concluidos (a uno de ellos se ata el turno; los que ya
+     * terminaron vienen con `regularizar`) y los turnos que ya tiene, vigentes o
+     * por empezar.
      *
      * `mamore: false` es «Mamoré no está configurado»: ahí se asigna sin
      * contrato, como antes. Si está configurado y no responde, los contratos
@@ -222,13 +232,48 @@ class AsignacionTurnoController extends Controller
             $errorContratos = 'No se pudieron consultar los contratos en Mamoré: '.$e->getMessage();
         }
 
-        $turnoPorContrato = AsignacionTurno::query()
+        $turnosPorContrato = AsignacionTurno::query()
             ->with('turno')
             ->whereIn('contrato_id', collect($asignables ?? [])->pluck('id'))
             ->get()
-            ->keyBy('contrato_id');
+            ->groupBy('contrato_id');
+
+        // De cada contrato se muestra el último turno: es el que sigue en pie
+        // o el que se concluyó antes de cambiar de jornada.
+        $ultimoTurno = fn (int $contratoId): ?AsignacionTurno => $turnosPorContrato->get($contratoId)
+            ?->sortByDesc(fn (AsignacionTurno $asignacion): int => $asignacion->hasta->getTimestamp())
+            ->first();
 
         $fecha = fn (?Carbon $valor): ?string => $valor?->format('d/m/Y');
+
+        // Qué falta controlar de cada contrato terminado: lo cubierto entero no
+        // se regulariza y, si falta en parte, se ofrece el tramo sin control más
+        // antiguo. Es la misma cuenta que valida el request; los horarios se
+        // piden una sola vez para todos los contratos.
+        $asignados = $this->asignador->periodosAsignados($ci);
+
+        // Al vigente con turno se le ofrece lo que queda después de su último
+        // turno; al vigente sin turno, nada (se asigna como siempre).
+        $cobertura = function (array $contrato) use ($asignados, $fecha, $turnosPorContrato): ?array {
+            $cobertura = $contrato['regularizar']
+                ? $this->asignador->cobertura($asignados, $contrato['desde'], $contrato['hasta'])
+                : $this->asignador->coberturaDelVigente($asignados, $turnosPorContrato->get($contrato['id'], collect()), $contrato['hasta']);
+
+            if ($cobertura === null) {
+                return null;
+            }
+
+            return [
+                'estado' => $cobertura['estado'],
+                // La frase habla de regularizar: al vigente la arma la vista.
+                'motivo' => $contrato['regularizar'] ? $this->asignador->motivoCobertura($cobertura) : null,
+                'libreDesde' => $cobertura['libreDesde']?->toDateString(),
+                'libreDesdeTexto' => $fecha($cobertura['libreDesde']),
+                'libreHasta' => $cobertura['libreHasta']?->toDateString(),
+                'libreHastaTexto' => $fecha($cobertura['libreHasta']),
+                'tramosPendientes' => $cobertura['tramosPendientes'],
+            ];
+        };
 
         return response()->json([
             'persona' => $persona === null ? null : [
@@ -252,7 +297,9 @@ class AsignacionTurnoController extends Controller
                 'desdeTexto' => $fecha($contrato['desde']),
                 'hastaTexto' => $fecha($contrato['hasta']),
                 'empezo' => $contrato['desde']->lessThanOrEqualTo(today()),
-                'turno' => ($asignado = $turnoPorContrato->get($contrato['id'])) === null ? null : [
+                'regularizar' => $contrato['regularizar'],
+                'cobertura' => $cobertura($contrato),
+                'turno' => ($asignado = $ultimoTurno($contrato['id'])) === null ? null : [
                     'nombre' => $asignado->turno?->nombre,
                     'desdeTexto' => $fecha($asignado->desde),
                     'hastaTexto' => $fecha($asignado->hasta),

@@ -13,6 +13,7 @@ cada cosa en el código.
 |---|---|
 | **[ESTRUCTURA.md](ESTRUCTURA.md)** | Panorama completo: módulos, motor de asistencia, reportes, API, sincronización, permisos y árbol del código |
 | [REPORTE-PROCESADO-ASISTENCIA.md](REPORTE-PROCESADO-ASISTENCIA.md) | Las reglas del motor en detalle: por qué un día salió «Falta», «Atraso» o «Abandono» |
+| [TURNOS-Y-REGULARIZACION.md](TURNOS-Y-REGULARIZACION.md) | Asignar turno, regularizar contratos terminados por tramos y qué pasa con las adendas de Mamoré |
 | [COMUNICACION-BIOMETRICOS.md](COMUNICACION-BIOMETRICOS.md) | Protocolo ZKTeco y el microservicio Python que lo habla |
 | [MIGRACION-SIA-MYSQL.md](MIGRACION-SIA-MYSQL.md) | Traer el histórico del SIA (SQL Server) a MySQL, tabla por tabla |
 | [CONEXION-BD.md](CONEXION-BD.md) | Conexiones y credenciales: MySQL local y SQL Server del SIA |

@@ -139,13 +139,17 @@ class ContratosFuncionario
     }
 
     /**
-     * Los contratos **firmados** de la persona que siguen vigentes hoy o que
-     * todavía no empezaron: a los que se les puede asignar un turno. Los
-     * concluidos ya no admiten turno nuevo.
+     * Los contratos **firmados** y **concluidos** de la persona: a los que se
+     * les puede asignar un turno.
+     *
+     * Los que ya terminaron —concluidos, o firmados con el fin vencido— vuelven
+     * con `regularizar`: son los que pasaron sin turno y hay que cargarles el
+     * suyo después, así esos días se controlan. Primero van los vigentes o por
+     * empezar, después los anteriores del más reciente al más viejo.
      *
      * `null` es «no se sabe»: Mamoré no está configurado.
      *
-     * @return list<array{id: int, codigo: ?string, desde: Carbon, hasta: ?Carbon, direccion: ?string, cargo: ?string}>|null
+     * @return list<array{id: int, codigo: ?string, desde: Carbon, hasta: ?Carbon, direccion: ?string, cargo: ?string, regularizar: bool}>|null
      *
      * @throws MamoreException si la API está configurada pero no responde
      */
@@ -158,15 +162,18 @@ class ContratosFuncionario
         $hoy = today();
 
         return collect($this->mamore->contractsByCi(trim($ci)))
-            ->filter(fn (array $contrato): bool => ($contrato['status'] ?? null) === 'firmado' && isset($contrato['id']))
+            ->filter(fn (array $contrato): bool => in_array($contrato['status'] ?? null, ['firmado', 'concluido'], true)
+                && isset($contrato['id']))
             ->map(fn (array $contrato): ?array => ($tramo = $this->tramo($contrato)) === null ? null : [
                 'id' => (int) $contrato['id'],
                 'codigo' => trim((string) ($contrato['code'] ?? '')) ?: null,
                 ...$tramo,
+                'regularizar' => $contrato['status'] === 'concluido'
+                    || ($tramo['hasta'] !== null && $tramo['hasta']->lessThan($hoy)),
             ])
-            ->filter(fn (?array $contrato): bool => $contrato !== null
-                && ($contrato['hasta'] === null || $contrato['hasta']->greaterThanOrEqualTo($hoy)))
-            ->sortBy(fn (array $contrato): int => $contrato['desde']->getTimestamp())
+            ->filter()
+            ->sort(fn (array $a, array $b): int => [$a['regularizar'], $a['regularizar'] ? -$a['desde']->getTimestamp() : $a['desde']->getTimestamp()]
+                <=> [$b['regularizar'], $b['regularizar'] ? -$b['desde']->getTimestamp() : $b['desde']->getTimestamp()])
             ->values()
             ->all();
     }

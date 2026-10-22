@@ -4,6 +4,7 @@
     // Sin acciones cuando la tabla se muestra solo de referencia (modal de licencia).
     $conAcciones = $conAcciones ?? true;
     $columnas = $conAcciones ? 3 : 2;
+    $contratos = $contratos ?? [];
 
     /**
      * El nombre del horario del SIA suele ser «LUN: 08:00 - 16:00», que es día y
@@ -20,6 +21,23 @@
         return $nombre;
     };
 @endphp
+<style>
+    .periodo__turno { font-weight: 700; }
+    .periodo__turno--sia { color: var(--muted); font-weight: 600; }
+    .periodo__separador { color: var(--muted); }
+    .horario__tolerancia { margin-left: .6rem; color: var(--muted); font-size: .72rem; }
+    tbody tr.fila--contrato th { text-align: left; background: var(--card); border-top: 2px solid var(--border);
+        padding: 0; text-transform: none; font-size: .82rem; }
+    tbody:first-of-type tr.fila--contrato th { border-top: 0; }
+    .contrato-cabecera { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; width: 100%;
+        background: none; border: 0; padding: .55rem .75rem; font: inherit; color: var(--fg); text-align: left; cursor: pointer; }
+    .contrato-cabecera:hover { background: var(--bg); }
+    .contrato-cabecera svg { width: 1rem; height: 1rem; color: var(--muted); flex-shrink: 0; }
+    .contrato-cabecera__flecha { display: inline-flex; transition: transform .15s; }
+    .contrato-cabecera__flecha--abierta { transform: rotate(90deg); }
+    .contrato-cabecera__datos { color: var(--muted); font-weight: 400; font-size: .75rem; }
+    .contrato-cabecera__cantidad { margin-left: auto; color: var(--muted); font-weight: 400; font-size: .72rem; }
+</style>
 <div class="card">
     <table class="tabla--compacta">
         <thead>
@@ -31,107 +49,76 @@
                 @endif
             </tr>
         </thead>
-        <tbody>
-            @forelse ($periodos as $periodo)
-                @php
+            @php
+                // Los turnos se agrupan bajo su contrato (en el orden en que
+                // aparecen); los horarios del sistema anterior, que no tienen
+                // contrato, van después, sueltos.
+                $porContrato = collect();
+                $sueltos = collect();
+
+                foreach ($periodos as $periodo) {
                     $delPeriodo = $asignaciones[$periodo->clave_periodo] ?? collect();
-                    $situacion = $periodo->situacion;
-                    $vencido = $situacion === 'vencida';
                     // El período es de un turno cuando sus filas son el detalle de
                     // una misma asignación de turno: ahí se concluye y se elimina
                     // el turno entero, no cada día.
-                    $asignacionTurno = $delPeriodo->pluck('asignacionTurno')->filter()->unique('id');
-                    $asignacionTurno = $asignacionTurno->count() === 1 && $delPeriodo->every(fn ($fila) => $fila->es_de_turno)
-                        ? $asignacionTurno->first()
+                    $turnos = $delPeriodo->pluck('asignacionTurno')->filter()->unique('id');
+                    $asignacionTurno = $turnos->count() === 1 && $delPeriodo->every(fn ($fila) => $fila->es_de_turno)
+                        ? $turnos->first()
                         : null;
+                    $bloque = ['periodo' => $periodo, 'delPeriodo' => $delPeriodo, 'asignacionTurno' => $asignacionTurno];
+
+                    if ($asignacionTurno?->contrato_id) {
+                        $porContrato->getOrPut($asignacionTurno->contrato_id, fn () => collect())->push($bloque);
+                    } else {
+                        $sueltos->push($bloque);
+                    }
+                }
+            @endphp
+            {{-- Cada contrato es un <tbody> que se pliega con su flecha: el
+                 vigente abierto, los concluidos plegados. --}}
+            @foreach ($porContrato as $contratoId => $bloques)
+                @php
+                    $contrato = $contratos[$contratoId] ?? null;
+                    $abierto = ! ($contrato['regularizar'] ?? false);
                 @endphp
-                {{-- Cabecera del bloque: las fechas van una sola vez acá y no
-                     repetidas en cada uno de los días que las comparten. --}}
-                <tr class="fila--periodo">
+                <tbody x-data="{ abierto: @js($abierto) }">
+                <tr class="fila--contrato">
                     <th colspan="{{ $columnas }}" scope="colgroup">
-                        <div class="periodo">
-                            <span class="periodo__fechas">
-                                {{ $periodo->desde?->format('d/m/Y') ?? '—' }}
-                                <span class="periodo__flecha" aria-hidden="true">→</span>
-                                {{ $periodo->hasta?->format('d/m/Y') ?? '—' }}
+                        <button type="button" class="contrato-cabecera" x-on:click="abierto = ! abierto" :aria-expanded="abierto">
+                            <span class="contrato-cabecera__flecha" :class="abierto && 'contrato-cabecera__flecha--abierta'">
+                                <x-heroicon-o-chevron-right />
                             </span>
-                            <span class="pill pill--mini {{ $pillPorSituacion[$situacion] ?? 'pill--info' }}">
-                                {{ $etiquetaSituacion[$situacion] ?? $situacion }}
-                            </span>
-                            @if ($asignacionTurno)
-                                <span class="pill pill--mini pill--info" title="Turno asignado">
-                                    {{ $asignacionTurno->turno?->nombre }}
+                            <x-heroicon-o-document-text />
+                            <strong>{{ $contrato['codigo'] ?? 'Contrato #'.$contratoId }}</strong>
+                            @if ($contrato)
+                                @if ($contrato['regularizar'])
+                                    <span class="pill pill--mini pill--neutro">Concluido</span>
+                                @elseif ($contrato['desde']->isAfter(today()))
+                                    <span class="pill pill--mini pill--info">Empieza el {{ $contrato['desde']->format('d/m/Y') }}</span>
+                                @else
+                                    <span class="pill pill--mini pill--ok">Vigente</span>
+                                @endif
+                                <span class="contrato-cabecera__datos">
+                                    {{ $contrato['desde']->format('d/m/Y') }} al {{ $contrato['hasta']?->format('d/m/Y') ?? 'sin fecha de fin' }}
                                 </span>
                             @endif
-                            <span class="periodo__conteo">
-                                {{ $delPeriodo->count() }} {{ $delPeriodo->count() === 1 ? 'día' : 'días' }}
-                            </span>
-                            @if ($conAcciones && $asignacionTurno)
-                                <span class="acciones" style="margin-left: auto;">
-                                    @if ($situacion !== 'vencida')
-                                        @can('update', $asignacionTurno)
-                                            <x-boton-concluir :accion="route('turnos-asignados.concluir', $asignacionTurno)"
-                                                              :mensaje="'Turno «'.$asignacionTurno->turno?->nombre.'» de CI '.trim((string) $asignacionTurno->ci).'.'"
-                                                              origen="{{ $origenFicha ?? '' }}" etiqueta="Concluir turno" />
-                                        @endcan
-                                    @endif
-                                    @can('delete', $asignacionTurno)
-                                        <x-boton-eliminar :accion="route('turnos-asignados.destroy', $asignacionTurno)"
-                                                          :mensaje="'Se elimina la asignación del turno «'.$asignacionTurno->turno?->nombre.'». Si el funcionario dejó ese turno, concluilo en vez de borrarlo.'"
-                                                          ancla="horarios" />
-                                    @endcan
-                                </span>
-                            @endif
-                        </div>
+                            <span class="contrato-cabecera__cantidad">{{ $bloques->count() }} {{ $bloques->count() === 1 ? 'turno' : 'turnos' }}</span>
+                        </button>
                     </th>
                 </tr>
-                @foreach ($delPeriodo as $asignacion)
-                    @php
-                        $entrada = $asignacion->horario?->hEntrada?->format('H:i');
-                        $salida = $asignacion->horario?->hSalida?->format('H:i');
-                        $nombre = $nombreQueAporta($asignacion->horario?->nombreHorario, $entrada, $salida);
-                    @endphp
-                    <tr @class(['fila--inactiva' => $vencido])>
-                        <td>
-                            <strong>{{ $asignacion->horario?->nombre_dia ?? '—' }}</strong>
-                            @if ($nombre !== '')
-                                <div class="ayuda">{{ $nombre }}</div>
-                            @endif
-                        </td>
-                        <td class="horario">
-                            {{ $entrada ?? '—' }}<span class="horario__sep" aria-hidden="true">→</span>{{ $salida ?? '—' }}
-                        </td>
-                        @if ($conAcciones)
-                            <td>
-                                {{-- Lo heredado del sistema anterior se concluye y se
-                                     elimina fila por fila; lo de un turno, desde la
-                                     cabecera del período. --}}
-                                <div class="acciones">
-                                    @if (! $asignacion->es_de_turno)
-                                    {{-- Concluir es lo que corresponde cuando el funcionario dejó
-                                         ese horario; eliminar, solo si la asignación se cargó mal. --}}
-                                    @if ($asignacion->situacion !== 'vencida')
-                                        @can('update', $asignacion)
-                                            <x-boton-concluir :accion="route('horarios-asignados.concluir', $asignacion)"
-                                                              :mensaje="'Horario «'.trim((string) $asignacion->horario?->nombreHorario).'» de CI '.trim((string) $asignacion->ci).'.'"
-                                                              origen="{{ $origenFicha ?? '' }}" />
-                                        @endcan
-                                    @endif
-                                    @can('delete', $asignacion)
-                                        <x-boton-eliminar :accion="route('horarios-asignados.destroy', $asignacion)"
-                                                          :mensaje="'Se elimina la asignación del horario «'.trim((string) $asignacion->horario?->nombreHorario).'». Si el funcionario dejó ese horario, concluilo en vez de borrarlo.'"
-                                                          ancla="horarios" />
-                                    @endcan
-                                    @endif
-                                </div>
-                            </td>
-                        @endif
-                    </tr>
+                @foreach ($bloques as $bloque)
+                    @include('funcionarios._periodo-horarios', [...$bloque, 'enContrato' => true, 'abierto' => $abierto])
                 @endforeach
-            @empty
-                <tr><td colspan="{{ $columnas }}" class="vacio">El funcionario no tiene horarios asignados en este filtro.</td></tr>
-            @endforelse
-        </tbody>
+                </tbody>
+            @endforeach
+            <tbody>
+                @foreach ($sueltos as $bloque)
+                    @include('funcionarios._periodo-horarios', [...$bloque, 'enContrato' => false])
+                @endforeach
+                @if ($periodos->isEmpty())
+                    <tr><td colspan="{{ $columnas }}" class="vacio">El funcionario no tiene horarios asignados en este filtro.</td></tr>
+                @endif
+            </tbody>
     </table>
 </div>
 

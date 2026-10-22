@@ -7,6 +7,7 @@ use App\Models\AsignacionHorario;
 use App\Models\Asistencia;
 use App\Models\Licencia;
 use App\Models\Persona;
+use App\Services\ContratosFuncionario;
 use App\Services\DirectorioMamore;
 use App\Services\MamoreClient;
 use App\Services\ResolutorNombres;
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator as Paginador;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -182,6 +184,9 @@ class PersonaController extends Controller
     /**
      * Parcial de los horarios asignados de una cédula para la solapa de la ficha.
      *
+     * Un bloque por período: en la cabecera el contrato, el turno y las fechas;
+     * debajo, los días con su horario.
+     *
      * Por defecto salen todos, con los que siguen en pie primero; el filtro
      * permite quedarse solo con los vigentes o mirar solo los vencidos.
      *
@@ -191,7 +196,7 @@ class PersonaController extends Controller
      * Con los períodos de la página en mano se traen sus asignaciones de un
      * viaje y se agrupan para que la vista arme un bloque por vigencia.
      */
-    public function horariosList(Request $request): View
+    public function horariosList(Request $request, ContratosFuncionario $contratosFuncionario): View
     {
         // Igual que la solapa: con cualquiera de los dos permisos de listado.
         abort_unless((bool) $request->user()?->canAny(['ViewAny:AsignacionTurno', 'ViewAny:AsignacionHorario']), 403);
@@ -232,7 +237,39 @@ class PersonaController extends Controller
                 ->get()
                 ->groupBy(fn (AsignacionHorario $asignacion): string => $asignacion->clave_periodo);
 
-        return view('funcionarios.horarios-list', compact('periodos', 'asignaciones', 'origenFicha', 'conAcciones'));
+        $contratos = $this->contratosDeLosTurnos($ci, $asignaciones, $contratosFuncionario);
+
+        return view('funcionarios.horarios-list', compact('periodos', 'asignaciones', 'origenFicha', 'conAcciones', 'contratos'));
+    }
+
+    /**
+     * Los contratos de Mamoré de los turnos de la página, por id, para la
+     * cabecera que agrupa a cada contrato con sus turnos (código, estado y
+     * fechas). SisMark guarda solo el `contrato_id`: se le piden a Mamoré una
+     * vez por tabla, y solo si en la página hay algún turno con contrato. Si
+     * Mamoré no responde vuelve vacío y la cabecera dice el número del contrato.
+     *
+     * @param  Collection<string, Collection<int, AsignacionHorario>>  $asignaciones
+     * @return array<int, array{id: int, codigo: ?string, desde: Carbon, hasta: ?Carbon, direccion: ?string, cargo: ?string, regularizar: bool}>
+     */
+    private function contratosDeLosTurnos(string $ci, Collection $asignaciones, ContratosFuncionario $contratosFuncionario): array
+    {
+        $ids = $asignaciones->flatten()
+            ->map(fn (AsignacionHorario $asignacion): ?int => $asignacion->asignacionTurno?->contrato_id)
+            ->filter()
+            ->unique();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        try {
+            $contratos = $contratosFuncionario->asignables($ci) ?? [];
+        } catch (MamoreException) {
+            return [];
+        }
+
+        return collect($contratos)->whereIn('id', $ids->all())->keyBy('id')->all();
     }
 
     /**

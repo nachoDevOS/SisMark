@@ -235,9 +235,10 @@ class ExcelMarcacionesProcesadas
         $primera = $fila;
 
         foreach ($dia['bloques'] as $indice => $bloque) {
-            $licencia = $bloque['licencia'];
-            // Puede haber más de una licencia parcial en el mismo horario.
+            // Puede haber más de una licencia parcial en el mismo horario: cada
+            // una va en su renglón dentro de la celda, con sus propios datos.
             $licencias = collect($bloque['licencias']);
+            $porLicencia = fn (callable $valor): string => $licencias->map(fn ($l): string => (string) $valor($l))->implode("\n");
 
             $this->escribirFilaTexto($hoja, $fila, [
                 $indice === 0 ? $fecha : '',
@@ -248,12 +249,16 @@ class ExcelMarcacionesProcesadas
                 $bloque['atraso'] > 0 ? ProcesadorAsistencia::desvio($bloque['atraso']) : '',
                 $bloque['estado'] === ProcesadorAsistencia::ABANDONO ? 'ABANDONO' : '',
                 ProcesadorAsistencia::FALTAS[$bloque['estado']] ?? '',
-                $licencias->map(fn ($l) => $l->lEntra?->format('H:i'))->filter()->implode(' / '),
-                $licencias->map(fn ($l) => $l->lSale?->format('H:i'))->filter()->implode(' / '),
-                $licencia === null ? '' : ($licencia->tCompleto ? 'Sí' : 'No'),
-                $licencia === null ? '' : ($licencia->goceHaberes ? 'Sí' : 'No'),
-                $licencias->pluck('motivo')->filter()->unique()->implode(' · '),
+                $porLicencia(fn ($l) => $l->lEntra?->format('H:i')),
+                $porLicencia(fn ($l) => $l->lSale?->format('H:i')),
+                $porLicencia(fn ($l) => $l->tCompleto ? 'Sí' : 'No'),
+                $porLicencia(fn ($l) => $l->goceHaberes ? 'Sí' : 'No'),
+                $porLicencia(fn ($l) => $l->motivo),
             ]);
+
+            if ($licencias->count() > 1) {
+                $hoja->getStyle("I{$fila}:M{$fila}")->getAlignment()->setWrapText(true);
+            }
 
             // Abandono y Falta van en negrita, como en el imprimible.
             $hoja->getStyle("G{$fila}:H{$fila}")->getFont()->setBold(true);

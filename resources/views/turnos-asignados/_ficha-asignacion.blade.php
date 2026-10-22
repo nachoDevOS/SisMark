@@ -1,5 +1,5 @@
 {{-- Lo que hay que ver antes de asignar: los datos del funcionario, los turnos
-     que ya tiene y sus contratos firmados vigentes, de los que se elige uno.
+     que ya tiene y sus contratos firmados o concluidos, de los que se elige uno.
      Usa el estado de `fichaAsignacion()` del formulario que lo incluye
      (`ficha`, `contratoId`, `desde`, `hasta`…). El resumen y los avisos de
      fechas van aparte, en `_resumen-asignacion`. --}}
@@ -78,40 +78,45 @@
         <div class="tarjeta">
             <h3 style="margin: 0;">3. Contrato <span class="req" x-show="ficha.mamore">*</span></h3>
             <p class="ayuda" style="margin: .25rem 0 .5rem;" x-show="ficha.mamore">
-                El turno se asigna dentro de un <strong>contrato firmado vigente</strong> de Mamoré. Sus fechas salen del
-                contrato y no pueden pasarlo. Si después el contrato se extiende con una adenda o se anula, el turno se
-                ajusta solo.
+                El turno se asigna dentro de un <strong>contrato firmado o concluido</strong> de Mamoré. Sus fechas salen
+                del contrato y no pueden pasarlo. Si después el contrato se extiende con una adenda o se anula, el turno se
+                ajusta solo. Los contratos «Por regularizar» ya terminaron sin turno: se les asigna para que esos días se
+                controlen.
             </p>
             <p class="ayuda" style="margin: .25rem 0 0;" x-show="! ficha.mamore">Mamoré no está configurado: el turno se asigna sin contrato.</p>
             <div class="error" x-show="ficha.errorContratos" x-text="ficha.errorContratos"></div>
+            <p class="aviso aviso--advertencia" style="margin: 0;" x-show="nadaQueAsignar()">
+                <strong>No hay contrato al que asignarle turno:</strong> sus contratos ya tienen turno o los cubrían horarios
+                del sistema anterior. Para cambiarle el turno, concluí el que tiene.
+            </p>
             <p class="aviso aviso--error" style="margin: 0;"
                x-show="ficha.mamore && ! ficha.errorContratos && ficha.contratos.length === 0">
-                No tiene contrato firmado vigente en Mamoré: <strong>no se le puede asignar turno</strong>. Primero tiene que
+                No tiene contrato firmado ni concluido en Mamoré: <strong>no se le puede asignar turno</strong>. Primero tiene que
                 cargarse y firmarse su contrato en Mamoré.
             </p>
             {{-- Con varios contratos se elige uno; con uno solo no hay nada que
                  elegir: se toma ese y se dice. --}}
-            <p style="margin: .25rem 0 0; font-weight: 600;" x-show="ficha.contratos.filter(c => ! c.turno).length > 1">
-                Tiene más de un contrato vigente: elegí a cuál corresponde el turno.
+            <p style="margin: .25rem 0 0; font-weight: 600;" x-show="contratosLibres().length > 1">
+                Tiene más de un contrato: elegí a cuál corresponde el turno.
             </p>
-            <p style="margin: .25rem 0 0; font-weight: 600;" x-show="ficha.contratos.filter(c => ! c.turno).length === 1">
+            <p style="margin: .25rem 0 0; font-weight: 600;" x-show="contratosLibres().length === 1">
                 El turno se asigna dentro de este contrato:
             </p>
-            <template x-for="contrato in ficha.contratos" :key="contrato.id">
+            <template x-for="contrato in contratosVisibles()" :key="contrato.id">
                 <div class="contrato-opcion"
                      :class="{
                          'contrato-opcion--elegido': String(contratoId) === String(contrato.id),
-                         'contrato-opcion--ocupado': contrato.turno !== null,
-                         'contrato-opcion--elegible': contrato.turno === null && ficha.contratos.filter(c => ! c.turno).length > 1,
+                         'contrato-opcion--ocupado': ! elegible(contrato),
+                         'contrato-opcion--elegible': elegible(contrato) && contratosLibres().length > 1,
                      }"
-                     x-on:click="if (contrato.turno === null) { marcarContrato(contrato, true); }">
+                     x-on:click="if (elegible(contrato)) { marcarContrato(contrato, true); }">
                     <div style="display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;">
                         <input type="radio" :value="contrato.id" :checked="String(contratoId) === String(contrato.id)"
-                               x-show="contrato.turno === null && ficha.contratos.filter(c => ! c.turno).length > 1"
+                               x-show="elegible(contrato) && contratosLibres().length > 1"
                                :aria-label="`Elegir el contrato ${contrato.codigo || contrato.id}`">
                         <strong x-text="contrato.codigo || `Contrato #${contrato.id}`"></strong>
-                        <span class="pill" :class="contrato.empezo ? 'pill--ok' : 'pill--info'"
-                              x-text="contrato.empezo ? 'Vigente' : 'Empieza el ' + contrato.desdeTexto"></span>
+                        <span class="pill" :class="contrato.regularizar ? 'pill--advertencia' : (contrato.empezo ? 'pill--ok' : 'pill--info')"
+                              x-text="contrato.regularizar ? 'Por regularizar' : (contrato.empezo ? 'Vigente' : 'Empieza el ' + contrato.desdeTexto)"></span>
                     </div>
                     <dl class="datos grid-2" style="margin: .35rem 0 0;">
                         <div><dt>Cargo</dt><dd x-text="contrato.cargo || '—'"></dd></div>
@@ -119,7 +124,16 @@
                         <div><dt>Inicio</dt><dd x-text="contrato.desdeTexto"></dd></div>
                         <div><dt>Fin</dt><dd x-text="contrato.hastaTexto || 'Sin fecha de fin (contrato abierto)'"></dd></div>
                     </dl>
-                    <template x-if="contrato.turno">
+                    <template x-if="contrato.cobertura?.motivo">
+                        <p class="aviso" style="margin: .4rem 0 0;" x-text="contrato.cobertura.motivo"></p>
+                    </template>
+                    {{-- Un contrato que terminó se regulariza de a tramos y puede
+                         tener varios turnos; el vigente admite uno solo. --}}
+                    <template x-if="! contrato.regularizar && contrato.turno && elegible(contrato)">
+                        <p class="aviso" style="margin: .4rem 0 0;"
+                           x-text="`Sin turno del ${contrato.cobertura.libreDesdeTexto} al ${contrato.cobertura.libreHastaTexto || 'fin del contrato'}: el turno nuevo cubre ese tramo.`"></p>
+                    </template>
+                    <template x-if="! contrato.regularizar && contrato.turno && ! elegible(contrato)">
                         <p class="aviso aviso--advertencia" style="margin: .4rem 0 0;"
                            x-text="`Este contrato ya tiene el turno «${contrato.turno.nombre}» (del ${contrato.turno.desdeTexto} al ${contrato.turno.hastaTexto}). Un contrato admite un solo turno.`"></p>
                     </template>

@@ -7,6 +7,10 @@
     $contrato = is_array($persona['contrato'] ?? null) ? $persona['contrato'] : null;
     $enFunciones = (bool) ($persona['has_contract'] ?? ($contrato !== null));
     $ci = trim((string) ($persona['ci'] ?? ''));
+    // En SisMark la CI es solo el número. Si en Mamoré el campo trae letras o
+    // espacios (el complemento pegado, «10811148 - 1D»), la ficha no encuentra
+    // sus marcaciones ni horarios y no se le puede asignar turno.
+    $ciMalCargada = $ci !== '' && ! ctype_digit($ci);
 
     // Una fecha del contrato como se escribe acá. En Mamoré `start` y `finish`
     // son columnas `date` sin cast, así que llegan como «2024-01-15».
@@ -41,6 +45,12 @@
                  `title`: la ficha no tiene un solo botón que escriba, así que
                  no hace falta gritarlo. --}}
             <span class="pill pill--neutro" title="Datos de solo lectura desde el sistema Mamoré">Mamoré</span>
+            @if ($ciMalCargada)
+                <span class="pill pill--advertencia"
+                      title="En Mamoré la CI está cargada como «{{ $ci }}»: debe ser solo el número, con el complemento en su campo. Mientras no se corrija en Mamoré, acá no se encuentran sus marcaciones, licencias ni horarios, y no se le puede asignar turno.">
+                    CI mal cargada en Mamoré
+                </span>
+            @endif
         </h1>
         <div class="acciones">
             <a href="{{ route('funcionarios.index', ['fuente' => 'mamore']) }}" class="btn btn--gris"><x-heroicon-o-arrow-left />Volver</a>

@@ -5,7 +5,12 @@
     <p class="aviso aviso--advertencia" style="margin: 0;" x-show="contratoElegido() && ! contratoElegido().hasta">
         El contrato no tiene fecha de fin: indicá hasta cuándo rige el turno.
     </p>
-    <p class="aviso aviso--advertencia" style="margin: 0;" x-show="desde && desde < hoy()">
+    <p class="aviso aviso--advertencia" style="margin: 0;" x-show="regularizando()">
+        <strong>Regularización:</strong> el contrato ya terminó y pasó sin turno. Los días del
+        <strong x-text="fechaTexto(desde)"></strong> al <strong x-text="fechaTexto(hasta)"></strong> se van a controlar con
+        este turno: los que no tengan marcación saldrán como falta en los reportes.
+    </p>
+    <p class="aviso aviso--advertencia" style="margin: 0;" x-show="desde && desde < hoy() && ! regularizando()">
         La fecha de inicio ya pasó: los días del <strong x-text="fechaTexto(desde)"></strong> a hoy se van a controlar
         con este turno, y en los reportes pueden aparecer faltas o atrasos de esos días.
     </p>

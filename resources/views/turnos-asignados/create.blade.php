@@ -132,7 +132,10 @@
                 <div class="campo">
                     <label for="hasta">Fecha de fin <span class="req">*</span></label>
                     <input type="date" id="hasta" name="hasta" class="input"
-                           x-model="hasta" :min="desde || minDesde" :max="maxHasta" required>
+                           x-model="hasta" :min="desde || minDesde" :max="maxHasta" :readonly="finFijo()"
+                           :style="finFijo() && 'background: var(--bg); cursor: not-allowed;'" required>
+                    <p class="ayuda" style="margin: .2rem 0 0;" x-show="finFijo()"
+                       x-text="contratoElegido()?.cobertura?.estado === 'parcial' ? 'Fin del tramo sin control.' : 'Sale del contrato.'"></p>
                     @error('hasta') <div class="error">{{ $message }}</div> @enderror
                 </div>
             </div>

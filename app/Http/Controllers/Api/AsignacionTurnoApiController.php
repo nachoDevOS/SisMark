@@ -128,7 +128,10 @@ class AsignacionTurnoApiController extends Controller
      * cambia de fechas del otro lado.
      *
      * Una **adenda que extiende** sin esto dejaría los días nuevos sin turno, o
-     * sea sin control de asistencia, sin que nadie lo note. Si el contrato no
+     * sea sin control de asistencia, sin que nadie lo note. De los turnos solo
+     * se mueve el fin ({@see self::moverFin()}): el último se estira hasta el
+     * fin nuevo, aunque el contrato tenga varios por haberse regularizado de a
+     * tramos. Si el contrato no
      * tiene nada asignado —es anterior a esta integración, o el alta falló—, se
      * le asigna ahora el turno sugerido: es el camino de recuperación.
      */
@@ -160,23 +163,7 @@ class AsignacionTurnoApiController extends Controller
         }
 
         if ($turnos->isNotEmpty()) {
-            foreach ($turnos as $asignacion) {
-                $conflicto = $this->asignador->conflicto($ci, $asignacion->turno, $desde, $hasta, $asignacion);
-
-                if ($conflicto !== null) {
-                    return response()->json(['message' => $conflicto, 'actualizados' => 0], 422);
-                }
-            }
-
-            foreach ($turnos as $asignacion) {
-                $this->asignador->moverVigencia($asignacion, $desde, $hasta);
-            }
-
-            return response()->json([
-                'message' => 'Vigencia del turno actualizada en SisMark.',
-                'actualizados' => $turnos->count(),
-                'creados' => 0,
-            ]);
+            return $this->moverFin($turnos, $ci, $hasta);
         }
 
         if ($heredados->isNotEmpty()) {
@@ -254,6 +241,64 @@ class AsignacionTurnoApiController extends Controller
             1 => $sugeridos->first(),
             default => 'SisMark tiene varios turnos sugeridos. Indicá cuál asignar.',
         };
+    }
+
+    /**
+     * Lleva los turnos del contrato a su fin nuevo **sin tocar sus inicios**.
+     *
+     * Un contrato puede tener varios turnos —se regularizó de a tramos—, así que
+     * no se le copian las fechas del contrato a cada uno: eso los encimaba entre
+     * sí y con los horarios del sistema anterior, y además corría hacia atrás el
+     * inicio de un turno que arrancó más tarde, llenando los reportes de faltas.
+     *
+     * - Si el contrato se **extiende**, se estira solo el último turno (el que
+     *   termina más tarde): los días nuevos siguen con la jornada que tenía.
+     * - Si se **acorta**, los turnos que pasan del fin nuevo terminan ahí, y los
+     *   que arrancaban después se dan de baja: quedaron fuera del contrato.
+     *
+     * Que cambie el inicio del contrato no mueve nada: un día fuera del contrato
+     * no se procesa igual, y lo que quede sin turno al principio se regulariza
+     * a mano desde la ficha.
+     *
+     * @param  Collection<int, AsignacionTurno>  $turnos
+     */
+    private function moverFin(Collection $turnos, string $ci, Carbon $hasta): JsonResponse
+    {
+        $ultimo = $turnos->sortByDesc(fn (AsignacionTurno $asignacion): int => $asignacion->hasta->getTimestamp())->first();
+
+        if ($hasta->greaterThan($ultimo->hasta)) {
+            $conflicto = $this->asignador->conflicto($ci, $ultimo->turno, $ultimo->desde, $hasta, $ultimo);
+
+            if ($conflicto !== null) {
+                return response()->json(['message' => $conflicto, 'actualizados' => 0], 422);
+            }
+
+            $this->asignador->moverVigencia($ultimo, $ultimo->desde, $hasta);
+
+            return response()->json([
+                'message' => 'Vigencia del turno actualizada en SisMark.',
+                'actualizados' => 1,
+                'creados' => 0,
+            ]);
+        }
+
+        $sePasan = $turnos->filter(fn (AsignacionTurno $asignacion): bool => $asignacion->hasta->greaterThan($hasta));
+
+        DB::transaction(function () use ($sePasan, $hasta): void {
+            foreach ($sePasan as $asignacion) {
+                if ($asignacion->desde->greaterThan($hasta)) {
+                    $this->asignador->eliminar($asignacion, 'El contrato se acortó en Mamoré y este turno quedó fuera de él.');
+                } else {
+                    $this->asignador->concluir($asignacion, $hasta);
+                }
+            }
+        });
+
+        return response()->json([
+            'message' => $sePasan->isEmpty() ? 'El turno ya estaba al día en SisMark.' : 'Vigencia del turno actualizada en SisMark.',
+            'actualizados' => $sePasan->count(),
+            'creados' => 0,
+        ]);
     }
 
     /**

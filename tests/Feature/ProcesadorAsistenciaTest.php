@@ -2,10 +2,12 @@
 
 use App\Models\AsignacionHorario;
 use App\Models\Asistencia;
+use App\Models\Licencia;
 use App\Models\Persona;
 use App\Services\AsignadorTurnos;
 use App\Services\ProcesadorAsistencia as P;
 use Illuminate\Support\Carbon;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 beforeEach(function (): void {
     Carbon::setTestNow('2026-10-26');
@@ -94,4 +96,55 @@ test('la vista previa del reporte procesado cierra con los totales del rango, co
     $this->get(route('reportes.marcaciones.procesado.generar', $parametros + ['print' => 1]))
         ->assertOk()
         ->assertSeeInOrder(['Total:', '25 min']);
+});
+
+test('con dos licencias el mismo día, cada una va en su renglón dentro de las columnas de licencia', function (): void {
+    Persona::factory()->create(['ci' => '111']);
+    $lunes = AsignacionHorario::query()->whereNotNull('asignacion_turno_id')->with('horario')->get()
+        ->first(fn ($fila): bool => (int) $fila->horario->dia === 2)->horario;
+    $hora = fn (string $hm): string => "1899-12-30 {$hm}:00";
+
+    Licencia::factory()->create([
+        'ci' => '111', 'fecha' => '2026-10-19', 'horario_id' => $lunes->id, 'tCompleto' => false,
+        'lEntra' => $hora('08:00'), 'lSale' => $hora('12:00'), 'goceHaberes' => true, 'motivo' => 'TRÁMITE', 'tipo' => Licencia::TIPO_PERSONAL,
+    ]);
+    Licencia::factory()->create([
+        'ci' => '111', 'fecha' => '2026-10-19', 'horario_id' => $lunes->id, 'tCompleto' => false,
+        'lEntra' => $hora('12:00'), 'lSale' => $hora('16:00'), 'goceHaberes' => false, 'motivo' => 'DÍA DEL PADRE', 'tipo' => Licencia::TIPO_PERSONAL,
+    ]);
+
+    $parametros = ['persona' => '111', 'desde' => '2026-10-19', 'hasta' => '2026-10-19'];
+    $lineas = [
+        '<div class="lic-linea">08:00</div><div class="lic-linea">12:00</div>',
+        '<div class="lic-linea">12:00</div><div class="lic-linea">16:00</div>',
+        '<div class="lic-linea">No</div><div class="lic-linea">No</div>',
+        '<div class="lic-linea">Sí</div><div class="lic-linea">No</div>',
+        'TRÁMITE', 'DÍA DEL PADRE',
+    ];
+
+    // Cada columna, una línea por licencia, en el mismo orden: se leen de punta a punta.
+    $this->actingAs(superAdmin())
+        ->get(route('reportes.marcaciones.procesado.generar', $parametros))
+        ->assertOk()
+        ->assertSeeInOrder($lineas, false);
+
+    // El imprimible, igual.
+    $this->get(route('reportes.marcaciones.procesado.generar', $parametros + ['print' => 1]))
+        ->assertOk()
+        ->assertSeeInOrder($lineas, false);
+
+    // El Excel: un renglón por licencia dentro de cada celda, con ajuste de texto.
+    $respuesta = $this->get(route('reportes.marcaciones.procesado.generar', $parametros + ['print' => 2]))->assertOk();
+    $hoja = IOFactory::load($respuesta->baseResponse->getFile()->getPathname())->getActiveSheet();
+    $fila = collect($hoja->getRowIterator())
+        ->map(fn ($renglon): int => $renglon->getRowIndex())
+        ->first(fn (int $numero): bool => str_contains((string) $hoja->getCell("M{$numero}")->getValue(), 'TRÁMITE'));
+
+    expect($fila)->not->toBeNull()
+        ->and($hoja->getCell("I{$fila}")->getValue())->toBe("08:00\n12:00")
+        ->and($hoja->getCell("J{$fila}")->getValue())->toBe("12:00\n16:00")
+        ->and($hoja->getCell("K{$fila}")->getValue())->toBe("No\nNo")
+        ->and($hoja->getCell("L{$fila}")->getValue())->toBe("Sí\nNo")
+        ->and($hoja->getCell("M{$fila}")->getValue())->toBe("TRÁMITE\nDÍA DEL PADRE")
+        ->and($hoja->getStyle("I{$fila}")->getAlignment()->getWrapText())->toBeTrue();
 });

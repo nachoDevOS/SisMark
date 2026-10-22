@@ -115,6 +115,62 @@ test('mover la vigencia del contrato mueve el turno y sus días', function (): v
         ->and(AsignacionHorario::query()->pluck('hasta')->map->toDateString()->unique()->all())->toBe(['2027-03-31']);
 });
 
+test('una adenda estira solo el último turno del contrato y no toca los inicios', function (): void {
+    // Contrato 55 del 05/01 al 30/11, regularizado en dos tramos.
+    $turno = turnoLunesAViernes();
+    $asignador = app(AsignadorTurnos::class);
+    $primero = $asignador->asignar('111', $turno, Carbon::parse('2026-01-05'), Carbon::parse('2026-08-31'), 55);
+    $ultimo = $asignador->asignar('111', $turno, Carbon::parse('2026-09-01'), Carbon::parse('2026-11-30'), 55);
+
+    $this->putJson('/api/v1/funcionarios/111/turnos', ['contratoId' => 55, 'desde' => '2026-01-05', 'hasta' => '2026-12-31'])
+        ->assertSuccessful()
+        ->assertJsonPath('actualizados', 1);
+
+    expect([$primero->fresh()->desde->toDateString(), $primero->fresh()->hasta->toDateString()])->toBe(['2026-01-05', '2026-08-31'])
+        ->and([$ultimo->fresh()->desde->toDateString(), $ultimo->fresh()->hasta->toDateString()])->toBe(['2026-09-01', '2026-12-31'])
+        ->and($ultimo->horariosAsignados()->pluck('hasta')->map->toDateString()->unique()->all())->toBe(['2026-12-31']);
+});
+
+test('una adenda no corre hacia atrás el inicio de un turno que arrancó después que el contrato', function (): void {
+    $asignacion = app(AsignadorTurnos::class)->asignar('111', turnoLunesAViernes(), Carbon::parse('2026-10-15'), Carbon::parse('2026-11-30'), 55);
+
+    $this->putJson('/api/v1/funcionarios/111/turnos', ['contratoId' => 55, 'desde' => '2026-01-05', 'hasta' => '2026-12-31'])
+        ->assertSuccessful();
+
+    expect($asignacion->fresh()->desde->toDateString())->toBe('2026-10-15')
+        ->and($asignacion->fresh()->hasta->toDateString())->toBe('2026-12-31');
+});
+
+test('una adenda que extiende no pisa los horarios del sistema anterior que vienen después', function (): void {
+    $turno = turnoLunesAViernes();
+    $asignacion = app(AsignadorTurnos::class)->asignar('111', $turno, Carbon::parse('2026-01-05'), Carbon::parse('2026-06-30'), 55);
+    AsignacionHorario::factory()->create([
+        'ci' => '111', 'horario_id' => $turno->horarios->first()->id, 'desde' => '2026-09-01', 'hasta' => '2026-12-31',
+    ]);
+
+    $this->putJson('/api/v1/funcionarios/111/turnos', ['contratoId' => 55, 'desde' => '2026-01-05', 'hasta' => '2026-12-31'])
+        ->assertUnprocessable()
+        ->assertJsonPath('actualizados', 0);
+
+    expect($asignacion->fresh()->hasta->toDateString())->toBe('2026-06-30');
+});
+
+test('si el contrato se acorta, los turnos terminan con él y el que queda afuera se da de baja', function (): void {
+    $turno = turnoLunesAViernes();
+    $asignador = app(AsignadorTurnos::class);
+    $primero = $asignador->asignar('111', $turno, Carbon::parse('2026-01-05'), Carbon::parse('2026-08-31'), 55);
+    $ultimo = $asignador->asignar('111', $turno, Carbon::parse('2026-09-01'), Carbon::parse('2026-11-30'), 55);
+
+    $this->putJson('/api/v1/funcionarios/111/turnos', ['contratoId' => 55, 'desde' => '2026-01-05', 'hasta' => '2026-07-31'])
+        ->assertSuccessful()
+        ->assertJsonPath('actualizados', 2);
+
+    expect($primero->fresh()->hasta->toDateString())->toBe('2026-07-31')
+        ->and($ultimo->fresh()->trashed())->toBeTrue()
+        ->and($ultimo->fresh()->deleteObservacion)->toBe('El contrato se acortó en Mamoré y este turno quedó fuera de él.')
+        ->and(AsignacionHorario::withTrashed()->where('asignacion_turno_id', $ultimo->id)->get()->every->trashed())->toBeTrue();
+});
+
 test('mover un contrato sin nada asignado le asigna el sugerido', function (): void {
     turnoLunesAViernes(sugerido: true);
 

@@ -16,6 +16,12 @@
             thead { display: table-header-group; }
             tr { page-break-inside: avoid; }
         }
+
+        /* Una línea por licencia, con la misma altura en todas las columnas
+           para que los datos de cada licencia queden en el mismo renglón. */
+        .lic-linea { white-space: nowrap; }
+        .lic-linea + .lic-linea { border-top: 1px dashed #b0b0b0; }
+        .lic-linea:empty::before { content: '\00a0'; }
     </style>
 @endsection
 
@@ -117,8 +123,8 @@
                 @else
                     @foreach ($dia['bloques'] as $indice => $bloque)
                         @php
-                            $licencia = $bloque['licencia'];
-                            // Puede haber más de una licencia parcial en el mismo horario.
+                            // Puede haber más de una licencia parcial en el mismo horario:
+                            // cada una va en su renglón, con sus propios datos.
                             $licencias = collect($bloque['licencias']);
                         @endphp
                         <tr>
@@ -132,11 +138,11 @@
                             <td style="text-align: center">{{ $bloque['atraso'] > 0 ? P::desvio($bloque['atraso']) : '' }}</td>
                             <td style="text-align: center"><b>{{ $bloque['estado'] === P::ABANDONO ? 'ABANDONO' : '' }}</b></td>
                             <td style="text-align: center"><b>{{ P::FALTAS[$bloque['estado']] ?? '' }}</b></td>
-                            <td style="text-align: center">{{ $licencias->map(fn ($l) => $l->lEntra?->format('H:i'))->filter()->implode(' / ') }}</td>
-                            <td style="text-align: center">{{ $licencias->map(fn ($l) => $l->lSale?->format('H:i'))->filter()->implode(' / ') }}</td>
-                            <td style="text-align: center">{{ $licencia === null ? '' : ($licencia->tCompleto ? 'Sí' : 'No') }}</td>
-                            <td style="text-align: center">{{ $licencia === null ? '' : ($licencia->goceHaberes ? 'Sí' : 'No') }}</td>
-                            <td>{{ $licencias->pluck('motivo')->filter()->unique()->implode(' · ') }}</td>
+                            <td style="text-align: center">@foreach ($licencias as $l)<div class="lic-linea">{{ $l->lEntra?->format('H:i') }}</div>@endforeach</td>
+                            <td style="text-align: center">@foreach ($licencias as $l)<div class="lic-linea">{{ $l->lSale?->format('H:i') }}</div>@endforeach</td>
+                            <td style="text-align: center">@foreach ($licencias as $l)<div class="lic-linea">{{ $l->tCompleto ? 'Sí' : 'No' }}</div>@endforeach</td>
+                            <td style="text-align: center">@foreach ($licencias as $l)<div class="lic-linea">{{ $l->goceHaberes ? 'Sí' : 'No' }}</div>@endforeach</td>
+                            <td>@foreach ($licencias as $l)<div class="lic-linea">{{ $l->motivo }}</div>@endforeach</td>
                         </tr>
                     @endforeach
                 @endif
