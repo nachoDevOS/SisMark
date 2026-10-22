@@ -763,7 +763,7 @@
             // El grupo «Parámetros» arranca desplegado cuando la pantalla actual
             // es una de las suyas; si no, el ítem activo quedaría escondido.
             $enParametros = $enMenu['dias-excepcionales'] || $enMenu['turnos']
-                || $enMenu['turnos-asignados'] || $enMenu['licencias'];
+                || $enMenu['turnos-asignados'];
         @endphp
 
         {{-- El texto de cada opción va en su propio span: plegado queda solo el
@@ -773,7 +773,7 @@
              enteros cuando ninguna de sus opciones está permitida. --}}
         @php
             $puedeParametros = auth()->user()?->canAny([
-                'ViewAny:DiaExcepcional', 'ViewAny:Turno', 'ViewAny:AsignacionTurno', 'ViewAny:Licencia',
+                'ViewAny:DiaExcepcional', 'ViewAny:Turno', 'ViewAny:AsignacionTurno',
             ]);
         @endphp
 
@@ -786,6 +786,11 @@
             @can('ViewAny:Persona')
                 <a href="{{ route('funcionarios.index') }}" @class(['sidebar__link', 'activo' => $enMenu['funcionarios']]) title="Funcionarios"@if ($enMenu['funcionarios']) aria-current="page"@endif>
                     <x-heroicon-o-user-group /><span class="sidebar__texto">Funcionarios</span>
+                </a>
+            @endcan
+            @can('ViewAny:Licencia')
+                <a href="{{ route('licencias.index') }}" @class(['sidebar__link', 'activo' => $enMenu['licencias']]) title="Licencias"@if ($enMenu['licencias']) aria-current="page"@endif>
+                    <x-heroicon-o-clipboard-document-check /><span class="sidebar__texto">Licencias</span>
                 </a>
             @endcan
             @can('ViewAny:Asistencia')
@@ -817,11 +822,6 @@
                     @can('ViewAny:AsignacionTurno')
                         <a href="{{ route('turnos-asignados.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['turnos-asignados']]) title="Turnos asignados"@if ($enMenu['turnos-asignados']) aria-current="page"@endif>
                             <x-heroicon-o-user-plus /><span class="sidebar__texto">Turnos asignados</span>
-                        </a>
-                    @endcan
-                    @can('ViewAny:Licencia')
-                        <a href="{{ route('licencias.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['licencias']]) title="Licencias"@if ($enMenu['licencias']) aria-current="page"@endif>
-                            <x-heroicon-o-clipboard-document-check /><span class="sidebar__texto">Licencias</span>
                         </a>
                     @endcan
                 </div>

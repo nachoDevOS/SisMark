@@ -75,3 +75,10 @@ test('asignar un turno pide Create:AsignacionTurno', function (): void {
         ->post(route('turnos-asignados.store'), $datos)
         ->assertForbidden();
 });
+
+test('el menú muestra Licencias como opción propia, debajo de Funcionarios', function (): void {
+    $this->actingAs(superAdmin())
+        ->get(route('turnos.index'))
+        ->assertOk()
+        ->assertSeeInOrder(['title="Funcionarios"', 'title="Licencias"', 'title="Marcaciones"', 'title="Parámetros"'], false);
+});
