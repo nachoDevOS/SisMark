@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActividadController;
 use App\Http\Controllers\AsignacionHorarioController;
 use App\Http\Controllers\AsignacionTurnoController;
 use App\Http\Controllers\Auth\CambioPasswordController;
@@ -72,6 +73,10 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     Route::resource('usuarios', UserController::class)
         ->parameters(['usuarios' => 'usuario'])
         ->except('show');
+    // Actividad de usuarios: quién entró, qué miró, qué buscó. Solo se consulta
+    // (docs/ACTIVIDAD-DE-USUARIOS.md). No es la Bitácora de biométricos.
+    Route::get('actividades', [ActividadController::class, 'index'])->name('actividades.index');
+    Route::get('actividades/excel', [ActividadController::class, 'excel'])->name('actividades.excel');
     // Parámetros del sistema, una sección por grupo (ver Configuracion::GRUPOS).
     // Cada sección se guarda aparte.
     Route::get('configuracion', [ConfiguracionController::class, 'edit'])->name('configuracion.edit');

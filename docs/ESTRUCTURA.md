@@ -184,8 +184,11 @@ cargada. Si Mamoré no responde, el reporte no se emite.
 - **Las horas computadas se acotan al horario.** Llegar dentro de la tolerancia
   cuenta como llegar en hora; quedarse de más no suma. La permanencia real
   viaja aparte, como dato.
-- **Jornada partida:** si el día tiene dos horarios, cada bloque vale media
-  jornada. El peso es `1 ÷ cantidad de bloques`.
+- **Jornada partida:** si el día tiene dos horarios, cada bloque se evalúa por
+  separado y el estado del día es **el más grave** de sus bloques (`GRAVEDAD` en
+  `ProcesadorAsistencia::dia()`); atraso, anticipo y horas se suman. En los totales
+  el día cuenta una vez, con ese estado. *(Corregido el 26/10/2026: antes decía que
+  cada bloque valía media jornada, y el código no lo hace.)*
 
 La regla vive **dentro** del procesador y no en cada pantalla, así que la
 heredan de una el reporte, su imprimible, el Excel y la API.

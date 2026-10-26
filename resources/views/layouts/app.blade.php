@@ -183,6 +183,23 @@
             .aviso-pendientes__conteo { animation: none; }
         }
 
+        /* ===== Actividad de usuarios ===== */
+        .actividad-filtros { margin-bottom: 1rem; }
+        .actividad-filtros__fila { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 0 .9rem; }
+        .actividad-filtros__fila--pie { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.25rem; margin-top: .4rem; }
+        .actividad-filtros__fila--pie .check { display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; }
+        .actividad-vista { display: flex; align-items: center; gap: .3rem; margin-bottom: .75rem; }
+        .actividad-vista a { padding: .35rem .85rem; border-radius: 9999px; font-size: .8125rem; font-weight: 600;
+            color: var(--muted); background: var(--card); border: 1px solid var(--border); }
+        .actividad-vista a:hover { color: var(--fg); }
+        .actividad-vista a.activo { background: var(--thead); border-color: var(--thead); color: #fff; }
+        .actividad-vista .persona-meta { margin-left: auto; }
+        .actividad-url { font-family: ui-monospace, monospace; font-size: .75rem; word-break: break-all; }
+        .actividad-fila--fallida td { background: #fef2f2; }
+        .actividad-detalle td { background: var(--bg); }
+        .actividad-datos { margin: 0; padding: .6rem .75rem; max-height: 14rem; overflow: auto; border-radius: .4rem;
+            background: var(--card); border: 1px solid var(--border); font-size: .75rem; white-space: pre-wrap; word-break: break-word; }
+
         /* ===== Ayuda: botón de la topbar y su ventana de tutoriales ===== */
         /* Se pega a la derecha como el aviso de pendientes; si están los dos,
            el aviso deja de empujar, o el espacio libre se repartiría entre ambos. */
@@ -950,6 +967,7 @@
                 'reporte-sin-turno' => request()->routeIs('reportes.funcionarios.sin-turno*'),
                 'equipos' => request()->routeIs('equipos.*'),
                 'usuarios' => request()->routeIs('usuarios.*'),
+                'actividades' => request()->routeIs('actividades.*'),
                 'roles' => request()->routeIs('roles.*'),
                 'tokens-api' => request()->routeIs('tokens-api.*'),
                 'configuracion' => request()->routeIs('configuracion.*'),
@@ -1050,6 +1068,11 @@
             @can('ViewAny:User')
                 <a href="{{ route('usuarios.index') }}" @class(['sidebar__link', 'activo' => $enMenu['usuarios']]) title="Usuarios"@if ($enMenu['usuarios']) aria-current="page"@endif>
                     <x-heroicon-o-user /><span class="sidebar__texto">Usuarios</span>
+                </a>
+            @endcan
+            @can('viewAny', \App\Models\Actividad::class)
+                <a href="{{ route('actividades.index') }}" @class(['sidebar__link', 'activo' => $enMenu['actividades']]) title="Actividad de usuarios"@if ($enMenu['actividades']) aria-current="page"@endif>
+                    <x-heroicon-o-eye /><span class="sidebar__texto">Actividad de usuarios</span>
                 </a>
             @endcan
             @can('ViewAny:Role')

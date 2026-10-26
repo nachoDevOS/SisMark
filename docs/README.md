@@ -11,12 +11,15 @@ cada cosa en el código.
 
 | Documento | Cuándo se lee |
 |---|---|
+| **[GUIA-DEL-SISTEMA.md](GUIA-DEL-SISTEMA.md)** | **Para autoridades y usuarios, sin nada técnico:** qué hace el sistema, sus módulos y sus reglas de negocio |
 | **[ESTRUCTURA.md](ESTRUCTURA.md)** | Panorama completo: módulos, motor de asistencia, reportes, API, sincronización, permisos y árbol del código |
 | [REPORTE-PROCESADO-ASISTENCIA.md](REPORTE-PROCESADO-ASISTENCIA.md) | Las reglas del motor en detalle: por qué un día salió «Falta», «Atraso» o «Abandono» |
 | [TURNOS-Y-REGULARIZACION.md](TURNOS-Y-REGULARIZACION.md) | Asignar turno, regularizar contratos terminados por tramos y qué pasa con las adendas de Mamoré |
 | [COMUNICACION-BIOMETRICOS.md](COMUNICACION-BIOMETRICOS.md) | Protocolo ZKTeco y el microservicio Python que lo habla |
 | [MIGRACION-SIA-MYSQL.md](MIGRACION-SIA-MYSQL.md) | Traer el histórico del SIA (SQL Server) a MySQL, tabla por tabla |
 | [CONEXION-BD.md](CONEXION-BD.md) | Conexiones y credenciales: MySQL local y SQL Server del SIA |
+| [ACTIVIDAD-DE-USUARIOS.md](ACTIVIDAD-DE-USUARIOS.md) | Registro de quién entró, qué miró, qué buscó y qué cambió: diseño, plan por fases (Fase 1 hecha) y cómo ponerlo en marcha |
+| [manual/README.md](manual/README.md) | La Ayuda (tutoriales en video): cómo grabar, componer y sumar videos |
 | [../README.md](../README.md) | Requisitos, instalación y despliegue |
 
 ---

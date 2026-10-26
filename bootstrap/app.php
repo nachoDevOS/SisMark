@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\RegistrarActividad;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -49,6 +50,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'abilities' => CheckAbilities::class,
         ]);
+
+        // Actividad de usuarios: cada pedido queda registrado, con o sin sesión
+        // y también los de la API (docs/ACTIVIDAD-DE-USUARIOS.md).
+        $middleware->append(RegistrarActividad::class);
 
         // Los invitados van al login propio del sitio (routes/web.php).
         $middleware->redirectGuestsTo(fn () => route('login'));

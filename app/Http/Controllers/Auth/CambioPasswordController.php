@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CambiarPasswordRequest;
+use App\Models\Actividad;
 use App\Models\UserHistorial;
+use App\Services\RegistroActividad;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +23,7 @@ class CambioPasswordController extends Controller
         return view('auth.cambiar-password', ['obligatorio' => $request->user()->cambiar_password]);
     }
 
-    public function update(CambiarPasswordRequest $request): RedirectResponse
+    public function update(CambiarPasswordRequest $request, RegistroActividad $actividad): RedirectResponse
     {
         $usuario = $request->user();
 
@@ -38,6 +40,8 @@ class CambioPasswordController extends Controller
         });
 
         $request->session()->regenerate();
+
+        $actividad->registrarEvento(Actividad::CAMBIO_PASSWORD, 'Acceso', 'Cambió su contraseña', usuario: $usuario);
 
         return redirect()
             ->route('dashboard')

@@ -143,6 +143,13 @@ class RolePolicy
             'etiqueta' => 'Usuarios',
             'habilidades' => ['ViewAny', 'Create', 'Update', 'Delete'],
         ],
+        'Actividad' => [
+            'etiqueta' => 'Actividad de usuarios',
+            // Quién entró, qué miró, qué buscó y qué sacó del sistema. Solo se
+            // consulta: la escribe el propio sistema y nadie la edita ni la
+            // borra. `Export` es bajarla en Excel. No es la Bitácora de biométricos.
+            'habilidades' => ['ViewAny', 'Export'],
+        ],
         'Role' => [
             'etiqueta' => 'Roles',
             'habilidades' => ['ViewAny', 'Create', 'Update', 'Delete'],

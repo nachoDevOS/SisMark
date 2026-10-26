@@ -39,6 +39,7 @@ test('cada pantalla pide su propio permiso', function (string $ruta, string $per
 })->with([
     'turnos' => ['turnos.index', 'ViewAny:Turno'],
     'turnos asignados' => ['turnos-asignados.index', 'ViewAny:AsignacionTurno'],
+    'actividad de usuarios' => ['actividades.index', 'ViewAny:Actividad'],
 ]);
 
 test('la solapa de la ficha alcanza con cualquiera de los dos permisos de listado', function (string $permiso): void {
