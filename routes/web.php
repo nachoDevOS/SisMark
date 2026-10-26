@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiaExcepcionalController;
 use App\Http\Controllers\EquipoController;
 use App\Http\Controllers\LicenciaController;
+use App\Http\Controllers\ManualController;
 use App\Http\Controllers\MarcacionController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\ReporteFuncionarioController;
@@ -39,6 +40,11 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
 
     // Escritorio: avisos, los números del día y accesos rápidos.
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Ayuda: video, portada y vista previa de cada tutorial (ver ManualUsuario).
+    Route::get('manual/{tutorial}.{extension}', [ManualController::class, 'archivo'])
+        ->where(['tutorial' => '[a-z0-9-]+', 'extension' => 'mp4|jpg|previa\.mp4'])
+        ->name('manual.archivo');
 
     // Bitácora de acciones sobre las marcaciones. Va antes del resource para que
     // el binding {equipo} del show no capture la palabra «auditoria».
