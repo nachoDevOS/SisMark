@@ -71,6 +71,19 @@ class CatalogoActividad
     }
 
     /**
+     * La CI del funcionario sobre el que va el pedido, cuando viene en la ruta
+     * (`/api/v1/funcionarios/{ci}/…`, la ficha de Mamoré) o en la query (las
+     * pestañas de la ficha). Así también el detalle se puede buscar por CI y
+     * mostrar con nombre. No consulta a nadie: solo lee el pedido.
+     */
+    public function ciDelPedido(Request $request): ?string
+    {
+        $valor = $request->route('ci') ?? $request->query('ci');
+
+        return is_string($valor) ? ($this->ci($valor) ?: null) : null;
+    }
+
+    /**
      * La acción, la frase y la CI si el pedido es un evento importante; `null`
      * si es detalle. Solo se describe lo que salió bien: una ficha que dio 404
      * no se «miró».

@@ -6,6 +6,7 @@ use App\Models\Actividad;
 use App\Models\User;
 use App\Services\CatalogoActividad;
 use App\Services\RegistroActividad;
+use App\Services\ResolutorNombres;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -20,8 +21,12 @@ class ActividadController extends Controller
 {
     /**
      * La línea de tiempo con sus filtros. Arranca en «Solo lo importante» y en hoy.
+     *
+     * El nombre del funcionario se resuelve al mostrar, solo para las CI de la
+     * página y con la caché de {@see ResolutorNombres}: guardar la actividad
+     * nunca consulta a Mamoré.
      */
-    public function index(Request $request): View
+    public function index(Request $request, ResolutorNombres $resolutor): View
     {
         $this->authorize('viewAny', Actividad::class);
 
@@ -39,6 +44,9 @@ class ActividadController extends Controller
             'filtros' => $filtros,
             'usuarios' => User::withTrashed()->orderBy('name')->get(['id', 'name']),
             'modulos' => CatalogoActividad::modulos(),
+            'nombres' => $resolutor->porCi(
+                $actividades->getCollection()->map(fn (Actividad $actividad): ?string => $actividad->ciDelFuncionario())
+            ),
         ]);
     }
 

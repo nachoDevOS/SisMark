@@ -46,7 +46,7 @@ class RegistroActividad
                 'accion' => $evento['accion'] ?? Actividad::PEDIDO,
                 'modulo' => $this->catalogo->modulo($request),
                 'descripcion' => $evento['descripcion'] ?? null,
-                'ci' => $evento['ci'] ?? null,
+                'ci' => ($evento['ci'] ?? null) ?: $this->catalogo->ciDelPedido($request),
                 'datos' => $this->recortar($this->limpiar($request->all())),
                 'estado' => $estado,
                 'duracion_ms' => $duracionMs,

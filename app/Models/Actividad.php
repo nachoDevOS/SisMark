@@ -134,6 +134,29 @@ class Actividad extends Model
             ?? 'Sin sesión';
     }
 
+    /**
+     * La CI del funcionario sobre el que fue el pedido: la guardada o, en lo
+     * registrado antes de que se guardara en los pedidos de detalle, la que
+     * trae la URL (`/api/v1/funcionarios/{ci}/…` o `?ci=`).
+     */
+    public function ciDelFuncionario(): ?string
+    {
+        if (filled($this->ci)) {
+            return $this->ci;
+        }
+
+        $url = (string) $this->url;
+
+        if (preg_match('#^/api/v1/funcionarios/([^/?]+)#', $url, $coincidencia) === 1) {
+            $ci = rawurldecode($coincidencia[1]);
+        } else {
+            parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+            $ci = is_string($query['ci'] ?? null) ? $query['ci'] : '';
+        }
+
+        return mb_substr(trim($ci), 0, 20) ?: null;
+    }
+
     public function etiquetaAccion(): string
     {
         return self::ACCIONES[$this->accion]['etiqueta'] ?? $this->accion;

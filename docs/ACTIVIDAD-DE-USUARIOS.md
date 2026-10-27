@@ -333,8 +333,15 @@ intentos**: se pueden probar contraseñas sin freno. Va en la Fase 1:
 - [x] Pruebas: `tests/Feature/ActividadUsuariosTest.php` (17) y `PermisosTest`.
 - [x] Documentación y sesión del día.
 
-En la Fase 1 la ficha se describe por su CI («Miró la ficha del funcionario CI …»), sin el
-nombre: buscarlo sería una consulta más a Mamoré por cada ficha mirada.
+La frase se guarda con la CI («Miró la ficha del funcionario CI …»), sin el nombre: buscarlo
+al guardar sería una consulta más a Mamoré por cada pedido. El **nombre se resuelve al
+mostrar** la pantalla, solo para las CI de la página y con la caché de `ResolutorNombres`
+(un día; la base local si Mamoré no responde).
+
+La columna `ci` se llena también en los pedidos de detalle cuando la CI viene en la ruta
+(`/api/v1/funcionarios/{ci}/…`, la ficha de Mamoré) o en la query (las pestañas de la
+ficha): así lo que pide Mamoré por la API se busca por CI y sale con nombre. En lo
+registrado antes de eso, la pantalla toma la CI de la URL.
 
 ### Fase 2 — Completo
 - [ ] Cambios anotados en servicios y controladores (5.3).

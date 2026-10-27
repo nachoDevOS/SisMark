@@ -1,7 +1,10 @@
 <?php
 
 use App\Models\Actividad;
+use App\Models\Persona;
+use App\Models\SistemaExterno;
 use App\Models\User;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Testing\TestResponse;
 
@@ -166,6 +169,58 @@ test('mirar la pantalla de actividad no se registra', function (): void {
     $this->get(route('actividades.index', ['todo' => 1, 'page' => 2]))->assertOk();
 
     expect(Actividad::where('ruta', 'actividades.index')->exists())->toBeFalse();
+});
+
+test('un pedido de la API guarda la CI de la ruta aunque sea detalle', function (): void {
+    $mamore = SistemaExterno::create(['slug' => 'mamore', 'nombre' => 'Mamoré', 'activo' => true]);
+
+    $this->withToken($mamore->createToken('mamore', ['horarios:read'])->plainTextToken)
+        ->getJson('/api/v1/funcionarios/7633685/horarios');
+
+    $pedido = Actividad::where('sistema_externo_id', $mamore->id)->sole();
+
+    expect($pedido->importante)->toBeFalse()
+        ->and($pedido->ci)->toBe('7633685');
+});
+
+test('las pestañas de la ficha guardan la CI de la query', function (): void {
+    $this->actingAs(usuarioCon('ViewAny:Persona', 'View:Persona'))
+        ->get(route('funcionarios.marcaciones.list', ['ci' => '7633685']));
+
+    expect(Actividad::where('ruta', 'funcionarios.marcaciones.list')->value('ci'))->toBe('7633685');
+});
+
+test('la pantalla muestra el nombre del funcionario junto a la CI', function (): void {
+    config(['services.mamore.url' => null]);
+    Persona::factory()->create(['ci' => '7633685', 'paterno' => 'MOLINA', 'materno' => 'GUZMAN', 'nombres' => 'IGNACIO']);
+    Actividad::factory()->detalle()->create(['ci' => '7633685', 'url' => '/api/v1/funcionarios/7633685/horarios']);
+
+    $this->actingAs(usuarioCon('ViewAny:Actividad'))
+        ->get(route('actividades.index', ['todo' => 1]))
+        ->assertOk()
+        ->assertSee('MOLINA')
+        ->assertSee('CI 7633685');
+});
+
+test('sin nombre queda la CI, y lo registrado antes la toma de la URL', function (): void {
+    config(['services.mamore.url' => null]);
+    Actividad::factory()->detalle()->create(['ci' => null, 'url' => '/api/v1/funcionarios/5596473/asistencia?desde=2026-10-01']);
+
+    $this->actingAs(usuarioCon('ViewAny:Actividad'))
+        ->get(route('actividades.index', ['todo' => 1]))
+        ->assertOk()
+        ->assertSee('CI 5596473');
+});
+
+test('si Mamoré no responde la pantalla igual sale', function (): void {
+    config(['services.mamore.url' => 'https://mamore.test/api', 'services.mamore.token' => 'token']);
+    Http::fake(['*' => Http::response(null, 500)]);
+    Actividad::factory()->detalle()->create(['ci' => '7633685', 'url' => '/api/v1/funcionarios/7633685/horarios']);
+
+    $this->actingAs(usuarioCon('ViewAny:Actividad'))
+        ->get(route('actividades.index', ['todo' => 1]))
+        ->assertOk()
+        ->assertSee('CI 7633685');
 });
 
 test('la actividad no se edita ni se borra', function (): void {
