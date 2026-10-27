@@ -34,19 +34,13 @@
                 <label for="hasta">Hasta</label>
                 <input type="date" id="hasta" name="hasta" value="{{ $filtros['hasta'] }}" class="input">
             </div>
-            {{-- Quién: un lado entero (personas de SisMark o sistemas externos)
-                 o un usuario puntual. --}}
+            {{-- Quién: personas de SisMark o sistemas externos. --}}
             <div class="campo">
                 <label for="quien">Quién</label>
                 <select id="quien" name="quien" class="input">
                     <option value="">Todos</option>
                     <option value="personas" @selected($filtros['quien'] === 'personas')>Personas de SisMark</option>
                     <option value="sistemas" @selected($filtros['quien'] === 'sistemas')>Sistemas externos (API)</option>
-                    <optgroup label="Usuarios">
-                        @foreach ($usuarios as $usuario)
-                            <option value="usuario:{{ $usuario->id }}" @selected($filtros['quien'] === "usuario:{$usuario->id}")>{{ $usuario->name }}</option>
-                        @endforeach
-                    </optgroup>
                 </select>
             </div>
             <div class="campo">

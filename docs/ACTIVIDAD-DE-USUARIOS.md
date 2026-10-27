@@ -251,8 +251,7 @@ lleva la frase y, en `datos`, el enlace a ese registro.
 - **Interruptor «Solo lo importante» / «Ver todo»**: arranca en «Solo lo importante» (se lee
   como una historia); «Ver todo» muestra cada pedido con su URL, estado y duración.
 - **Filtros:** rango de fechas (obligatorio, arranca en hoy); **Quién**: «Personas de SisMark»
-  (todo lo que no vino con token, también los intentos de ingreso), «Sistemas externos (API)»
-  o un usuario puntual; CI del funcionario; método (GET, POST, PUT, PATCH,
+  (todo lo que no vino con token, también los intentos de ingreso) o «Sistemas externos (API)»; CI del funcionario; método (GET, POST, PUT, PATCH,
   DELETE); estado (errores 4xx/5xx) y «solo intentos fallidos». El módulo y la IP se muestran
   en cada fila pero no se filtran.
 - Cada fila se **despliega** con flecha (como el listado de licencias): `datos` en lenguaje

@@ -263,20 +263,17 @@ test('se filtra por CI y por intentos fallidos', function (): void {
         ->assertDontSee('CI 7633685');
 });
 
-test('«Quién» filtra por lado (personas o sistemas) o por un usuario', function (): void {
-    $ana = User::factory()->create(['name' => 'Ana Rojas']);
+test('«Quién» separa las personas de SisMark de los sistemas externos', function (): void {
     $mamore = SistemaExterno::create(['slug' => 'mamore', 'nombre' => 'Mamoré', 'activo' => true]);
 
-    Actividad::factory()->create(['user_id' => $ana->id, 'descripcion' => 'Miró la ficha del funcionario CI 111']);
-    Actividad::factory()->create(['descripcion' => 'Miró la ficha del funcionario CI 222']);
+    Actividad::factory()->create(['descripcion' => 'Miró la ficha del funcionario CI 111']);
     Actividad::factory()->create(['user_id' => null, 'sistema_externo_id' => $mamore->id, 'descripcion' => 'Asignó el turno a CI 333']);
 
     $usuario = usuarioCon('ViewAny:Actividad');
     $ver = fn (string $quien) => $this->actingAs($usuario)->get(route('actividades.index', ['quien' => $quien]))->assertOk();
 
-    $ver('personas')->assertSee('CI 111')->assertSee('CI 222')->assertDontSee('CI 333');
+    $ver('personas')->assertSee('CI 111')->assertDontSee('CI 333');
     $ver('sistemas')->assertSee('CI 333')->assertDontSee('CI 111');
-    $ver("usuario:{$ana->id}")->assertSee('CI 111')->assertDontSee('CI 222')->assertDontSee('CI 333');
     $ver('cualquier-cosa')->assertSee('CI 111')->assertSee('CI 333');
 });
 

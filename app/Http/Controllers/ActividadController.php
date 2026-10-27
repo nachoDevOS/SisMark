@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Actividad;
-use App\Models\User;
 use App\Services\RegistroActividad;
 use App\Services\ResolutorNombres;
 use Illuminate\Database\Eloquent\Builder;
@@ -48,7 +47,6 @@ class ActividadController extends Controller
         return view('actividades.index', [
             'actividades' => $actividades,
             'filtros' => $filtros,
-            'usuarios' => User::withTrashed()->orderBy('name')->get(['id', 'name']),
             'metodos' => self::METODOS,
             'nombres' => $resolutor->porCi(
                 $actividades->getCollection()->map(fn (Actividad $actividad): ?string => $actividad->ciDelFuncionario())
@@ -81,7 +79,7 @@ class ActividadController extends Controller
 
         return [
             'todo' => $request->boolean('todo'),
-            'quien' => preg_match('/^(personas|sistemas|usuario:\d+)$/', (string) $request->query('quien')) === 1 ? (string) $request->query('quien') : '',
+            'quien' => in_array((string) $request->query('quien'), ['personas', 'sistemas'], true) ? (string) $request->query('quien') : '',
             'desde' => $desde,
             'hasta' => $hasta,
             'ci' => trim((string) $request->query('ci', '')),
@@ -105,29 +103,13 @@ class ActividadController extends Controller
             // «Solo lo importante» salvo que se pida todo; los errores y los
             // intentos fallidos se buscan en todo, que es donde están.
             ->when(! $filtros['todo'] && ! $filtros['errores'], fn (Builder $q) => $q->where('importante', true))
-            ->when($filtros['quien'] !== '', fn (Builder $q) => $this->filtrarQuien($q, $filtros['quien']))
+            // «Personas de SisMark» es todo lo que no vino con el token de un
+            // sistema externo: también los intentos de ingreso, sin usuario todavía.
+            ->when($filtros['quien'] === 'personas', fn (Builder $q) => $q->whereNull('sistema_externo_id'))
+            ->when($filtros['quien'] === 'sistemas', fn (Builder $q) => $q->whereNotNull('sistema_externo_id'))
             ->when($filtros['ci'] !== '', fn (Builder $q) => $q->where('ci', $filtros['ci']))
             ->when($filtros['metodo'] !== '', fn (Builder $q) => $q->where('metodo', $filtros['metodo']))
             ->when($filtros['errores'], fn (Builder $q) => $q->where('estado', '>=', 400))
             ->when($filtros['fallidos'], fn (Builder $q) => $q->whereIn('accion', Actividad::FALLIDAS));
-    }
-
-    /**
-     * «Personas de SisMark» es todo lo que no vino con el token de un sistema
-     * externo: también los intentos de ingreso, que todavía no tienen usuario.
-     *
-     * @param  Builder<Actividad>  $consulta
-     * @return Builder<Actividad>
-     */
-    private function filtrarQuien(Builder $consulta, string $quien): Builder
-    {
-        [$lado, $id] = array_pad(explode(':', $quien, 2), 2, null);
-
-        return match ($lado) {
-            'personas' => $consulta->whereNull('sistema_externo_id'),
-            'sistemas' => $consulta->whereNotNull('sistema_externo_id'),
-            'usuario' => $consulta->where('user_id', (int) $id),
-            default => $consulta,
-        };
     }
 }
