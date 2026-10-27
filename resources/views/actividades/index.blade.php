@@ -96,7 +96,11 @@
                 </tr>
             </thead>
             @forelse ($actividades as $actividad)
-                @php($tipo = \App\Models\Actividad::ACCIONES[$actividad->accion]['tipo'] ?? 'detalle')
+                @php
+                    $tipo = \App\Models\Actividad::ACCIONES[$actividad->accion]['tipo'] ?? 'detalle';
+                    $ciFuncionario = $actividad->ciDelFuncionario();
+                    $nombreFuncionario = $ciFuncionario === null ? null : ($nombres[$ciFuncionario] ?? null);
+                @endphp
                 <tbody x-data="{ abierto: false }">
                     <tr @class(['actividad-fila--fallida' => $actividad->esFallida()])>
                         <td style="white-space: nowrap;">
@@ -119,6 +123,17 @@
                                 {{ $actividad->descripcion }}
                             @else
                                 <span class="actividad-url">{{ $actividad->metodo }} {{ $actividad->url }}</span>
+                            @endif
+                            {{-- El funcionario con nombre. Sin nombre, la CI solo hace
+                                 falta si la frase no la dice ya. --}}
+                            @if ($nombreFuncionario)
+                                <div class="persona-meta actividad-funcionario">
+                                    <x-heroicon-o-user />{{ $nombreFuncionario }} · CI {{ $ciFuncionario }}
+                                </div>
+                            @elseif ($ciFuncionario && ! $actividad->descripcion)
+                                <div class="persona-meta actividad-funcionario">
+                                    <x-heroicon-o-user />CI {{ $ciFuncionario }}
+                                </div>
                             @endif
                             @if ($actividad->estado >= 400)
                                 <div style="color: var(--danger); font-size: .75rem;">Respondió {{ $actividad->estado }}</div>
@@ -143,8 +158,8 @@
                                 @if ($actividad->estado)
                                     <div><dt>Respuesta</dt><dd>{{ $actividad->estado }} · {{ $actividad->duracion_ms }} ms</dd></div>
                                 @endif
-                                @if ($actividad->ci)
-                                    <div><dt>CI del funcionario</dt><dd>{{ $actividad->ci }}</dd></div>
+                                @if ($ciFuncionario)
+                                    <div><dt>Funcionario</dt><dd>{{ $nombreFuncionario ? $nombreFuncionario.' · ' : '' }}CI {{ $ciFuncionario }}</dd></div>
                                 @endif
                                 @if ($actividad->email)
                                     <div><dt>Correo escrito</dt><dd>{{ $actividad->email }}</dd></div>

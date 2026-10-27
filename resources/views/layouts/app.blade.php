@@ -187,6 +187,8 @@
         .actividad-filtros { margin-bottom: 1rem; }
         .actividad-filtros__fila { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 0 .9rem; }
         .actividad-filtros__fila--pie { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.25rem; margin-top: .4rem; }
+        .actividad-funcionario { display: flex; align-items: center; gap: .3rem; margin-top: .2rem; }
+        .actividad-funcionario svg { width: .85rem; height: .85rem; flex-shrink: 0; }
         .actividad-filtros__fila--pie .check { display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; }
         .actividad-vista { display: flex; align-items: center; gap: .3rem; margin-bottom: .75rem; }
         .actividad-vista a { padding: .35rem .85rem; border-radius: 9999px; font-size: .8125rem; font-weight: 600;
