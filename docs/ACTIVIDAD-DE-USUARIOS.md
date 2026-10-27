@@ -227,13 +227,12 @@ lleva la frase y, en `datos`, el enlace a ese registro.
 - Línea de tiempo, la más nueva arriba, paginada.
 - **Interruptor «Solo lo importante» / «Ver todo»**: arranca en «Solo lo importante» (se lee
   como una historia); «Ver todo» muestra cada pedido con su URL, estado y duración.
-- **Filtros:** usuario o sistema externo, rango de fechas (obligatorio, arranca en hoy), tipo
-  de acción (Acceso / Consulta / Búsqueda / Reporte / Cambio / Ayuda / API), módulo, CI del
-  funcionario, IP, estado (errores 4xx/5xx) y «solo intentos fallidos».
+- **Filtros:** usuario o sistema externo, rango de fechas (obligatorio, arranca en hoy), módulo,
+  CI del funcionario, IP, estado (errores 4xx/5xx) y «solo intentos fallidos».
 - Cada fila se **despliega** con flecha (como el listado de licencias): `datos` en lenguaje
   claro, navegador, ruta y, en un cambio, antes → después.
 - Íconos y colores por tipo; los intentos fallidos y bloqueos en rojo.
-- **Excel** de lo filtrado (con el mismo permiso; queda anotado como `exportar`).
+- Solo se consulta en pantalla: no se descarga.
 
 ### 6.2 En la ficha de cada usuario
 
@@ -261,7 +260,6 @@ si no hubo ninguno (como el aviso de licencias pendientes).
 | Permiso | Para qué | Quién |
 |---|---|---|
 | `ViewAny:Actividad` | ver la pantalla, «Actividad» del usuario, «Quién consultó esta ficha», el aviso | Administrador; asignable a Jefatura de RRHH |
-| `Export:Actividad` | bajar el Excel | Administrador |
 | — | «Mis ingresos» | todos, cada uno lo suyo |
 
 No existe `Update:Actividad` ni `Delete:Actividad`. Se suman a la matriz de Roles como los
@@ -316,8 +314,7 @@ intentos**: se pueden probar contraseñas sin freno. Va en la Fase 1:
 - Aprobar una licencia, asignar y concluir un turno anotan su cambio.
 - Ningún evento guarda campos de la lista negra.
 - `Actividad` no se puede editar ni borrar (excepción).
-- La pantalla pide `ViewAny:Actividad`; el Excel, `Export:Actividad`; «Mis ingresos» muestra
-  solo lo propio.
+- La pantalla pide `ViewAny:Actividad`; «Mis ingresos» muestra solo lo propio.
 - `actividad:depurar` borra el detalle de más de 1 año y lo importante de más de 5, y deja lo demás.
 - Si falla el guardado, el pedido responde igual.
 
@@ -330,9 +327,9 @@ intentos**: se pueden probar contraseñas sin freno. Va en la Fase 1:
 - [x] Servicio `RegistroActividad` con la lista negra de campos.
 - [x] Listener `RegistrarAcceso` (`Login`, `Failed`, `Logout`, `Lockout`); `ingreso_rechazado` y `cambio_password`.
 - [x] Límite de intentos de ingreso (8.4).
-- [x] Middleware **global** `RegistrarActividad`: todo pedido, con el mapa de rutas importantes de `CatalogoActividad` (5.2), en `terminate()`. No registra `/up`.
-- [x] Permisos `ViewAny:Actividad` y `Export:Actividad` en la matriz de Roles (`RolePolicy::MODULOS`).
-- [x] Pantalla «Actividad de usuarios» (menú lateral, debajo de Usuarios) con filtros, «Solo lo importante / Ver todo», detalle desplegable y Excel.
+- [x] Middleware **global** `RegistrarActividad`: todo pedido, con el mapa de rutas importantes de `CatalogoActividad` (5.2), en `terminate()`. No registra `/up` ni la propia pantalla `/actividades`.
+- [x] Permiso `ViewAny:Actividad` en la matriz de Roles (`RolePolicy::MODULOS`).
+- [x] Pantalla «Actividad de usuarios» (menú lateral, grupo «Seguridad») con filtros, «Solo lo importante / Ver todo» y detalle desplegable.
 - [x] Pruebas: `tests/Feature/ActividadUsuariosTest.php` (17) y `PermisosTest`.
 - [x] Documentación y sesión del día.
 
@@ -359,7 +356,7 @@ nombre: buscarlo sería una consulta más a Mamoré por cada ficha mirada.
 | `app/Services/RegistroActividad.php` | nuevo |
 | `app/Listeners/RegistrarAcceso.php` (o uno por evento) | nuevo |
 | `app/Http/Middleware/RegistrarActividad.php` | nuevo; se registra en `bootstrap/app.php` / grupo `auth` de `routes/web.php` |
-| `app/Http/Controllers/ActividadController.php` | nuevo: pantalla, lista AJAX, Excel |
+| `app/Http/Controllers/ActividadController.php` | nuevo: pantalla, lista AJAX |
 | `app/Policies/ActividadPolicy.php` | nuevo |
 | `app/Console/Commands/DepurarActividad.php` | nuevo (Fase 2) |
 | `resources/views/actividades/index.blade.php`, `list.blade.php` | nuevos |
@@ -378,7 +375,6 @@ nombre: buscarlo sería una consulta más a Mamoré por cada ficha mirada.
 3. **Límite de intentos:** ¿5 intentos y 15 minutos, o más estricto?
 4. **«Quién consultó esta ficha»:** ¿solo con `ViewAny:Actividad`, o también para el propio
    funcionario cuando exista un portal?
-5. **Excel de la actividad:** ¿solo Administrador?
 
 ---
 
@@ -386,7 +382,7 @@ nombre: buscarlo sería una consulta más a Mamoré por cada ficha mirada.
 
 ```sh
 php artisan migrate                                   # crea la tabla `actividades`
-php artisan db:seed --class=RolesAndPermissionsSeeder # crea ViewAny:Actividad y Export:Actividad
+php artisan db:seed --class=RolesAndPermissionsSeeder # crea ViewAny:Actividad
 ```
 
 - Hasta correr la migración, el sistema **funciona igual**, pero cada pedido deja en

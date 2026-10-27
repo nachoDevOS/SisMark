@@ -414,6 +414,7 @@ class DirectorioMamore
         $nacimiento = filled($persona['birthday'] ?? null) ? Carbon::parse($persona['birthday']) : null;
         // La API embute el contrato firmado en cada persona (null si no tiene).
         $contrato = is_array($persona['contrato'] ?? null) ? $persona['contrato'] : null;
+        $foto = self::urlDeFoto($persona['image'] ?? null);
 
         return [
             'id' => $persona['id'] ?? null,
@@ -484,9 +485,25 @@ class DirectorioMamore
             'bono' => $this->decimal($contrato['bonus'] ?? null),
             'contratoDesde' => $this->fecha($contrato['start'] ?? null),
             'contratoHasta' => $this->fecha($contrato['finish'] ?? null),
-            'image' => $persona['image'] ?? null,
-            'imageThumb' => $this->miniatura($persona['image'] ?? null),
+            'image' => $foto,
+            'imageThumb' => $this->miniatura($foto),
         ];
+    }
+
+    /**
+     * La foto de Mamoré si es una URL completa; `null` si no.
+     *
+     * Mamoré guarda las fotos viejas como ruta suelta («people/June2024/x.png»)
+     * y las nuevas como URL de S3, mezcladas en la misma columna. La ruta suelta
+     * el navegador la completa con el dominio de SisMark y da 404 siempre (dos
+     * por persona: miniatura y original): se toma como sin foto y va el ícono,
+     * sin pedir nada.
+     */
+    public static function urlDeFoto(mixed $valor): ?string
+    {
+        $url = trim((string) $valor);
+
+        return Str::startsWith($url, ['http://', 'https://']) ? $url : null;
     }
 
     /**

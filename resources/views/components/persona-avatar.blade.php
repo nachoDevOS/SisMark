@@ -2,13 +2,26 @@
 
 {{-- Avatar del funcionario en las tablas. La foto solo la tiene Mamoré: sin
      ella queda el ícono genérico. Se pinta la miniatura y al pasar el mouse se
-     amplía, que es la misma imagen ya descargada: el zoom no pide nada más. --}}
+     amplía, que es la misma imagen ya descargada: el zoom no pide nada más.
+     Si la miniatura no existe se prueba la original; si esa tampoco, queda el
+     ícono y se saca el zoom, que no tendría qué ampliar. --}}
 <span class="persona-avatar">
     <span class="persona-foto">
         @if (filled($thumb))
             <img src="{{ $thumb }}"
                  alt="Foto de {{ $nombre ?: 'la persona' }}" loading="lazy"
-                 @if (filled($full)) onerror="this.onerror=null; this.src='{{ $full }}'" @endif>
+                 @if (filled($full) && $full !== $thumb) data-original="{{ $full }}" @endif
+                 onerror="const avatar = this.closest('.persona-avatar');
+                          if (this.dataset.original) {
+                              this.src = this.dataset.original;
+                              avatar.querySelector('.persona-zoom img')?.setAttribute('src', this.dataset.original);
+                              delete this.dataset.original;
+                          } else {
+                              avatar.querySelector('.persona-zoom')?.remove();
+                              this.nextElementSibling.style.display = '';
+                              this.remove();
+                          }">
+            <x-heroicon-o-user style="display: none" />
         @else
             <x-heroicon-o-user />
         @endif

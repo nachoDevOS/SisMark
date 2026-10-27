@@ -20,11 +20,12 @@ class RegistrarActividad
 
     /**
      * Lo que no se registra: el chequeo de salud que Coolify pide cada pocos
-     * segundos. Sin esto la tabla se llenaría de «/up» y nada más.
+     * segundos (sin esto la tabla se llenaría de «/up» y nada más) y la propia
+     * pantalla de actividad, que se anotaría a sí misma con cada filtro.
      *
      * @var list<string>
      */
-    private const IGNORADAS = ['up'];
+    private const IGNORADAS = ['up', 'actividades'];
 
     public function __construct(private RegistroActividad $registro) {}
 

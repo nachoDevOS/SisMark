@@ -67,10 +67,13 @@
         <h2>Datos personales</h2>
 
         <div class="ficha-persona">
-            {{-- Acá va la foto original (no la miniatura): es una sola imagen en la página. --}}
+            {{-- Acá va la foto original (no la miniatura): es una sola imagen en la página.
+                 Si no carga, queda el ícono. --}}
             <div class="ficha-foto">
                 @if (!empty($persona['image']))
-                    <img src="{{ $persona['image'] }}" alt="Foto de {{ $persona['full_name'] ?? 'la persona' }}">
+                    <img src="{{ $persona['image'] }}" alt="Foto de {{ $persona['full_name'] ?? 'la persona' }}"
+                         onerror="this.nextElementSibling.style.display = ''; this.remove();">
+                    <x-heroicon-o-user style="display: none" />
                 @else
                     <x-heroicon-o-user />
                 @endif

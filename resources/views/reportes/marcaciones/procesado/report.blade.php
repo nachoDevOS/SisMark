@@ -88,10 +88,10 @@
                                        border-bottom: 1px solid var(--border);
                                        cursor: pointer; font: inherit;"
                                 onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
-                            {{-- La foto solo la tiene Mamoré; desde la base local va el ícono. --}}
+                            {{-- La foto solo la tiene Mamoré; desde la base local, o si no carga, va el ícono. --}}
                             <span class="persona-foto" style="width: 1.9rem; height: 1.9rem;">
                                 <template x-if="item.foto">
-                                    <img :src="item.foto" alt="" loading="lazy">
+                                    <img :src="item.foto" alt="" loading="lazy" @error="item.foto = null">
                                 </template>
                                 <template x-if="! item.foto">
                                     <x-heroicon-o-user />

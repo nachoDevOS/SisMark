@@ -76,19 +76,6 @@ class Actividad extends Model
     ];
 
     /**
-     * Los tipos del filtro de la pantalla.
-     *
-     * @var array<string, string>
-     */
-    public const TIPOS = [
-        'acceso' => 'Acceso',
-        'consulta' => 'Consulta',
-        'busqueda' => 'Búsqueda',
-        'reporte' => 'Reporte',
-        'ayuda' => 'Ayuda',
-    ];
-
-    /**
      * Las acciones que son problemas de acceso: van en rojo y alimentan el
      * filtro «solo intentos fallidos».
      *

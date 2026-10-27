@@ -976,6 +976,8 @@
             // es una de las suyas; si no, el ítem activo quedaría escondido.
             $enParametros = $enMenu['dias-excepcionales'] || $enMenu['turnos']
                 || $enMenu['turnos-asignados'];
+            $enSeguridad = $enMenu['usuarios'] || $enMenu['roles']
+                || $enMenu['actividades'] || $enMenu['tokens-api'];
         @endphp
 
         {{-- El texto de cada opción va en su propio span: plegado queda solo el
@@ -987,6 +989,8 @@
             $puedeParametros = auth()->user()?->canAny([
                 'ViewAny:DiaExcepcional', 'ViewAny:Turno', 'ViewAny:AsignacionTurno',
             ]);
+            $puedeSeguridad = auth()->user()?->canAny(['ViewAny:User', 'ViewAny:Role', 'ViewAny:SistemaExterno'])
+                || auth()->user()?->can('viewAny', \App\Models\Actividad::class);
         @endphp
 
         <nav class="sidebar__nav">
@@ -1065,26 +1069,37 @@
                     <x-heroicon-o-computer-desktop /><span class="sidebar__texto">Biométricos</span>
                 </a>
             @endcan
-            @can('ViewAny:User')
-                <a href="{{ route('usuarios.index') }}" @class(['sidebar__link', 'activo' => $enMenu['usuarios']]) title="Usuarios"@if ($enMenu['usuarios']) aria-current="page"@endif>
-                    <x-heroicon-o-user /><span class="sidebar__texto">Usuarios</span>
-                </a>
-            @endcan
-            @can('viewAny', \App\Models\Actividad::class)
-                <a href="{{ route('actividades.index') }}" @class(['sidebar__link', 'activo' => $enMenu['actividades']]) title="Actividad de usuarios"@if ($enMenu['actividades']) aria-current="page"@endif>
-                    <x-heroicon-o-eye /><span class="sidebar__texto">Actividad de usuarios</span>
-                </a>
-            @endcan
-            @can('ViewAny:Role')
-                <a href="{{ route('roles.index') }}" @class(['sidebar__link', 'activo' => $enMenu['roles']]) title="Roles"@if ($enMenu['roles']) aria-current="page"@endif>
-                    <x-heroicon-o-shield-check /><span class="sidebar__texto">Roles</span>
-                </a>
-            @endcan
-            @can('ViewAny:SistemaExterno')
-                <a href="{{ route('tokens-api.index') }}" @class(['sidebar__link', 'activo' => $enMenu['tokens-api']]) title="Tokens de API"@if ($enMenu['tokens-api']) aria-current="page"@endif>
-                    <x-heroicon-o-key /><span class="sidebar__texto">Tokens de API</span>
-                </a>
-            @endcan
+            {{-- Seguridad: quién entra, con qué permisos, qué hizo y qué
+                 sistemas externos tienen llave. Mismo patrón que «Parámetros». --}}
+            <div x-data="{ abierto: {{ $enSeguridad ? 'true' : 'false' }} }" @if (! $puedeSeguridad) hidden @endif>
+                <button type="button" @class(['sidebar__grouptoggle', 'activo' => $enSeguridad]) title="Seguridad"
+                        x-on:click="sidebarPlegado ? (alternarMenu(), abierto = true) : (abierto = !abierto)" :aria-expanded="abierto">
+                    <x-heroicon-o-lock-closed /><span class="sidebar__texto">Seguridad</span>
+                    <span class="sidebar__chevron" :style="abierto ? 'transform: rotate(180deg)' : ''"><x-heroicon-o-chevron-down /></span>
+                </button>
+                <div class="sidebar__submenu" x-show="abierto" x-cloak>
+                    @can('ViewAny:User')
+                        <a href="{{ route('usuarios.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['usuarios']]) title="Usuarios"@if ($enMenu['usuarios']) aria-current="page"@endif>
+                            <x-heroicon-o-user /><span class="sidebar__texto">Usuarios</span>
+                        </a>
+                    @endcan
+                    @can('ViewAny:Role')
+                        <a href="{{ route('roles.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['roles']]) title="Roles"@if ($enMenu['roles']) aria-current="page"@endif>
+                            <x-heroicon-o-shield-check /><span class="sidebar__texto">Roles</span>
+                        </a>
+                    @endcan
+                    @can('viewAny', \App\Models\Actividad::class)
+                        <a href="{{ route('actividades.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['actividades']]) title="Actividad de usuarios"@if ($enMenu['actividades']) aria-current="page"@endif>
+                            <x-heroicon-o-eye /><span class="sidebar__texto">Actividad de usuarios</span>
+                        </a>
+                    @endcan
+                    @can('ViewAny:SistemaExterno')
+                        <a href="{{ route('tokens-api.index') }}" @class(['sidebar__sublink', 'activo' => $enMenu['tokens-api']]) title="Tokens de API"@if ($enMenu['tokens-api']) aria-current="page"@endif>
+                            <x-heroicon-o-key /><span class="sidebar__texto">Tokens de API</span>
+                        </a>
+                    @endcan
+                </div>
+            </div>
             @can('Update:Configuracion')
                 <a href="{{ route('configuracion.edit') }}" @class(['sidebar__link', 'activo' => $enMenu['configuracion']]) title="Configuración"@if ($enMenu['configuracion']) aria-current="page"@endif>
                     <x-heroicon-o-cog-6-tooth /><span class="sidebar__texto">Configuración</span>

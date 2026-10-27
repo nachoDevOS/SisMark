@@ -302,6 +302,8 @@ class PersonaController extends Controller
 
         abort_if($persona === null, 404);
 
+        $persona['image'] = DirectorioMamore::urlDeFoto($persona['image'] ?? null);
+
         $ciMarcaciones = trim((string) ($persona['ci'] ?? $ci));
         $desde = $request->query('desde', now()->startOfMonth()->toDateString());
         $hasta = $request->query('hasta', now()->toDateString());

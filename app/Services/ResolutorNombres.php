@@ -151,7 +151,7 @@ class ResolutorNombres
      */
     private function claveCache(string $ci): string
     {
-        return 'mamore.ficha.v5.'.$ci;
+        return 'mamore.ficha.v6.'.$ci;
     }
 
     /**

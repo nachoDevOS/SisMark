@@ -14,11 +14,6 @@
             <span class="cabecera__icono"><x-heroicon-o-eye /></span>
             <h1>Actividad de usuarios</h1>
         </div>
-        @can('export', \App\Models\Actividad::class)
-            <a href="{{ route('actividades.excel', request()->except('page')) }}" class="btn btn--gris">
-                <x-heroicon-o-table-cells />Excel
-            </a>
-        @endcan
     </div>
 
     <p style="margin: -.4rem 0 1.1rem; color: var(--muted); font-size: .85rem;">
@@ -45,15 +40,6 @@
                     <option value="">Todos</option>
                     @foreach ($usuarios as $usuario)
                         <option value="{{ $usuario->id }}" @selected($filtros['usuario'] === $usuario->id)>{{ $usuario->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="campo">
-                <label for="tipo">Tipo</label>
-                <select id="tipo" name="tipo" class="input">
-                    <option value="">Todos</option>
-                    @foreach ($tipos as $valor => $etiqueta)
-                        <option value="{{ $valor }}" @selected($filtros['tipo'] === $valor)>{{ $etiqueta }}</option>
                     @endforeach
                 </select>
             </div>

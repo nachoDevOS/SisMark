@@ -75,9 +75,7 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
         ->except('show');
     // Actividad de usuarios: quién entró, qué miró, qué buscó. Solo se consulta
     // (docs/ACTIVIDAD-DE-USUARIOS.md). No es la Bitácora de biométricos.
-    Route::get('actividades', [ActividadController::class, 'index'])->name('actividades.index');
-    Route::get('actividades/excel', [ActividadController::class, 'excel'])->name('actividades.excel');
-    // Parámetros del sistema, una sección por grupo (ver Configuracion::GRUPOS).
+    Route::get('actividades', [ActividadController::class, 'index'])->name('actividades.index');    // Parámetros del sistema, una sección por grupo (ver Configuracion::GRUPOS).
     // Cada sección se guarda aparte.
     Route::get('configuracion', [ConfiguracionController::class, 'edit'])->name('configuracion.edit');
     Route::put('configuracion/{grupo}', [ConfiguracionController::class, 'update'])

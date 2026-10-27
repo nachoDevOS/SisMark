@@ -159,6 +159,15 @@ test('el chequeo de salud /up no se registra', function (): void {
     expect(Actividad::count())->toBe(0);
 });
 
+test('mirar la pantalla de actividad no se registra', function (): void {
+    $this->actingAs(usuarioCon('ViewAny:Actividad'));
+
+    $this->get(route('actividades.index'))->assertOk();
+    $this->get(route('actividades.index', ['todo' => 1, 'page' => 2]))->assertOk();
+
+    expect(Actividad::where('ruta', 'actividades.index')->exists())->toBeFalse();
+});
+
 test('la actividad no se edita ni se borra', function (): void {
     $actividad = Actividad::factory()->create();
 
@@ -199,14 +208,6 @@ test('se filtra por CI y por intentos fallidos', function (): void {
         ->assertDontSee('CI 7633685');
 });
 
-test('sin el permiso no se ve, y el Excel pide el suyo', function (): void {
+test('sin el permiso no se ve', function (): void {
     $this->actingAs(usuarioCon('ViewAny:Persona'))->get(route('actividades.index'))->assertForbidden();
-    $this->actingAs(usuarioCon('ViewAny:Actividad'))->get(route('actividades.excel'))->assertForbidden();
-
-    Actividad::factory()->create();
-
-    $this->actingAs(usuarioCon('ViewAny:Actividad', 'Export:Actividad'))
-        ->get(route('actividades.excel'))
-        ->assertOk()
-        ->assertDownload();
 });

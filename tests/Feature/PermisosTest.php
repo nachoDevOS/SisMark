@@ -83,3 +83,30 @@ test('el menú muestra Licencias como opción propia, debajo de Funcionarios', f
         ->assertOk()
         ->assertSeeInOrder(['title="Funcionarios"', 'title="Licencias"', 'title="Marcaciones"', 'title="Parámetros"'], false);
 });
+
+test('Usuarios, Roles, Actividad y Tokens van dentro de Seguridad', function (): void {
+    $this->actingAs(superAdmin())
+        ->get(route('usuarios.index'))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'title="Seguridad"',
+            'title="Usuarios"',
+            'title="Roles"',
+            'title="Actividad de usuarios"',
+            'title="Tokens de API"',
+        ], false);
+});
+
+test('Seguridad muestra solo lo que el rol puede abrir y se oculta si no puede nada', function (): void {
+    $this->actingAs(usuarioCon('ViewAny:Persona', 'ViewAny:Role'))
+        ->get(route('funcionarios.index'))
+        ->assertOk()
+        ->assertSee('title="Roles"', false)
+        ->assertDontSee('title="Usuarios"', false)
+        ->assertDontSee('title="Tokens de API"', false);
+
+    $this->actingAs(usuarioCon('ViewAny:Persona'))
+        ->get(route('funcionarios.index'))
+        ->assertOk()
+        ->assertDontSee('title="Roles"', false);
+});
