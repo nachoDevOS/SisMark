@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Actividad;
 use App\Models\AsignacionHorario;
 use App\Models\AsignacionTurno;
 use App\Models\Turno;
 use App\Services\AsignadorTurnos;
 use App\Services\ProcesadorAsistencia;
+use App\Services\RegistroActividad;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -41,10 +43,14 @@ use Illuminate\Support\Facades\DB;
  * Toda escritura pasa por {@see AsignadorTurnos}, que mueve la cabecera junto
  * con su detalle. **La cédula de la URL no autoriza nada**: la clave identifica
  * al *sistema*, no a la persona.
+ *
+ * Cada escritura que sale bien queda en la actividad con lo que pasó —qué turno,
+ * qué fechas, antes → después, o que no cambió nada—: el pedido solo dice qué
+ * mandó el sistema externo, no qué hizo SisMark con eso.
  */
 class AsignacionTurnoApiController extends Controller
 {
-    public function __construct(private AsignadorTurnos $asignador) {}
+    public function __construct(private AsignadorTurnos $asignador, private RegistroActividad $actividad) {}
 
     /**
      * Asigna el turno al funcionario durante el rango del contrato.
@@ -85,6 +91,13 @@ class AsignacionTurnoApiController extends Controller
             ->first();
 
         if ($existente !== null && ! $existente->trashed()) {
+            $this->anotar(
+                Actividad::SIN_CAMBIOS,
+                "Pidió asignar el turno «{$turno->nombre}» a CI {$ci} desde el {$this->dia($desde)}{$this->delContrato($contratoId)}: ya lo tenía, sin cambios",
+                $ci,
+                $datos,
+            );
+
             return response()->json([
                 'message' => 'El funcionario ya tenía asignado ese turno desde esa fecha.',
                 'creados' => 0,
@@ -96,6 +109,13 @@ class AsignacionTurnoApiController extends Controller
 
         if ($existente !== null && $contratoId !== null && (int) $existente->contrato_id === (int) $contratoId) {
             $this->asignador->restaurar($existente, $hasta, $datos['observacion'] ?? null);
+
+            $this->anotar(
+                Actividad::CREAR,
+                "Volvió a asignar el turno «{$turno->nombre}» a CI {$ci} del {$this->dia($desde)} al {$this->dia($hasta)}{$this->delContrato($contratoId)}: el contrato se había anulado y se volvió a cargar",
+                $ci,
+                $datos,
+            );
 
             return response()->json([
                 'message' => 'Turno asignado en SisMark.',
@@ -113,6 +133,13 @@ class AsignacionTurnoApiController extends Controller
         }
 
         $this->asignador->asignar($ci, $turno, $desde, $hasta, $contratoId, $datos['observacion'] ?? null);
+
+        $this->anotar(
+            Actividad::CREAR,
+            "Asignó el turno «{$turno->nombre}» a CI {$ci} del {$this->dia($desde)} al {$this->dia($hasta)}{$this->delContrato($contratoId)}",
+            $ci,
+            $datos,
+        );
 
         return response()->json([
             'message' => 'Turno asignado en SisMark.',
@@ -163,11 +190,11 @@ class AsignacionTurnoApiController extends Controller
         }
 
         if ($turnos->isNotEmpty()) {
-            return $this->moverFin($turnos, $ci, $hasta);
+            return $this->moverFin($turnos, $ci, $desde, $hasta, (int) $datos['contratoId']);
         }
 
         if ($heredados->isNotEmpty()) {
-            return $this->moverHeredados($heredados, $ci, $desde, $hasta);
+            return $this->moverHeredados($heredados, $ci, $desde, $hasta, (int) $datos['contratoId']);
         }
 
         return $this->crearParaContrato($request, $ci, $datos, $desde, $hasta);
@@ -189,8 +216,9 @@ class AsignacionTurnoApiController extends Controller
 
         $ci = trim($ci);
         $observacion = $datos['observacion'] ?? 'Contrato anulado en Mamoré.';
+        $contrato = (int) $datos['contratoId'];
 
-        $turnos = AsignacionTurno::query()->delContrato($datos['contratoId'])->where('ci', $ci)->get();
+        $turnos = AsignacionTurno::query()->with('turno')->delContrato($datos['contratoId'])->where('ci', $ci)->get();
         $heredados = AsignacionHorario::query()
             ->whereNull('asignacion_turno_id')
             ->delContrato($datos['contratoId'])
@@ -198,6 +226,13 @@ class AsignacionTurnoApiController extends Controller
             ->get();
 
         if ($turnos->isEmpty() && $heredados->isEmpty()) {
+            $this->anotar(
+                Actividad::SIN_CAMBIOS,
+                "Avisó la anulación del contrato {$contrato} de CI {$ci}: no tenía turno en SisMark, sin cambios",
+                $ci,
+                $datos,
+            );
+
             return response()->json([
                 'message' => 'Ese contrato no tiene turno asignado en SisMark.',
                 'eliminados' => 0,
@@ -216,6 +251,17 @@ class AsignacionTurnoApiController extends Controller
                 $asignacion->delete();
             }
         });
+
+        $bajas = $turnos
+            ->map(fn (AsignacionTurno $asignacion): string => "el turno «{$asignacion->turno?->nombre}» del {$this->dia($asignacion->desde)} al {$this->dia($asignacion->hasta)}")
+            ->when($heredados->isNotEmpty(), fn (Collection $piezas): Collection => $piezas->push($this->cuantos($heredados->count(), 'horario', 'horarios').' del sistema anterior'));
+
+        $this->anotar(
+            Actividad::ELIMINAR,
+            'Dio de baja '.$bajas->implode(' y ')." de CI {$ci}: contrato {$contrato} anulado",
+            $ci,
+            $datos,
+        );
 
         return response()->json([
             'message' => 'Turno dado de baja en SisMark.',
@@ -262,7 +308,7 @@ class AsignacionTurnoApiController extends Controller
      *
      * @param  Collection<int, AsignacionTurno>  $turnos
      */
-    private function moverFin(Collection $turnos, string $ci, Carbon $hasta): JsonResponse
+    private function moverFin(Collection $turnos, string $ci, Carbon $desde, Carbon $hasta, int $contratoId): JsonResponse
     {
         $ultimo = $turnos->sortByDesc(fn (AsignacionTurno $asignacion): int => $asignacion->hasta->getTimestamp())->first();
 
@@ -273,7 +319,15 @@ class AsignacionTurnoApiController extends Controller
                 return response()->json(['message' => $conflicto, 'actualizados' => 0], 422);
             }
 
+            $antes = $this->vigencia($ultimo->desde, $ultimo->hasta);
             $this->asignador->moverVigencia($ultimo, $ultimo->desde, $hasta);
+
+            $this->anotar(
+                Actividad::EDITAR,
+                "Cambió la vigencia del turno «{$ultimo->turno->nombre}» de CI {$ci}: {$antes} → {$this->vigencia($ultimo->desde, $hasta)}{$this->delContrato($contratoId)}",
+                $ci,
+                ['contratoId' => $contratoId, 'antes' => $antes, 'despues' => $this->vigencia($ultimo->desde, $hasta)],
+            );
 
             return response()->json([
                 'message' => 'Vigencia del turno actualizada en SisMark.',
@@ -283,6 +337,26 @@ class AsignacionTurnoApiController extends Controller
         }
 
         $sePasan = $turnos->filter(fn (AsignacionTurno $asignacion): bool => $asignacion->hasta->greaterThan($hasta));
+
+        if ($sePasan->isEmpty()) {
+            $this->anotar(
+                Actividad::SIN_CAMBIOS,
+                "Avisó un cambio del contrato {$contratoId} de CI {$ci} (vigencia {$this->vigencia($desde, $hasta)}): el turno ya tenía esas fechas, sin cambios",
+                $ci,
+                ['contratoId' => $contratoId, 'desde' => $desde->toDateString(), 'hasta' => $hasta->toDateString()],
+            );
+
+            return response()->json([
+                'message' => 'El turno ya estaba al día en SisMark.',
+                'actualizados' => 0,
+                'creados' => 0,
+            ]);
+        }
+
+        // Se arma antes de tocar nada: después las fechas viejas ya no están.
+        $cambios = $sePasan->map(fn (AsignacionTurno $asignacion): string => $asignacion->desde->greaterThan($hasta)
+            ? "«{$asignacion->turno->nombre}» {$this->vigencia($asignacion->desde, $asignacion->hasta)} dado de baja por quedar fuera"
+            : "«{$asignacion->turno->nombre}» {$this->vigencia($asignacion->desde, $asignacion->hasta)} → {$this->vigencia($asignacion->desde, $hasta)}");
 
         DB::transaction(function () use ($sePasan, $hasta): void {
             foreach ($sePasan as $asignacion) {
@@ -294,8 +368,15 @@ class AsignacionTurnoApiController extends Controller
             }
         });
 
+        $this->anotar(
+            Actividad::EDITAR,
+            "Acortó el contrato {$contratoId} de CI {$ci} al {$this->dia($hasta)}: ".$cambios->implode('; '),
+            $ci,
+            ['contratoId' => $contratoId, 'hasta' => $hasta->toDateString(), 'cambios' => $cambios->values()->all()],
+        );
+
         return response()->json([
-            'message' => $sePasan->isEmpty() ? 'El turno ya estaba al día en SisMark.' : 'Vigencia del turno actualizada en SisMark.',
+            'message' => 'Vigencia del turno actualizada en SisMark.',
             'actualizados' => $sePasan->count(),
             'creados' => 0,
         ]);
@@ -307,7 +388,7 @@ class AsignacionTurnoApiController extends Controller
      *
      * @param  Collection<int, AsignacionHorario>  $heredados
      */
-    private function moverHeredados($heredados, string $ci, Carbon $desde, Carbon $hasta): JsonResponse
+    private function moverHeredados($heredados, string $ci, Carbon $desde, Carbon $hasta, int $contratoId): JsonResponse
     {
         // `desde` es parte de la única `(ci, horario_id, desde)`: si se corrió la
         // fecha de inicio, puede chocar con otra fila de esa terna.
@@ -325,11 +406,21 @@ class AsignacionTurnoApiController extends Controller
             ], 422);
         }
 
+        $primero = $heredados->first();
+        $antes = $this->vigencia(Carbon::parse($primero->desde), Carbon::parse($primero->hasta));
+
         DB::transaction(function () use ($heredados, $desde, $hasta): void {
             foreach ($heredados as $asignacion) {
                 $asignacion->update(['desde' => $desde, 'hasta' => $hasta]);
             }
         });
+
+        $this->anotar(
+            Actividad::EDITAR,
+            'Cambió la vigencia de '.$this->cuantos($heredados->count(), 'horario', 'horarios')." del sistema anterior de CI {$ci}: {$antes} → {$this->vigencia($desde, $hasta)}{$this->delContrato($contratoId)}",
+            $ci,
+            ['contratoId' => $contratoId, 'antes' => $antes, 'despues' => $this->vigencia($desde, $hasta)],
+        );
 
         return response()->json([
             'message' => 'Vigencia del horario actualizada en SisMark.',
@@ -361,5 +452,36 @@ class AsignacionTurnoApiController extends Controller
             'actualizados' => 0,
             'creados' => $cuerpo['creados'] ?? 0,
         ], $respuesta->getStatusCode() === 422 ? 422 : 200);
+    }
+
+    /**
+     * Deja en la actividad lo que hizo SisMark con el pedido. Quién lo pidió
+     * —el sistema externo— lo completa {@see RegistroActividad} desde el token.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    private function anotar(string $accion, string $descripcion, string $ci, array $datos): void
+    {
+        $this->actividad->registrarEvento($accion, 'API', $descripcion, ci: $ci, datos: $datos);
+    }
+
+    private function dia(Carbon $fecha): string
+    {
+        return $fecha->format('d/m/Y');
+    }
+
+    private function vigencia(Carbon $desde, Carbon $hasta): string
+    {
+        return "{$this->dia($desde)}–{$this->dia($hasta)}";
+    }
+
+    private function delContrato(?int $contratoId): string
+    {
+        return $contratoId === null ? '' : " (contrato {$contratoId})";
+    }
+
+    private function cuantos(int $cantidad, string $singular, string $plural): string
+    {
+        return $cantidad === 1 ? "1 {$singular}" : "{$cantidad} {$plural}";
     }
 }

@@ -54,6 +54,15 @@ class Actividad extends Model
 
     public const VER_TUTORIAL = 'ver_tutorial';
 
+    public const CREAR = 'crear';
+
+    public const EDITAR = 'editar';
+
+    public const ELIMINAR = 'eliminar';
+
+    /** Un aviso de cambio que no cambió nada: lo pedido ya estaba así. */
+    public const SIN_CAMBIOS = 'sin_cambios';
+
     /**
      * Etiqueta de cada acción y el tipo al que pertenece, para la pantalla.
      *
@@ -72,6 +81,10 @@ class Actividad extends Model
         self::IMPRIMIR => ['etiqueta' => 'Imprimió', 'tipo' => 'reporte'],
         self::EXPORTAR => ['etiqueta' => 'Bajó en Excel', 'tipo' => 'reporte'],
         self::VER_TUTORIAL => ['etiqueta' => 'Miró un tutorial', 'tipo' => 'ayuda'],
+        self::CREAR => ['etiqueta' => 'Registró', 'tipo' => 'cambio'],
+        self::EDITAR => ['etiqueta' => 'Cambió', 'tipo' => 'cambio'],
+        self::ELIMINAR => ['etiqueta' => 'Dio de baja', 'tipo' => 'cambio'],
+        self::SIN_CAMBIOS => ['etiqueta' => 'Sin cambios', 'tipo' => 'aviso'],
         self::PEDIDO => ['etiqueta' => 'Pedido', 'tipo' => 'detalle'],
     ];
 

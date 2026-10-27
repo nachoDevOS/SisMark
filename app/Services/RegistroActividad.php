@@ -42,7 +42,7 @@ class RegistroActividad
             Actividad::create([
                 ...$this->quien($request),
                 ...$this->contexto($request),
-                'importante' => $evento !== null,
+                'importante' => $evento['importante'] ?? false,
                 'accion' => $evento['accion'] ?? Actividad::PEDIDO,
                 'modulo' => $this->catalogo->modulo($request),
                 'descripcion' => $evento['descripcion'] ?? null,

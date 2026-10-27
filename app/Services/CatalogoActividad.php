@@ -44,19 +44,6 @@ class CatalogoActividad
     ];
 
     /**
-     * Todos los módulos posibles, para el filtro de la pantalla.
-     *
-     * @return list<string>
-     */
-    public static function modulos(): array
-    {
-        $modulos = array_values(array_unique([...array_values(self::MODULOS), 'API', 'Sistema']));
-        sort($modulos);
-
-        return $modulos;
-    }
-
-    /**
      * El módulo del pedido: por el prefijo de su ruta, o API si vino por `api/`.
      */
     public function modulo(Request $request): string
@@ -84,11 +71,16 @@ class CatalogoActividad
     }
 
     /**
-     * La acción, la frase y la CI si el pedido es un evento importante; `null`
-     * si es detalle. Solo se describe lo que salió bien: una ficha que dio 404
-     * no se «miró».
+     * La acción, la frase y la CI si el pedido tiene una; `null` si es detalle
+     * sin frase. Solo se describe lo que salió bien: una ficha que dio 404 no se
+     * «miró».
      *
-     * @return array{accion: string, descripcion: string, ci: ?string}|null
+     * Las consultas de la API llevan frase pero siguen siendo detalle
+     * (`importante` en falso): un sistema externo consulta mucho y no es una
+     * persona mirando. Lo que la API escribe lo anota su propio controlador,
+     * que es el que sabe qué cambió.
+     *
+     * @return array{accion: string, descripcion: string, ci: ?string, importante: bool}|null
      */
     public function describir(Request $request, int $estado): ?array
     {
@@ -113,20 +105,56 @@ class CatalogoActividad
             'equipos.marcaciones.exportar' => $this->evento(Actividad::EXPORTAR, 'Bajó las marcaciones del equipo «'.($request->route('equipo')?->nombre ?? '').'»'),
             'usuarios.historial' => $this->evento(Actividad::VER, 'Miró el historial del usuario «'.($request->route('usuario')?->name ?? '').'»'),
             'manual.archivo' => $this->tutorial($request),
+            'api.turnos.sugeridos' => $this->consultaApi('Consultó los turnos sugeridos'),
+            'api.funcionarios.marcaciones' => $this->consultaApi('Consultó las marcaciones de CI '.$this->ciDeRuta($request, 'ci').$this->rango($request), $this->ciDeRuta($request, 'ci')),
+            'api.funcionarios.asistencia' => $this->consultaApi('Consultó la asistencia de CI '.$this->ciDeRuta($request, 'ci').$this->rango($request), $this->ciDeRuta($request, 'ci')),
+            'api.funcionarios.licencias' => $this->consultaApi('Consultó las licencias de CI '.$this->ciDeRuta($request, 'ci').$this->rango($request), $this->ciDeRuta($request, 'ci')),
+            'api.funcionarios.licencias.show' => $this->consultaApi('Consultó la licencia #'.$this->idDeRuta($request, 'licencia').' de CI '.$this->ciDeRuta($request, 'ci'), $this->ciDeRuta($request, 'ci')),
+            'api.funcionarios.licencias.respaldo' => $this->consultaApi('Pidió el respaldo de la licencia #'.$this->idDeRuta($request, 'licencia').' de CI '.$this->ciDeRuta($request, 'ci'), $this->ciDeRuta($request, 'ci')),
+            'api.funcionarios.horarios.index' => $this->consultaApi('Consultó los horarios de CI '.$this->ciDeRuta($request, 'ci'), $this->ciDeRuta($request, 'ci')),
             default => null,
         };
     }
 
     /**
-     * @return array{accion: string, descripcion: string, ci: ?string}
+     * @return array{accion: string, descripcion: string, ci: ?string, importante: bool}
      */
-    private function evento(string $accion, string $descripcion, ?string $ci = null): array
+    private function evento(string $accion, string $descripcion, ?string $ci = null, bool $importante = true): array
     {
-        return ['accion' => $accion, 'descripcion' => mb_substr($descripcion, 0, 500), 'ci' => $ci];
+        return ['accion' => $accion, 'descripcion' => mb_substr($descripcion, 0, 500), 'ci' => $ci, 'importante' => $importante];
     }
 
     /**
-     * @return array{accion: string, descripcion: string, ci: ?string}
+     * Una consulta de la API: con frase, pero detalle.
+     *
+     * @return array{accion: string, descripcion: string, ci: ?string, importante: bool}
+     */
+    private function consultaApi(string $descripcion, ?string $ci = null): array
+    {
+        return $this->evento(Actividad::PEDIDO, $descripcion, $ci ?: null, importante: false);
+    }
+
+    /**
+     * « del 01/10/2026 al 27/10/2026», o nada si el pedido no trae fechas.
+     */
+    private function rango(Request $request): string
+    {
+        if (blank($request->query('desde')) && blank($request->query('hasta'))) {
+            return '';
+        }
+
+        return ' del '.$this->fecha($request->query('desde')).' al '.$this->fecha($request->query('hasta'));
+    }
+
+    private function idDeRuta(Request $request, string $parametro): string
+    {
+        $valor = $request->route($parametro);
+
+        return mb_substr(trim((string) (is_object($valor) ? $valor->getKey() : $valor)), 0, 20);
+    }
+
+    /**
+     * @return array{accion: string, descripcion: string, ci: ?string, importante: bool}
      */
     private function fichaFuncionario(Request $request): array
     {
@@ -138,7 +166,7 @@ class CatalogoActividad
     }
 
     /**
-     * @return array{accion: string, descripcion: string, ci: ?string}
+     * @return array{accion: string, descripcion: string, ci: ?string, importante: bool}
      */
     private function licencia(Request $request): array
     {
@@ -152,7 +180,7 @@ class CatalogoActividad
     /**
      * `print`: 0 en pantalla, 1 para imprimir, 2 en Excel.
      *
-     * @return array{accion: string, descripcion: string, ci: ?string}
+     * @return array{accion: string, descripcion: string, ci: ?string, importante: bool}
      */
     private function reporte(Request $request, string $que, ?string $ci = null, bool $conRango = true): array
     {
@@ -171,7 +199,7 @@ class CatalogoActividad
      * Solo la primera vista de un video: el reproductor lo pide por rangos y
      * cada salto es otro pedido, que queda como detalle.
      *
-     * @return array{accion: string, descripcion: string, ci: ?string}|null
+     * @return array{accion: string, descripcion: string, ci: ?string, importante: bool}|null
      */
     private function tutorial(Request $request): ?array
     {

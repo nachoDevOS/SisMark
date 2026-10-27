@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Actividad;
 use App\Models\User;
-use App\Services\CatalogoActividad;
 use App\Services\RegistroActividad;
 use App\Services\ResolutorNombres;
 use Illuminate\Database\Eloquent\Builder;
@@ -50,7 +49,6 @@ class ActividadController extends Controller
             'actividades' => $actividades,
             'filtros' => $filtros,
             'usuarios' => User::withTrashed()->orderBy('name')->get(['id', 'name']),
-            'modulos' => CatalogoActividad::modulos(),
             'metodos' => self::METODOS,
             'nombres' => $resolutor->porCi(
                 $actividades->getCollection()->map(fn (Actividad $actividad): ?string => $actividad->ciDelFuncionario())
@@ -62,7 +60,7 @@ class ActividadController extends Controller
      * Los filtros del pedido, saneados. Las fechas arrancan en hoy: sin rango la
      * consulta recorrería millones de filas.
      *
-     * @return array{todo: bool, usuario: ?int, desde: string, hasta: string, modulo: string, ci: string, metodo: string, errores: bool, fallidos: bool}
+     * @return array{todo: bool, quien: string, desde: string, hasta: string, ci: string, metodo: string, errores: bool, fallidos: bool}
      */
     private function filtros(Request $request): array
     {
@@ -83,10 +81,9 @@ class ActividadController extends Controller
 
         return [
             'todo' => $request->boolean('todo'),
-            'usuario' => $request->integer('usuario') ?: null,
+            'quien' => preg_match('/^(personas|sistemas|usuario:\d+)$/', (string) $request->query('quien')) === 1 ? (string) $request->query('quien') : '',
             'desde' => $desde,
             'hasta' => $hasta,
-            'modulo' => in_array((string) $request->query('modulo'), CatalogoActividad::modulos(), true) ? (string) $request->query('modulo') : '',
             'ci' => trim((string) $request->query('ci', '')),
             'metodo' => in_array((string) $request->query('metodo'), self::METODOS, true) ? (string) $request->query('metodo') : '',
             'errores' => $request->boolean('errores'),
@@ -95,7 +92,7 @@ class ActividadController extends Controller
     }
 
     /**
-     * @param  array{todo: bool, usuario: ?int, desde: string, hasta: string, modulo: string, ci: string, metodo: string, errores: bool, fallidos: bool}  $filtros
+     * @param  array{todo: bool, quien: string, desde: string, hasta: string, ci: string, metodo: string, errores: bool, fallidos: bool}  $filtros
      * @return Builder<Actividad>
      */
     private function consulta(array $filtros): Builder
@@ -108,11 +105,29 @@ class ActividadController extends Controller
             // «Solo lo importante» salvo que se pida todo; los errores y los
             // intentos fallidos se buscan en todo, que es donde están.
             ->when(! $filtros['todo'] && ! $filtros['errores'], fn (Builder $q) => $q->where('importante', true))
-            ->when($filtros['usuario'], fn (Builder $q, int $usuario) => $q->where('user_id', $usuario))
-            ->when($filtros['modulo'] !== '', fn (Builder $q) => $q->where('modulo', $filtros['modulo']))
+            ->when($filtros['quien'] !== '', fn (Builder $q) => $this->filtrarQuien($q, $filtros['quien']))
             ->when($filtros['ci'] !== '', fn (Builder $q) => $q->where('ci', $filtros['ci']))
             ->when($filtros['metodo'] !== '', fn (Builder $q) => $q->where('metodo', $filtros['metodo']))
             ->when($filtros['errores'], fn (Builder $q) => $q->where('estado', '>=', 400))
             ->when($filtros['fallidos'], fn (Builder $q) => $q->whereIn('accion', Actividad::FALLIDAS));
+    }
+
+    /**
+     * «Personas de SisMark» es todo lo que no vino con el token de un sistema
+     * externo: también los intentos de ingreso, que todavía no tienen usuario.
+     *
+     * @param  Builder<Actividad>  $consulta
+     * @return Builder<Actividad>
+     */
+    private function filtrarQuien(Builder $consulta, string $quien): Builder
+    {
+        [$lado, $id] = array_pad(explode(':', $quien, 2), 2, null);
+
+        return match ($lado) {
+            'personas' => $consulta->whereNull('sistema_externo_id'),
+            'sistemas' => $consulta->whereNotNull('sistema_externo_id'),
+            'usuario' => $consulta->where('user_id', (int) $id),
+            default => $consulta,
+        };
     }
 }

@@ -87,6 +87,7 @@ Cada fila es **un evento**, escrito para que lo entienda cualquiera:
 | ✏️ Cambio | `crear` / `editar` / `eliminar` | alta, edición o baja | «Asignó el turno "Horario Continuo 08:00 - 16:00" a CI …» |
 | | `aprobar` / `rechazar` | resolvió una licencia | «Aprobó la licencia del 27/10 de CI 10799999» |
 | | `concluir` | concluyó un turno u horario | «Concluyó el turno … de CI … el 31/10» |
+| | `sin_cambios` | un aviso de cambio que no cambió nada | «Avisó un cambio del contrato 16837 de CI …: el turno ya tenía esas fechas, sin cambios» |
 | 🎬 Ayuda | `ver_tutorial` | abrió un video de la Ayuda | «Miró el tutorial "Cambiar de turno"» |
 
 ### 3.2 Todo lo demás: el detalle (`importante = false`)
@@ -96,9 +97,31 @@ buscan en Mamoré, pedidos de la API v1 de otros sistemas, videos de la Ayuda po
 también se guarda, sin frase: con su ruta, método, parámetros, resultado y tiempo. Se ve con
 «Ver todo» en la pantalla.
 
+Las **consultas de la API v1** son detalle pero **con frase** («Consultó la asistencia de CI …
+del 01/10 al 27/10»): un sistema externo consulta mucho y no es una persona mirando, pero
+así se lee qué pidió sin descifrar la URL.
+
+### 3.3 Lo que escribe la API
+
+Lo que un sistema externo **escribe** lo anota el controlador de la API, que es el que sabe
+qué hizo SisMark con el pedido. Es importante, va con el sistema externo en «Quién» y con
+módulo `API`. Solo se anota lo que salió bien; un 422 queda como el pedido, con su estado.
+
+| Pedido | Acción | Frase |
+|---|---|---|
+| `POST /funcionarios/{ci}/turnos` | `crear` / `sin_cambios` | «Asignó el turno «X» a CI … del 20/10/2026 al 31/12/2026 (contrato 55)»; si ya lo tenía, «… ya lo tenía, sin cambios» |
+| `PUT /funcionarios/{ci}/turnos` | `editar` / `sin_cambios` | «Cambió la vigencia del turno «X» de CI …: 20/10–31/12 → 20/10–31/03 (contrato 55)»; al acortar, qué turno terminó antes y cuál se dio de baja; con las mismas fechas, «… el turno ya tenía esas fechas, sin cambios» |
+| `DELETE /funcionarios/{ci}/turnos` | `eliminar` / `sin_cambios` | «Dio de baja el turno «X» del … al … de CI …: contrato 55 anulado» |
+| `POST /funcionarios/{ci}/licencias` | `crear` | «Pidió licencia para CI … el 21/10/2026, horario completo: «Cita médica». Queda pendiente (1 día)» |
+| `DELETE /funcionarios/{ci}/licencias/{id}` | `eliminar` | «Canceló la solicitud de licencia #… de CI … del 21/10/2026 (1 día)» |
+
+Desde SisMark no se sabe **por qué** cambió el contrato (edición, cambio de estado o adenda)
+ni **quién** lo hizo en Mamoré: el pedido es el mismo. Para eso Mamoré tendría que mandarlo
+(campos opcionales `motivo` y `usuario`); queda como mejora posible.
+
 Si un pedido no tiene nombre de ruta (un 404 a una URL inventada), se guarda igual con la URL.
 
-### 3.3 Lo único que **no** se registra
+### 3.4 Lo único que **no** se registra
 
 - **Contraseñas** (ni la equivocada de un intento fallido), **tokens**, el `_token` de CSRF y
   el encabezado `Authorization`.
@@ -227,9 +250,11 @@ lleva la frase y, en `datos`, el enlace a ese registro.
 - Línea de tiempo, la más nueva arriba, paginada.
 - **Interruptor «Solo lo importante» / «Ver todo»**: arranca en «Solo lo importante» (se lee
   como una historia); «Ver todo» muestra cada pedido con su URL, estado y duración.
-- **Filtros:** usuario o sistema externo, rango de fechas (obligatorio, arranca en hoy), módulo,
-  CI del funcionario, método (GET, POST, PUT, PATCH, DELETE), estado (errores 4xx/5xx) y
-  «solo intentos fallidos». La IP se muestra en cada fila pero no se filtra.
+- **Filtros:** rango de fechas (obligatorio, arranca en hoy); **Quién**: «Personas de SisMark»
+  (todo lo que no vino con token, también los intentos de ingreso), «Sistemas externos (API)»
+  o un usuario puntual; CI del funcionario; método (GET, POST, PUT, PATCH,
+  DELETE); estado (errores 4xx/5xx) y «solo intentos fallidos». El módulo y la IP se muestran
+  en cada fila pero no se filtran.
 - Cada fila se **despliega** con flecha (como el listado de licencias): `datos` en lenguaje
   claro, navegador, ruta y, en un cambio, antes → después.
 - Íconos y colores por tipo; los intentos fallidos y bloqueos en rojo.

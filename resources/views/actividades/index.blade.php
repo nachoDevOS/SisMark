@@ -5,7 +5,7 @@
 @php
     // El filtro se arma de nuevo en cada enlace: el interruptor cambia solo `todo`.
     $conFiltros = fn (array $cambios): string => route('actividades.index', array_merge(request()->except('page'), $cambios));
-    $colorTipo = ['acceso' => 'pill--info', 'consulta' => 'pill--neutro', 'busqueda' => 'pill--neutro', 'reporte' => 'pill--ok', 'ayuda' => 'pill--neutro', 'detalle' => 'pill--neutro'];
+    $colorTipo = ['acceso' => 'pill--info', 'consulta' => 'pill--neutro', 'busqueda' => 'pill--neutro', 'reporte' => 'pill--ok', 'ayuda' => 'pill--neutro', 'cambio' => 'pill--advertencia', 'aviso' => 'pill--neutro', 'detalle' => 'pill--neutro'];
 @endphp
 
 @section('contenido')
@@ -34,22 +34,19 @@
                 <label for="hasta">Hasta</label>
                 <input type="date" id="hasta" name="hasta" value="{{ $filtros['hasta'] }}" class="input">
             </div>
+            {{-- Quién: un lado entero (personas de SisMark o sistemas externos)
+                 o un usuario puntual. --}}
             <div class="campo">
-                <label for="usuario">Usuario</label>
-                <select id="usuario" name="usuario" class="input">
+                <label for="quien">Quién</label>
+                <select id="quien" name="quien" class="input">
                     <option value="">Todos</option>
-                    @foreach ($usuarios as $usuario)
-                        <option value="{{ $usuario->id }}" @selected($filtros['usuario'] === $usuario->id)>{{ $usuario->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="campo">
-                <label for="modulo">Módulo</label>
-                <select id="modulo" name="modulo" class="input">
-                    <option value="">Todos</option>
-                    @foreach ($modulos as $modulo)
-                        <option value="{{ $modulo }}" @selected($filtros['modulo'] === $modulo)>{{ $modulo }}</option>
-                    @endforeach
+                    <option value="personas" @selected($filtros['quien'] === 'personas')>Personas de SisMark</option>
+                    <option value="sistemas" @selected($filtros['quien'] === 'sistemas')>Sistemas externos (API)</option>
+                    <optgroup label="Usuarios">
+                        @foreach ($usuarios as $usuario)
+                            <option value="usuario:{{ $usuario->id }}" @selected($filtros['quien'] === "usuario:{$usuario->id}")>{{ $usuario->name }}</option>
+                        @endforeach
+                    </optgroup>
                 </select>
             </div>
             <div class="campo">

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Actividad;
 use App\Models\Licencia;
 use App\Services\ContratosFuncionario;
+use App\Services\RegistroActividad;
 use App\Services\RegistroLicencia;
 use App\Services\RespaldoDocumento;
 use App\Services\TopePermisos;
@@ -43,7 +45,7 @@ class SolicitudLicenciaController extends Controller
      * asignados en esas fechas no hay licencia posible —una licencia licencia un
      * horario—, y si ya existe una para ese día no se pisa.
      */
-    public function store(Request $request, string $ci, RegistroLicencia $registro, RespaldoDocumento $respaldos, TopePermisos $tope): JsonResponse
+    public function store(Request $request, string $ci, RegistroLicencia $registro, RespaldoDocumento $respaldos, TopePermisos $tope, RegistroActividad $actividad): JsonResponse
     {
         // Cuando la solicitud trae un respaldo viaja como `multipart/form-data`,
         // y ahí no hay booleanos: `tCompleto` llega como el texto «1» o «0». Sin
@@ -166,6 +168,20 @@ class SolicitudLicenciaController extends Controller
             ], 422);
         }
 
+        $cuando = $desde->equalTo($hasta)
+            ? 'el '.$desde->format('d/m/Y')
+            : 'del '.$desde->format('d/m/Y').' al '.$hasta->format('d/m/Y');
+        $alcance = $datos['tCompleto'] ? 'horario completo' : "de {$datos['lEntra']} a {$datos['lSale']}";
+        $dias = $conteo['creadas'] === 1 ? '1 día' : "{$conteo['creadas']} días";
+
+        $actividad->registrarEvento(
+            Actividad::CREAR,
+            'API',
+            "Pidió licencia para CI {$ci} {$cuando}, {$alcance}: «{$datos['motivo']}». Queda pendiente ({$dias})",
+            ci: $ci,
+            datos: ['desde' => $desde->toDateString(), 'hasta' => $hasta->toDateString(), 'creadas' => $conteo['creadas'], 'solicitante' => $datos['solicitante'] ?? null],
+        );
+
         return response()->json([
             'message' => $registro->mensaje($conteo),
             'estado' => 'Pendiente',
@@ -194,7 +210,7 @@ class SolicitudLicenciaController extends Controller
      * ve como una licencia, y fila por fila para que el trait de auditoría deje
      * anotado el motivo en cada una.
      */
-    public function destroy(Request $request, string $ci, Licencia $licencia): JsonResponse
+    public function destroy(Request $request, string $ci, Licencia $licencia, RegistroActividad $actividad): JsonResponse
     {
         $datos = $request->validate([
             // Por qué la da de baja. Opcional: cancelar un pedido propio no
@@ -235,6 +251,15 @@ class SolicitudLicenciaController extends Controller
             $dia->save();
             $dia->delete();
         }
+
+        $actividad->registrarEvento(
+            Actividad::ELIMINAR,
+            'API',
+            "Canceló la solicitud de licencia #{$licencia->getKey()} de CI {$ci} del ".Carbon::parse($licencia->fecha)->format('d/m/Y')
+                .' ('.($dias->count() === 1 ? '1 día' : "{$dias->count()} días").')',
+            ci: $ci,
+            datos: ['licencia' => $licencia->getKey(), 'dias' => $dias->count(), 'observacion' => $datos['observacion'] ?? null],
+        );
 
         return response()->json([
             'message' => $dias->count() === 1
