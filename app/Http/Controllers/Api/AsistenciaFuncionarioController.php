@@ -363,9 +363,9 @@ class AsistenciaFuncionarioController extends Controller
         $validado = $request->validate([
             'desde' => ['nullable', 'date'],
             'hasta' => ['nullable', 'date'],
-            // Si viaja la ficha del funcionario en `meta`. Apagarla le ahorra al
-            // pedido el salto de red a Mamoré; ver {@see self::meta()}.
-            'funcionario' => ['nullable', 'boolean'],
+            // Pedir la ficha del funcionario en `meta`. Sin esto no viaja; ver
+            // {@see self::meta()}.
+            'conFicha' => ['nullable', 'boolean'],
             // Los tramos de contrato que manda el consumidor. Ver la nota de
             // {@see self::asistencia()}: mandarlos evita el viaje a Mamoré.
             'contratos' => ['nullable', 'array'],
@@ -416,10 +416,12 @@ class AsistenciaFuncionarioController extends Controller
         // dato que ya tenía, y encima es el tramo que hace lento y frágil todo
         // el pedido: si ese salto tarda, la respuesta entera llega tarde.
         //
-        // Por eso se puede pedir sin ella, con `funcionario=0`. El bloque
-        // entonces no viaja, en vez de viajar en null: quien lo apagó sabe que
-        // lo apagó, y un null se leería como «esta cédula no existe».
-        $ficha = $request->boolean('funcionario', true)
+        // Por eso **no viaja salvo que se pida**, con `conFicha=1`. Antes era
+        // al revés —viajaba salvo `funcionario=0`— y el único consumidor la
+        // apagaba en cada pedido. Un `funcionario=0` que todavía llegue se
+        // ignora. Sin pedirla, el bloque no viaja, en vez de viajar en null:
+        // un null se leería como «esta cédula no existe».
+        $ficha = $request->boolean('conFicha')
             ? app(ResolutorNombres::class)->fichaPorCi($ci)
             : false;
 

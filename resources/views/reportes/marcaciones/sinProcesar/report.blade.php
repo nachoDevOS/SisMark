@@ -91,7 +91,7 @@
                             {{-- La foto solo la tiene Mamoré; desde la base local, o si no carga, va el ícono. --}}
                             <span class="persona-foto" style="width: 1.9rem; height: 1.9rem;">
                                 <template x-if="item.foto">
-                                    <img :src="item.foto" alt="" loading="lazy" @error="item.foto = null">
+                                    <img :src="item.foto" alt="" loading="lazy" x-on:error="item.foto = null">
                                 </template>
                                 <template x-if="! item.foto">
                                     <x-heroicon-o-user />
