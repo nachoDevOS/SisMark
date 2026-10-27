@@ -263,6 +263,17 @@ test('se filtra por CI y por intentos fallidos', function (): void {
         ->assertDontSee('CI 7633685');
 });
 
+test('se filtra por método', function (): void {
+    Actividad::factory()->detalle()->create(['metodo' => 'GET', 'url' => '/funcionarios/ajax/list?page=7']);
+    Actividad::factory()->detalle()->create(['metodo' => 'PUT', 'url' => '/api/v1/funcionarios/12438528/turnos']);
+
+    $this->actingAs(usuarioCon('ViewAny:Actividad'))
+        ->get(route('actividades.index', ['todo' => 1, 'metodo' => 'PUT']))
+        ->assertOk()
+        ->assertSee('/api/v1/funcionarios/12438528/turnos')
+        ->assertDontSee('/funcionarios/ajax/list?page=7');
+});
+
 test('sin el permiso no se ve', function (): void {
     $this->actingAs(usuarioCon('ViewAny:Persona'))->get(route('actividades.index'))->assertForbidden();
 });

@@ -228,7 +228,8 @@ lleva la frase y, en `datos`, el enlace a ese registro.
 - **Interruptor «Solo lo importante» / «Ver todo»**: arranca en «Solo lo importante» (se lee
   como una historia); «Ver todo» muestra cada pedido con su URL, estado y duración.
 - **Filtros:** usuario o sistema externo, rango de fechas (obligatorio, arranca en hoy), módulo,
-  CI del funcionario, IP, estado (errores 4xx/5xx) y «solo intentos fallidos».
+  CI del funcionario, método (GET, POST, PUT, PATCH, DELETE), estado (errores 4xx/5xx) y
+  «solo intentos fallidos». La IP se muestra en cada fila pero no se filtra.
 - Cada fila se **despliega** con flecha (como el listado de licencias): `datos` en lenguaje
   claro, navegador, ruta y, en un cambio, antes → después.
 - Íconos y colores por tipo; los intentos fallidos y bloqueos en rojo.

@@ -57,8 +57,13 @@
                 <input type="text" id="ci" name="ci" value="{{ $filtros['ci'] }}" class="input" placeholder="Ej.: 7633685">
             </div>
             <div class="campo">
-                <label for="ip">IP</label>
-                <input type="text" id="ip" name="ip" value="{{ $filtros['ip'] }}" class="input" placeholder="Ej.: 192.168.1.20">
+                <label for="metodo">Método</label>
+                <select id="metodo" name="metodo" class="input">
+                    <option value="">Todos</option>
+                    @foreach ($metodos as $metodo)
+                        <option value="{{ $metodo }}" @selected($filtros['metodo'] === $metodo)>{{ $metodo }}</option>
+                    @endforeach
+                </select>
             </div>
         </div>
         <div class="actividad-filtros__fila actividad-filtros__fila--pie">

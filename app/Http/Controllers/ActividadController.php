@@ -20,6 +20,13 @@ use Illuminate\View\View;
 class ActividadController extends Controller
 {
     /**
+     * Los métodos HTTP del filtro: todos los que usan las rutas del sistema.
+     *
+     * @var list<string>
+     */
+    private const METODOS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
+    /**
      * La línea de tiempo con sus filtros. Arranca en «Solo lo importante» y en hoy.
      *
      * El nombre del funcionario se resuelve al mostrar, solo para las CI de la
@@ -44,6 +51,7 @@ class ActividadController extends Controller
             'filtros' => $filtros,
             'usuarios' => User::withTrashed()->orderBy('name')->get(['id', 'name']),
             'modulos' => CatalogoActividad::modulos(),
+            'metodos' => self::METODOS,
             'nombres' => $resolutor->porCi(
                 $actividades->getCollection()->map(fn (Actividad $actividad): ?string => $actividad->ciDelFuncionario())
             ),
@@ -54,7 +62,7 @@ class ActividadController extends Controller
      * Los filtros del pedido, saneados. Las fechas arrancan en hoy: sin rango la
      * consulta recorrería millones de filas.
      *
-     * @return array{todo: bool, usuario: ?int, desde: string, hasta: string, modulo: string, ci: string, ip: string, errores: bool, fallidos: bool}
+     * @return array{todo: bool, usuario: ?int, desde: string, hasta: string, modulo: string, ci: string, metodo: string, errores: bool, fallidos: bool}
      */
     private function filtros(Request $request): array
     {
@@ -80,14 +88,14 @@ class ActividadController extends Controller
             'hasta' => $hasta,
             'modulo' => in_array((string) $request->query('modulo'), CatalogoActividad::modulos(), true) ? (string) $request->query('modulo') : '',
             'ci' => trim((string) $request->query('ci', '')),
-            'ip' => trim((string) $request->query('ip', '')),
+            'metodo' => in_array((string) $request->query('metodo'), self::METODOS, true) ? (string) $request->query('metodo') : '',
             'errores' => $request->boolean('errores'),
             'fallidos' => $request->boolean('fallidos'),
         ];
     }
 
     /**
-     * @param  array{todo: bool, usuario: ?int, desde: string, hasta: string, modulo: string, ci: string, ip: string, errores: bool, fallidos: bool}  $filtros
+     * @param  array{todo: bool, usuario: ?int, desde: string, hasta: string, modulo: string, ci: string, metodo: string, errores: bool, fallidos: bool}  $filtros
      * @return Builder<Actividad>
      */
     private function consulta(array $filtros): Builder
@@ -103,7 +111,7 @@ class ActividadController extends Controller
             ->when($filtros['usuario'], fn (Builder $q, int $usuario) => $q->where('user_id', $usuario))
             ->when($filtros['modulo'] !== '', fn (Builder $q) => $q->where('modulo', $filtros['modulo']))
             ->when($filtros['ci'] !== '', fn (Builder $q) => $q->where('ci', $filtros['ci']))
-            ->when($filtros['ip'] !== '', fn (Builder $q) => $q->where('ip', $filtros['ip']))
+            ->when($filtros['metodo'] !== '', fn (Builder $q) => $q->where('metodo', $filtros['metodo']))
             ->when($filtros['errores'], fn (Builder $q) => $q->where('estado', '>=', 400))
             ->when($filtros['fallidos'], fn (Builder $q) => $q->whereIn('accion', Actividad::FALLIDAS));
     }
