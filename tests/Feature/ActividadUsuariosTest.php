@@ -284,6 +284,8 @@ test('se filtra por método', function (): void {
     $this->actingAs(usuarioCon('ViewAny:Actividad'))
         ->get(route('actividades.index', ['todo' => 1, 'metodo' => 'PUT']))
         ->assertOk()
+        ->assertSee('<th>Método</th>', false)
+        ->assertSee('pill--advertencia">PUT</span>', false)
         ->assertSee('/api/v1/funcionarios/12438528/turnos')
         ->assertDontSee('/funcionarios/ajax/list?page=7');
 });

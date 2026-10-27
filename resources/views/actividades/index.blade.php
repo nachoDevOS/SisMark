@@ -6,6 +6,8 @@
     // El filtro se arma de nuevo en cada enlace: el interruptor cambia solo `todo`.
     $conFiltros = fn (array $cambios): string => route('actividades.index', array_merge(request()->except('page'), $cambios));
     $colorTipo = ['acceso' => 'pill--info', 'consulta' => 'pill--neutro', 'busqueda' => 'pill--neutro', 'reporte' => 'pill--ok', 'ayuda' => 'pill--neutro', 'cambio' => 'pill--advertencia', 'aviso' => 'pill--neutro', 'detalle' => 'pill--neutro'];
+    // GET solo lee; lo demás escribe, y DELETE borra.
+    $colorMetodo = ['GET' => 'pill--neutro', 'POST' => 'pill--ok', 'PUT' => 'pill--advertencia', 'PATCH' => 'pill--advertencia', 'DELETE' => 'pill--no'];
 @endphp
 
 @section('contenido')
@@ -85,6 +87,7 @@
                     <th>Fecha y hora</th>
                     <th>Quién</th>
                     <th>Acción</th>
+                    <th>Método</th>
                     <th>Qué hizo</th>
                     <th>Módulo</th>
                     <th>IP</th>
@@ -114,11 +117,14 @@
                                 {{ $actividad->etiquetaAccion() }}
                             </span>
                         </td>
+                        <td>
+                            <span class="pill pill--mini {{ $colorMetodo[$actividad->metodo] ?? 'pill--neutro' }}">{{ $actividad->metodo }}</span>
+                        </td>
                         <td style="max-width: 32rem;">
                             @if ($actividad->descripcion)
                                 {{ $actividad->descripcion }}
                             @else
-                                <span class="actividad-url">{{ $actividad->metodo }} {{ $actividad->url }}</span>
+                                <span class="actividad-url">{{ $actividad->url }}</span>
                             @endif
                             {{-- El funcionario con nombre. Sin nombre, la CI solo hace
                                  falta si la frase no la dice ya. --}}
@@ -147,7 +153,7 @@
                         </td>
                     </tr>
                     <tr x-show="abierto" x-cloak class="actividad-detalle">
-                        <td colspan="7">
+                        <td colspan="8">
                             <dl class="datos grid-2" style="margin: 0;">
                                 <div><dt>Pedido</dt><dd class="actividad-url">{{ $actividad->metodo }} {{ $actividad->url }}</dd></div>
                                 <div><dt>Ruta</dt><dd>{{ $actividad->ruta ?: '—' }}</dd></div>
@@ -173,7 +179,7 @@
                 </tbody>
             @empty
                 <tbody>
-                    <tr><td colspan="7" class="vacio">No hay actividad con estos filtros.</td></tr>
+                    <tr><td colspan="8" class="vacio">No hay actividad con estos filtros.</td></tr>
                 </tbody>
             @endforelse
         </table>

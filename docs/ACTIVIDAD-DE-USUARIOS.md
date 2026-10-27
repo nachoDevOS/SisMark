@@ -254,6 +254,8 @@ lleva la frase y, en `datos`, el enlace a ese registro.
   (todo lo que no vino con token, también los intentos de ingreso) o «Sistemas externos (API)»; CI del funcionario; método (GET, POST, PUT, PATCH,
   DELETE); estado (errores 4xx/5xx) y «solo intentos fallidos». El módulo y la IP se muestran
   en cada fila pero no se filtran.
+- **Columnas:** fecha y hora, quién, acción, **método** (GET gris, POST verde, PUT/PATCH
+  amarillo, DELETE rojo), qué hizo, módulo e IP.
 - Cada fila se **despliega** con flecha (como el listado de licencias): `datos` en lenguaje
   claro, navegador, ruta y, en un cambio, antes → después.
 - Íconos y colores por tipo; los intentos fallidos y bloqueos en rojo.
