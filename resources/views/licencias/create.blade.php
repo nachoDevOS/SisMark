@@ -59,6 +59,13 @@
               hoy: @js(now()->toDateString()),
               manana: @js(now()->addDay()->toDateString()),
               cuando: 'hoy',
+              {{-- Plazo para registrar licencias de hoy (null sin plazo): los
+                   calendarios no dejan elegir los días de afuera. Quien tiene
+                   «Fuera de plazo» lo libera marcando la casilla. --}}
+              plazo: @js(app(\App\Services\PlazoLicencias::class)->paraApi()),
+              {{-- La sugerencia de la casilla solo viaja a quien la ve. --}}
+              sugerenciaPlazo: @js(auth()->user()?->can('Override:Licencia') ? ' Si corresponde igual, marcá «Registrar fuera de plazo».' : ''),
+              fueraDePlazo: {{ old('fueraDePlazo') ? 'true' : 'false' }},
               {{-- Contrato de cada elegido en las fechas: texto de la vigencia, o
                    `null` si no tuvo. Una cédula ausente es «todavía no se sabe». --}}
               contratos: {},
@@ -332,6 +339,25 @@
                   if (opcion === 'manana') { this.desde = this.manana; this.hasta = this.manana; }
                   if (opcion === 'dia') { this.hasta = this.desde; }
               },
+              get primeraFecha() {
+                  return this.fueraDePlazo ? null : (this.plazo?.desde ?? null);
+              },
+              get ultimaFecha() {
+                  return this.fueraDePlazo ? null : (this.plazo?.hasta ?? null);
+              },
+              dentroDelPlazo(dia) {
+                  return (! this.primeraFecha || dia >= this.primeraFecha) && (! this.ultimaFecha || dia <= this.ultimaFecha);
+              },
+              {{-- Por qué las fechas no entran en el plazo; vacío si entran. --}}
+              get motivoFueraDePlazo() {
+                  let motivo = '';
+                  if (this.primeraFecha && this.desde && this.desde < this.primeraFecha) {
+                      motivo = `No se puede registrar una licencia de antes del ${this.fecha(this.primeraFecha)}.`;
+                  } else if (this.ultimaFecha && this.hasta && this.hasta > this.ultimaFecha) {
+                      motivo = `No se puede registrar una licencia para después del ${this.fecha(this.ultimaFecha)}.`;
+                  }
+                  return motivo ? motivo + this.sugerenciaPlazo : '';
+              },
               get diasDelRango() {
                   if (! this.desde || ! this.hasta || this.hasta < this.desde) { return 0; }
                   return Math.round((new Date(this.hasta) - new Date(this.desde)) / 86400000) + 1;
@@ -453,10 +479,12 @@
             <h2 style="margin-top: 0;">¿Cuándo?</h2>
 
             <div class="cuando-opciones" role="radiogroup" aria-label="Fechas de la licencia">
-                <button type="button" class="cuando-opcion" :class="cuando === 'hoy' && 'cuando-opcion--activa'" x-on:click="elegirCuando('hoy')">
+                <button type="button" class="cuando-opcion" :class="cuando === 'hoy' && 'cuando-opcion--activa'" x-on:click="elegirCuando('hoy')"
+                        :disabled="! dentroDelPlazo(hoy)" :title="dentroDelPlazo(hoy) ? '' : 'Fuera del plazo para registrar licencias'">
                     <x-heroicon-o-sun />Hoy
                 </button>
-                <button type="button" class="cuando-opcion" :class="cuando === 'manana' && 'cuando-opcion--activa'" x-on:click="elegirCuando('manana')">
+                <button type="button" class="cuando-opcion" :class="cuando === 'manana' && 'cuando-opcion--activa'" x-on:click="elegirCuando('manana')"
+                        :disabled="! dentroDelPlazo(manana)" :title="dentroDelPlazo(manana) ? '' : 'Fuera del plazo para registrar licencias'">
                     <x-heroicon-o-arrow-right-circle />Mañana
                 </button>
                 <button type="button" class="cuando-opcion" :class="cuando === 'dia' && 'cuando-opcion--activa'" x-on:click="elegirCuando('dia')">
@@ -479,21 +507,40 @@
                          «Hoy» y «Mañana» la fecha está puesta y no se edita. --}}
                     <input type="date" id="desde" name="desde" class="input"
                            value="{{ old('desde', $desde) }}"
-                           x-model="desde" :readonly="cuando === 'hoy' || cuando === 'manana'" required>
+                           x-model="desde" :readonly="cuando === 'hoy' || cuando === 'manana'"
+                           :min="primeraFecha" :max="cuando === 'rango' ? (hasta || ultimaFecha) : ultimaFecha" required>
                     @error('desde') <div class="error">{{ $message }}</div> @enderror
                 </div>
                 <div class="campo" style="margin: 0;" x-show="cuando === 'rango'" x-cloak>
                     <label for="hasta">Hasta <span class="req">*</span></label>
                     <input type="date" id="hasta" name="hasta" class="input"
                            value="{{ old('hasta', $hasta) }}"
-                           x-model="hasta" :min="desde" :disabled="cuando !== 'rango'" required>
+                           x-model="hasta" :min="desde" :max="ultimaFecha" :disabled="cuando !== 'rango'" required>
                     @error('hasta') <div class="error">{{ $message }}</div> @enderror
                 </div>
                 {{-- Fuera de «Rango» el hasta es el mismo día y viaja oculto. --}}
                 <input type="hidden" name="hasta" :value="hasta" :disabled="cuando === 'rango'">
             </div>
+            {{-- Plazo para registrar licencias: se avisa junto a las fechas. Pasarlo
+                 pide el permiso y marcarlo a propósito (StoreLicenciaRequest). --}}
+            @php
+                $plazoLicencias = app(\App\Services\PlazoLicencias::class)->resumen();
+            @endphp
+            @if ($plazoLicencias)
+                <p class="ayuda" style="margin: .4rem 0 0; display: flex; align-items: center; gap: .35rem;">
+                    <x-heroicon-o-calendar-days style="width: 1.1em; height: 1.1em; flex-shrink: 0;" /><span>{{ $plazoLicencias }}</span>
+                </p>
+                @can('Override:Licencia')
+                    <div class="campo check" style="margin: .4rem 0 0;">
+                        <input type="checkbox" id="fueraDePlazo" name="fueraDePlazo" value="1" x-model="fueraDePlazo">
+                        <label for="fueraDePlazo" style="margin: 0;">Registrar fuera de plazo</label>
+                    </div>
+                @endcan
+            @endif
 
-            <p class="cuando-resumen" x-show="diasDelRango > 0">
+            <div class="aviso aviso--error" style="margin: .5rem 0 0;" x-show="motivoFueraDePlazo" x-cloak x-text="motivoFueraDePlazo"></div>
+
+            <p class="cuando-resumen" x-show="diasDelRango > 0 && ! motivoFueraDePlazo">
                 <x-heroicon-o-check-circle />
                 <span>
                     <strong x-text="diasDelRango === 1 ? fecha(desde) : `Del ${fecha(desde)} al ${fecha(hasta)}`"></strong>
@@ -1134,6 +1181,7 @@
                                    || (modo === 'direccion' && (! direccion || seleccionados.length === 0))
                                    || (modo === 'todos' && (cargandoFuncionarios || seleccionados.length === 0))
                                    || excedeTope
+                                   || motivoFueraDePlazo !== ''
                                    || sinContrato.length > 0
                                    || revisandoContratos
                                    || guardando"

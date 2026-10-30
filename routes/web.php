@@ -78,6 +78,9 @@ Route::middleware(['auth', ExpulsarUsuarioInhabilitado::class, ExigirCambioPassw
     Route::get('actividades', [ActividadController::class, 'index'])->name('actividades.index');    // Parámetros del sistema, una sección por grupo (ver Configuracion::GRUPOS).
     // Cada sección se guarda aparte.
     Route::get('configuracion', [ConfiguracionController::class, 'edit'])->name('configuracion.edit');
+    // Plazo para registrar licencias: tabla propia, vigencia por día.
+    Route::put('configuracion/plazo-licencias', [ConfiguracionController::class, 'guardarPlazoLicencias'])
+        ->name('configuracion.plazo-licencias.update');
     Route::put('configuracion/{grupo}', [ConfiguracionController::class, 'update'])
         ->whereIn('grupo', array_keys(Configuracion::GRUPOS))
         ->name('configuracion.update');

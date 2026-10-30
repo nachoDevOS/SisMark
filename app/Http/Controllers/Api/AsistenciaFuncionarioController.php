@@ -9,6 +9,7 @@ use App\Http\Resources\MarcacionApiResource;
 use App\Models\Asistencia;
 use App\Models\Licencia;
 use App\Services\ContratosFuncionario;
+use App\Services\PlazoLicencias;
 use App\Services\ProcesadorAsistencia;
 use App\Services\ResolutorNombres;
 use App\Services\RespaldoDocumento;
@@ -202,6 +203,9 @@ class AsistenciaFuncionarioController extends Controller
             ->additional([
                 ...$this->meta($request, $ci, $desde, $hasta),
                 'saldo' => $this->saldoDePermisos($request, $ci, $desde, $hasta),
+                // El plazo para registrar licencias de hoy: con él Mamoré
+                // bloquea en el calendario los días que no se pueden pedir.
+                'plazo' => app(PlazoLicencias::class)->paraApi(),
             ]);
     }
 

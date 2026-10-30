@@ -11,7 +11,7 @@ test('todo permiso que exige el código está en la matriz de roles, y no sobra 
         ->merge(File::allFiles(resource_path('views')))
         ->merge(File::allFiles(base_path('routes')))
         ->flatMap(fn ($archivo) => preg_match_all(
-            "/'((?:ViewAny|View|Create|Update|Delete|Approve|Export|Sync|Import|Clear|Token):[A-Za-z]+)'/",
+            "/'((?:ViewAny|View|Create|Update|Delete|Approve|Export|Sync|Import|Clear|Token|Override):[A-Za-z]+)'/",
             $archivo->getContents(),
             $coincidencias,
         ) ? $coincidencias[1] : [])

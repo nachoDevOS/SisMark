@@ -17,19 +17,18 @@
     </div>
 
     <p class="ayuda" style="margin: -.4rem 0 1rem;">
-        Parámetros que ajustan cómo trabaja el sistema. Cada cambio rige <strong>desde un mes</strong> y hasta que
-        se cargue otro: lo anterior no se pisa, queda en el historial con quién lo cargó y por qué.
+        Parámetros que ajustan cómo trabaja el sistema. Cada cambio rige <strong>desde un mes</strong> —el plazo
+        para registrar licencias, <strong>desde un día</strong>— y hasta que se cargue otro: lo anterior no se pisa,
+        queda en el historial con quién lo cargó y por qué.
     </p>
 
-    {{-- Índice de secciones: aparece cuando hay más de una, para saltar sin
-         bajar por toda la página. --}}
-    @if (count($grupos) > 1)
-        <div class="rangos-rapidos" style="margin-bottom: 1rem;">
-            @foreach ($grupos as $grupo => $parametros)
-                <a href="#grupo-{{ $grupo }}" class="rango-chip">{{ $Configuracion::GRUPOS[$grupo]['titulo'] }}</a>
-            @endforeach
-        </div>
-    @endif
+    {{-- Índice de secciones, para saltar sin bajar por toda la página. --}}
+    <div class="rangos-rapidos" style="margin-bottom: 1rem;">
+        @foreach ($grupos as $grupo => $parametros)
+            <a href="#grupo-{{ $grupo }}" class="rango-chip">{{ $Configuracion::GRUPOS[$grupo]['titulo'] }}</a>
+        @endforeach
+        <a href="#plazo-licencias" class="rango-chip">Plazo para registrar licencias</a>
+    </div>
 
     @foreach ($grupos as $grupo => $parametros)
         @php
@@ -175,4 +174,6 @@
             @endif
         </section>
     @endforeach
+
+    @include('configuracion.plazo-licencias')
 @endsection

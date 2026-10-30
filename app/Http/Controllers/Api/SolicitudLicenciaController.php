@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Actividad;
 use App\Models\Licencia;
 use App\Services\ContratosFuncionario;
+use App\Services\PlazoLicencias;
 use App\Services\RegistroActividad;
 use App\Services\RegistroLicencia;
 use App\Services\RespaldoDocumento;
@@ -41,11 +42,12 @@ class SolicitudLicenciaController extends Controller
     /**
      * Anota la solicitud del funcionario en estado «Pendiente».
      *
-     * Devuelve 422 cuando no hay nada que anotar, con el motivo: sin horarios
+     * Devuelve 422 cuando las fechas caen fuera del plazo para registrar
+     * licencias, o cuando no hay nada que anotar, con el motivo: sin horarios
      * asignados en esas fechas no hay licencia posible —una licencia licencia un
      * horario—, y si ya existe una para ese día no se pisa.
      */
-    public function store(Request $request, string $ci, RegistroLicencia $registro, RespaldoDocumento $respaldos, TopePermisos $tope, RegistroActividad $actividad): JsonResponse
+    public function store(Request $request, string $ci, RegistroLicencia $registro, RespaldoDocumento $respaldos, TopePermisos $tope, RegistroActividad $actividad, PlazoLicencias $plazo): JsonResponse
     {
         // Cuando la solicitud trae un respaldo viaja como `multipart/form-data`,
         // y ahí no hay booleanos: `tCompleto` llega como el texto «1» o «0». Sin
@@ -100,6 +102,14 @@ class SolicitudLicenciaController extends Controller
             return response()->json([
                 'message' => 'El rango no puede superar '.RegistroLicencia::MAX_DIAS.' días.',
             ], 422);
+        }
+
+        // El plazo para registrar licencias: desde Mamoré no hay excepción,
+        // la pasa solo Recursos Humanos desde SisMark.
+        $fueraDePlazo = $plazo->motivoFueraDePlazo($desde, $hasta);
+
+        if ($fueraDePlazo !== null) {
+            return response()->json(['message' => $fueraDePlazo], 422);
         }
 
         $asignaciones = $registro->horariosDelRango([$ci], $desde, $hasta);

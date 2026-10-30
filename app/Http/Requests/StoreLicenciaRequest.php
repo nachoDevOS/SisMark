@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Licencia;
+use App\Services\PlazoLicencias;
 use App\Services\RegistroLicencia;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -74,6 +75,9 @@ class StoreLicenciaRequest extends FormRequest
             // registro en vez de mejorarlo. Cuando viene, se acota a imagen o
             // PDF, que es lo que sale de un escáner o de la cámara del teléfono.
             'respaldo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            // Anotar aunque las fechas caigan fuera del plazo vigente. Solo
+            // cuenta con el permiso `Override:Licencia`; ver `withValidator()`.
+            'fueraDePlazo' => ['boolean'],
         ];
     }
 
@@ -87,6 +91,7 @@ class StoreLicenciaRequest extends FormRequest
             'modo' => in_array($this->input('modo'), self::MODOS, true) ? $this->input('modo') : 'uno',
             'tCompleto' => $this->boolean('tCompleto'),
             'goceHaberes' => $this->boolean('goceHaberes'),
+            'fueraDePlazo' => $this->boolean('fueraDePlazo'),
         ]);
 
         // «todos» manda los marcados en un solo campo separado por comas: con
@@ -115,6 +120,35 @@ class StoreLicenciaRequest extends FormRequest
             if ($dias > RegistroLicencia::MAX_DIAS) {
                 $validator->errors()->add('hasta', 'El rango no puede superar '.RegistroLicencia::MAX_DIAS.' días.');
             }
+        });
+
+        // El plazo para registrar licencias rige también para Recursos
+        // Humanos. Saltearlo es explícito: hace falta el permiso **y** marcar la
+        // casilla, así nadie —ni el Administrador, que pasa todos los permisos—
+        // lo pasa sin darse cuenta.
+        $validator->after(function (Validator $validator): void {
+            if ($validator->errors()->hasAny(['desde', 'hasta'])) {
+                return;
+            }
+
+            $motivo = app(PlazoLicencias::class)->motivoFueraDePlazo(
+                Carbon::parse($this->input('desde')),
+                Carbon::parse($this->input('hasta')),
+            );
+
+            if ($motivo === null) {
+                return;
+            }
+
+            $puedeSaltearlo = (bool) $this->user()?->can('Override:Licencia');
+
+            if ($puedeSaltearlo && $this->boolean('fueraDePlazo')) {
+                return;
+            }
+
+            $validator->errors()->add('desde', $puedeSaltearlo
+                ? $motivo.' Si corresponde igual, marcá «Registrar fuera de plazo».'
+                : $motivo);
         });
 
         // El permiso personal es siempre por horas: el horario completo lo dispone

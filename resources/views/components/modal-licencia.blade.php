@@ -100,6 +100,22 @@
                             @error('hasta') <div class="error">{{ $message }}</div> @enderror
                         </div>
                     </div>
+                    {{-- Plazo para registrar licencias: se avisa junto a las fechas. Pasarlo
+                         pide el permiso y marcarlo a propósito (StoreLicenciaRequest). --}}
+                    @php
+                        $plazoLicencias = app(\App\Services\PlazoLicencias::class)->resumen();
+                    @endphp
+                    @if ($plazoLicencias)
+                        <p class="ayuda" style="margin: -.4rem 0 .8rem; display: flex; align-items: center; gap: .35rem;">
+                            <x-heroicon-o-calendar-days style="width: 1.1em; height: 1.1em; flex-shrink: 0;" /><span>{{ $plazoLicencias }}</span>
+                        </p>
+                        @can('Override:Licencia')
+                            <div class="campo check" style="margin: 0 0 .8rem;">
+                                <input type="checkbox" id="fueraDePlazo-{{ $sufijo }}" name="fueraDePlazo" value="1" @checked(old('fueraDePlazo'))>
+                                <label for="fueraDePlazo-{{ $sufijo }}" style="margin: 0;">Registrar fuera de plazo</label>
+                            </div>
+                        @endcan
+                    @endif
 
                     {{-- Qué es. Para un funcionario suele ser un permiso que pidió; solo
                          el personal cuenta contra el tope mensual de permisos. --}}

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ActualizarConfiguracionRequest;
+use App\Http\Requests\GuardarPlazoLicenciaRequest;
 use App\Models\Configuracion;
+use App\Models\ConfiguracionPlazoLicencia;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
@@ -15,6 +17,9 @@ use Illuminate\View\View;
  * Un solo permiso, `Update:Configuracion`, abre toda la pantalla. Cada sección
  * se guarda por separado, **desde un mes y con un motivo**: no pisa lo
  * anterior, agrega una vigencia. Debajo de cada sección va su historial.
+ *
+ * El plazo para registrar licencias ({@see ConfiguracionPlazoLicencia}) tiene su propia
+ * tabla y rige por día, no por mes: va en su propia sección.
  */
 class ConfiguracionController extends Controller
 {
@@ -44,7 +49,10 @@ class ConfiguracionController extends Controller
             ->groupBy(fn (Configuracion $fila): string => $fila->vigente_desde->toDateString())
             ->map(fn (Collection $delMes): Collection => $delMes->keyBy('clave')));
 
-        return view('configuracion.edit', compact('grupos', 'vigentes', 'historial'));
+        $plazos = ConfiguracionPlazoLicencia::query()->with('registrador')->orderByDesc('vigente_desde')->get();
+        $plazoVigente = ConfiguracionPlazoLicencia::vigente();
+
+        return view('configuracion.edit', compact('grupos', 'vigentes', 'historial', 'plazos', 'plazoVigente'));
     }
 
     /**
@@ -63,5 +71,19 @@ class ConfiguracionController extends Controller
             ->to(route('configuracion.edit').'#grupo-'.$grupo)
             ->with('estado', 'Se guardó «'.Configuracion::GRUPOS[$grupo]['titulo'].'», vigente desde '
                 .$desde->translatedFormat('F \d\e Y').'.');
+    }
+
+    /**
+     * Carga el plazo para registrar licencias desde el día elegido.
+     */
+    public function guardarPlazoLicencias(GuardarPlazoLicenciaRequest $request): RedirectResponse
+    {
+        $desde = $request->desde();
+
+        ConfiguracionPlazoLicencia::guardar($request->valores(), $desde, trim((string) $request->validated('plazo_motivo')));
+
+        return redirect()
+            ->to(route('configuracion.edit').'#plazo-licencias')
+            ->with('estado', 'Se guardó el plazo para registrar licencias, vigente desde el '.$desde->format('d/m/Y').'.');
     }
 }

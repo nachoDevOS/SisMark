@@ -51,6 +51,11 @@ class RolePolicy
         // acceso a la asistencia de los ~4.600 funcionarios, y quién puede
         // entregar eso no tiene por qué ser quien corrige un nombre.
         'Token' => 'Emitir token',
+        // Registrar una licencia fuera del plazo vigente (ver `ConfiguracionPlazoLicencia`).
+        // Va aparte de `Create` porque el plazo es la regla para todos: quién
+        // puede saltearla —una corrección, una carga atrasada con respaldo— no
+        // tiene por qué ser todo el que anota licencias.
+        'Override' => 'Fuera de plazo',
     ];
 
     /**
@@ -118,7 +123,9 @@ class RolePolicy
             // Sin edición: una licencia se anota o se elimina. `View` es la
             // ficha de la solicitud, y `Approve` la decisión sobre las que
             // piden los funcionarios desde Mamoré y llegan «Pendiente».
-            'habilidades' => ['ViewAny', 'View', 'Create', 'Approve', 'Delete'],
+            // `Override` es anotar fuera del plazo para registrar licencias.
+            'habilidades' => ['ViewAny', 'View', 'Create', 'Approve', 'Delete', 'Override'],
+            'aclaraciones' => ['Override' => 'Registrar fuera de plazo'],
         ],
         'DiaExcepcional' => [
             'etiqueta' => 'Días excepcionales',
